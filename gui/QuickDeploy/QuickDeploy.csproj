@@ -12,7 +12,7 @@
     <Nullable>disable</Nullable>
     <AssemblyName>HD2 Mod Quick Deploy</AssemblyName>
     <RootNamespace>QuickDeploy</RootNamespace>
-    <Version>0.11.0</Version>
+    <Version>0.12.0</Version>
     <Product>HD2 Mod Quick Deploy</Product>
     <Company>pat-pat-patrick</Company>
     <Copyright>MIT License</Copyright>
