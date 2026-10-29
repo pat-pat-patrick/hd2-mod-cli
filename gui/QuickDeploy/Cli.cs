@@ -113,6 +113,8 @@ namespace QuickDeploy
         public string PrevPath, PrevVersion;
         public long PrevKept, PrevBytes;
         public bool PrevExists;
+        /// <summary>The mod this translation pack was turned off with (it comes on with it), else null.</summary>
+        public string OffWith;
         /// <summary>The labels the mod's own manifest declares: read only.</summary>
         public List<string> AutoTags = new List<string>();
         /// <summary>The version shown (the recorded one, else one found in a name) and where it was
@@ -386,6 +388,7 @@ namespace QuickDeploy
                 }
                 foreach (var t in List(m, "tags")) if (t is string tag) row.Tags.Add(tag);
                 row.Group = Str(m, "group");
+                row.OffWith = Str(m, "off_with");
                 var pv = Json.Obj(m, "previous");
                 if (pv != null)
                 {

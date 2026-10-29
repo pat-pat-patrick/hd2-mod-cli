@@ -632,8 +632,10 @@ namespace Hd2Mod
             // started by Chef Shared Loader (in effect, or helping with the mods made for it) but too big for it
             foreach (var x in on.Where(x => x.TooBigForChef.Any() && (running == "chef" || (helper != null && x.Needs == "chef"))))
                 issues.Add(new LuaIssue { Kind = "too_big_for_chef", Mods = { x.Mod }, Detail = x.TooBigForChef.Max(s => s.Size).ToString() });
-            foreach (var x in on.Where(x => x.PackOfName != null && (x.PackOf == null || !x.PackOf.Enabled)))
-                issues.Add(new LuaIssue { Kind = "pack_alone", Mods = new[] { x.Mod }.Concat(x.PackOf != null ? new[] { x.PackOf } : new Mod[0]).ToList(), Detail = x.PackOfName });
+            // a pack whose mod is not installed; one whose mod is off is not an issue: turning the
+            // mod off turns its packs off too (the user, 2026-10-30)
+            foreach (var x in on.Where(x => x.PackOfName != null && x.PackOf == null))
+                issues.Add(new LuaIssue { Kind = "pack_alone", Mods = { x.Mod }, Detail = x.PackOfName });
             return (owner, bootMods, running, issues);
         }
 

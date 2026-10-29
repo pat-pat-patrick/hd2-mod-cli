@@ -142,6 +142,8 @@ namespace Hd2Mod
             foreach (var m in lib.Mods) if (!byId.ContainsKey(m.Id ?? "")) byId[m.Id ?? ""] = m;
             var mine = to.Order.Where(byId.ContainsKey).Distinct().Select(id => byId[id]).ToList();
             var seen = new HashSet<Mod>(mine);
+            // a pack turned off with its mod comes back with that mod in this profile only
+            foreach (var m in lib.Mods) m.OffWith = null;
             foreach (var m in mine)
             {
                 m.Enabled = to.On.Contains(m.Id);

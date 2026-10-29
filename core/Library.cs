@@ -58,6 +58,9 @@ namespace Hd2Mod
         /// <summary>The newest version the player chose to skip ("nexus:FILE" or "github:TAG"), else null:
         /// an update check says "skipped" for that one and "update" again for a newer one.</summary>
         public string Skip;
+        /// <summary>The mod this translation pack was turned off with, else null: turning that mod
+        /// on again turns the pack on again (the user, 2026-10-30).</summary>
+        public string OffWith;
     }
 
     /// <summary>A mod's version before the newest, as it was: its folder and where it came from
@@ -141,6 +144,7 @@ namespace Hd2Mod
                 mod.GitHub = ReadGitHub(Json.Obj(m, "github"));
                 mod.Page = Json.Str(m, "page");
                 mod.Skip = Json.Str(m, "skip");
+                mod.OffWith = Json.Str(m, "off_with");
                 var pv = Json.Obj(m, "previous");
                 if (pv != null && !string.IsNullOrEmpty(Json.Str(pv, "path")))
                     mod.Previous = new PreviousVersion
@@ -220,6 +224,7 @@ namespace Hd2Mod
                 if (m.Nexus != null) entry["nexus"] = NexusJson(m.Nexus);
                 if (m.GitHub != null) entry["github"] = GitHubJson(m.GitHub);
                 if (m.Skip != null) entry["skip"] = m.Skip;
+                if (m.OffWith != null) entry["off_with"] = m.OffWith;
                 if (m.Previous != null)
                 {
                     var pv = new Dictionary<string, object>

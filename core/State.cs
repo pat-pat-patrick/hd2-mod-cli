@@ -399,6 +399,7 @@ namespace Hd2Mod
                         ["bytes"] = Directory.Exists(m.Previous.Path) ? LibraryBytes(new DirectoryInfo(m.Previous.Path)) : 0L,
                     },
                     ["skip"] = m.Skip,
+                    ["off_with"] = m.OffWith,
                     ["auto_tags"] = (manifest?.Tags ?? new List<string>()).Cast<object>().ToList(),
                     ["error"] = error,
                 });

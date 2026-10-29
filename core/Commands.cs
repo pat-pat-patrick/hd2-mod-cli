@@ -987,7 +987,7 @@ namespace Hd2Mod
                         case "same_name": o.WriteLine("  " + i.Detail + " is in " + names + "; only " + i.Mods[0].Name + "'s runs"); break;
                         case "cannot_run": o.WriteLine("  the game's Lua (5.1, no LuaJIT) cannot run " + names); break;
                         case "too_big_for_chef": o.WriteLine("  " + names + " will not start: Chef Shared Loader reads no script over 4 MB at present"); break;
-                        case "pack_alone": o.WriteLine("  " + i.Mods[0].Name + " translates " + i.Detail + (i.Mods.Count > 1 ? ", which is off" : ", which is not installed")); break;
+                        case "pack_alone": o.WriteLine("  " + i.Mods[0].Name + " translates " + i.Detail + ", which is not installed"); break;
                     }
                 }
             }
@@ -1145,12 +1145,29 @@ namespace Hd2Mod
         static void Switch(Args a, TextWriter o, bool on)
         {
             var lib = Library.Load();
-            foreach (var r in a.Rest)
+            var mods = a.Rest.Select(r => Ops.Pick(lib, r)).ToList();
+            foreach (var mod in mods)
             {
-                var mod = Ops.Pick(lib, r);
                 mod.Enabled = on;
+                mod.OffWith = null;
                 o.WriteLine((on ? "on " : "off") + " " + mod.Name);
             }
+            // a mod turned off takes its translation packs with it, and turned on again brings
+            // back the ones it took (the user, 2026-10-30)
+            if (!on)
+                foreach (var p in LuaMods.Of(lib).Where(x => x.Mod.Enabled && x.PackOf != null && mods.Contains(x.PackOf) && !mods.Contains(x.Mod)))
+                {
+                    p.Mod.Enabled = false;
+                    p.Mod.OffWith = p.PackOf.Id;
+                    o.WriteLine("off " + p.Mod.Name + " (translation pack of " + p.PackOf.Name + ")");
+                }
+            else
+                foreach (var p in lib.Mods.Where(x => !x.Enabled && x.OffWith != null && mods.Any(m => m.Id == x.OffWith)))
+                {
+                    o.WriteLine("on  " + p.Name + " (translation pack of " + mods.First(m => m.Id == p.OffWith).Name + ")");
+                    p.Enabled = true;
+                    p.OffWith = null;
+                }
             lib.Save();
         }
 

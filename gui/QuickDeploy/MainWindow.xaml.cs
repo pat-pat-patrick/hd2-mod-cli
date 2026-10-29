@@ -1391,6 +1391,12 @@ namespace QuickDeploy
             if (m == null || busy) return;
             local(m);
             m.Assumed = m.Enabled ? "pending" : "off";
+            // its translation packs go off with it and come back with it, as the command line does
+            // (the user, 2026-10-30)
+            if (!m.Enabled)
+                foreach (var p in st.Mods.Where(x => x.Lu?.PackOf == m.Id && x.Enabled)) { p.Enabled = false; p.Assumed = "off"; }
+            else
+                foreach (var p in st.Mods.Where(x => x.OffWith == m.Id && !x.Enabled)) { p.Enabled = true; p.Assumed = "pending"; }
             RenderList();
             if (id == selectedId) RenderDetail();
             waiting++;
@@ -1781,7 +1787,6 @@ namespace QuickDeploy
             {
                 var of = ById(lu.PackOf);
                 if (of == null) CopyLine(Texts.F("lua_pack_missing", lu.PackOfName), m.Enabled ? "Yellow" : "Muted");
-                else if (!of.Enabled) Line(Texts.F("lua_pack_off", of.Name), m.Enabled ? "Yellow" : "Muted");
                 else Line(Texts.F("lua_pack", of.Name), "Muted");
             }
             var packs = PacksOf(m);

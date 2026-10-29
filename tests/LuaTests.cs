@@ -420,8 +420,27 @@ namespace Hd2Mod.Tests
             var pack = LuaMods.Of(lib).Single(x => x.Mod.Name == "Cam zh");
             Assert.Equal("Cam", pack.PackOf.Name);
             Assert.Empty(Now().Issues);
+            // the mod turned off takes its pack with it, and nothing is said (the user, 2026-10-30)
+            Assert.Contains("off Cam zh (translation pack of Cam)", Cli("disable", "Cam"));
+            Assert.False(Library.Load().Mods.Single(m => m.Name == "Cam zh").Enabled);
+            Assert.Empty(Now().Issues);
+            // turned on again, it brings the pack back
+            Assert.Contains("on  Cam zh (translation pack of Cam)", Cli("enable", "Cam"));
+            Assert.True(Library.Load().Mods.Single(m => m.Name == "Cam zh").Enabled);
+            Assert.Null(Library.Load().Mods.Single(m => m.Name == "Cam zh").OffWith);
+            // a pack the player turned off stays off when the mod comes back
+            Cli("disable", "Cam zh");
             Cli("disable", "Cam");
-            Assert.Contains(Now().Issues, i => i.Kind == "pack_alone" && i.Mods[0].Name == "Cam zh");
+            Cli("enable", "Cam");
+            Assert.False(Library.Load().Mods.Single(m => m.Name == "Cam zh").Enabled);
+            // and one the player turned on again while the mod was off is no longer the mod's to bring
+            Cli("disable", "Cam");
+            Cli("enable", "Cam zh");
+            Assert.Null(Library.Load().Mods.Single(m => m.Name == "Cam zh").OffWith);
+            // a pack on with its mod off is no issue; with its mod not installed it is
+            Assert.Empty(Now().Issues);
+            Cli("remove", "Cam");
+            Assert.Contains(Now().Issues, i => i.Kind == "pack_alone" && i.Mods.Single().Name == "Cam zh");
             // a name that only looks like one, with no menus wrapped: not a pack
             Cli("add", Addon("Cam ru", "mods/actioncam/actioncam_ru", "", A3));
             Assert.Null(LuaMods.Of(Library.Load()).Single(x => x.Mod.Name == "Cam ru").PackOfName);

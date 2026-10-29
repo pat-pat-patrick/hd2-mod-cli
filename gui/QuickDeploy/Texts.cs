@@ -304,7 +304,6 @@ namespace QuickDeploy
             ["lua_basis_bsl"] = ("{0} in the library provides only a partial stand-in for FFI.", "库中的 {0} 提供的 FFI 只是不完整的替代品。"),
             ["lua_basis_unknown"] = ("Whether {0}'s own start-up script provides them cannot be told from here.", "{0} 自带的启动脚本是否提供，此处无法判断。"),
             ["lua_pack"] = ("Translation pack for {0}.", "翻译包，用于 {0}。"),
-            ["lua_pack_off"] = ("Translation pack for {0}, which is off: the translation does not apply.", "翻译包，用于 {0}；该 mod 未启用，翻译不会生效。"),
             ["lua_pack_missing"] = ("Translation pack for {0}, which is not installed: the translation does not apply.", "翻译包，用于 {0}；该 mod 未安装，翻译不会生效。"),
             ["lua_packs"] = ("Translation packs: {0}", "翻译包：{0}"),
             ["lua_last_loaded"] = ("Last session ({0}): started in {1} ms.", "上一局（{0}）：已启动，用时 {1} ms。"),
