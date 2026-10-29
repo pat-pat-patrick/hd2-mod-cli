@@ -53,6 +53,22 @@ namespace Hd2Mod
         public string ImportPicture;
         /// <summary>The mod's id in the manager it is imported from, while it is imported; not kept.</summary>
         public string ImportKey;
+        /// <summary>The version it had before the newest came, kept for a rollback (Versions), else null.</summary>
+        public PreviousVersion Previous;
+        /// <summary>The newest version the player chose to skip ("nexus:FILE" or "github:TAG"), else null:
+        /// an update check says "skipped" for that one and "update" again for a newer one.</summary>
+        public string Skip;
+    }
+
+    /// <summary>A mod's version before the newest, as it was: its folder and where it came from
+    /// (Versions). Its folder is in the library folder, so a mod with a script can go back to it.</summary>
+    public class PreviousVersion
+    {
+        public string Path, Name, Source, Page, Version;
+        public NexusRef Nexus;
+        public GitHubRef GitHub;
+        /// <summary>When it was replaced, in Unix seconds.</summary>
+        public long Kept;
     }
 
     /// <summary>Where a mod came from on Nexus Mods: its mod, the file it is (0 when unknown), that
@@ -121,12 +137,18 @@ namespace Hd2Mod
                     RealName = Json.Str(m, "real_name"),
                 };
                 mod.Options = ReadOptions(Json.List(m, "options"));
-                var nx = Json.Obj(m, "nexus");
-                if (nx != null) mod.Nexus = new NexusRef { Game = Json.Str(nx, "game"), Mod = Json.Long(nx, "mod"), File = Json.Long(nx, "file"),
-                                                           Version = Json.Str(nx, "version"), Time = Json.Long(nx, "time") };
-                var gh = Json.Obj(m, "github");
-                if (gh != null) mod.GitHub = new GitHubRef { Owner = Json.Str(gh, "owner"), Repo = Json.Str(gh, "repo"), Tag = Json.Str(gh, "tag") };
+                mod.Nexus = ReadNexus(Json.Obj(m, "nexus"));
+                mod.GitHub = ReadGitHub(Json.Obj(m, "github"));
                 mod.Page = Json.Str(m, "page");
+                mod.Skip = Json.Str(m, "skip");
+                var pv = Json.Obj(m, "previous");
+                if (pv != null && !string.IsNullOrEmpty(Json.Str(pv, "path")))
+                    mod.Previous = new PreviousVersion
+                    {
+                        Path = Json.Str(pv, "path"), Name = Json.Str(pv, "name"), Source = Json.Str(pv, "source"), Page = Json.Str(pv, "page"),
+                        Version = Json.Str(pv, "version"), Nexus = ReadNexus(Json.Obj(pv, "nexus")), GitHub = ReadGitHub(Json.Obj(pv, "github")),
+                        Kept = Json.Long(pv, "kept"),
+                    };
                 foreach (var t in Json.List(m, "tags")) if (t is string tag && tag.Trim().Length > 0) mod.Tags.Add(tag.Trim());
                 mod.Group = Json.Str(m, "group");
                 mod.Description = Json.Str(m, "description");
@@ -159,6 +181,19 @@ namespace Hd2Mod
             return lib;
         }
 
+        static NexusRef ReadNexus(Dictionary<string, object> nx) => nx == null ? null :
+            new NexusRef { Game = Json.Str(nx, "game"), Mod = Json.Long(nx, "mod"), File = Json.Long(nx, "file"), Version = Json.Str(nx, "version"), Time = Json.Long(nx, "time") };
+
+        static GitHubRef ReadGitHub(Dictionary<string, object> gh) => gh == null ? null :
+            new GitHubRef { Owner = Json.Str(gh, "owner"), Repo = Json.Str(gh, "repo"), Tag = Json.Str(gh, "tag") };
+
+        static Dictionary<string, object> NexusJson(NexusRef n) => new Dictionary<string, object>
+        {
+            ["game"] = n.Game, ["mod"] = n.Mod, ["file"] = n.File, ["version"] = n.Version, ["time"] = n.Time,
+        };
+
+        static Dictionary<string, object> GitHubJson(GitHubRef g) => new Dictionary<string, object> { ["owner"] = g.Owner, ["repo"] = g.Repo, ["tag"] = g.Tag };
+
         static List<OptionChoice> ReadOptions(List<object> list)
         {
             var out_ = new List<OptionChoice>();
@@ -182,12 +217,20 @@ namespace Hd2Mod
                     ["id"] = m.Id, ["name"] = m.Name, ["path"] = m.Path, ["source"] = m.Source, ["enabled"] = m.Enabled,
                     ["options"] = OptionsJson(m.Options),
                 };
-                if (m.Nexus != null)
-                    entry["nexus"] = new Dictionary<string, object>
+                if (m.Nexus != null) entry["nexus"] = NexusJson(m.Nexus);
+                if (m.GitHub != null) entry["github"] = GitHubJson(m.GitHub);
+                if (m.Skip != null) entry["skip"] = m.Skip;
+                if (m.Previous != null)
+                {
+                    var pv = new Dictionary<string, object>
                     {
-                        ["game"] = m.Nexus.Game, ["mod"] = m.Nexus.Mod, ["file"] = m.Nexus.File, ["version"] = m.Nexus.Version, ["time"] = m.Nexus.Time,
+                        ["path"] = m.Previous.Path, ["name"] = m.Previous.Name, ["source"] = m.Previous.Source, ["page"] = m.Previous.Page,
+                        ["version"] = m.Previous.Version, ["kept"] = m.Previous.Kept,
                     };
-                if (m.GitHub != null) entry["github"] = new Dictionary<string, object> { ["owner"] = m.GitHub.Owner, ["repo"] = m.GitHub.Repo, ["tag"] = m.GitHub.Tag };
+                    if (m.Previous.Nexus != null) pv["nexus"] = NexusJson(m.Previous.Nexus);
+                    if (m.Previous.GitHub != null) pv["github"] = GitHubJson(m.Previous.GitHub);
+                    entry["previous"] = pv;
+                }
                 if (m.RealName != null) entry["real_name"] = m.RealName;
                 if (m.Tags.Count > 0) entry["tags"] = m.Tags.Cast<object>().ToList();
                 if (m.Group != null) entry["group"] = m.Group;

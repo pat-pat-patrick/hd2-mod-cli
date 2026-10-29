@@ -132,6 +132,14 @@ namespace Hd2Mod
             Cmd("relink", new Spec { Help = "make the copies in the game folder hard links to the library (same drive): " +
                                             "their space comes back, nothing is written",
                                      Flags = new[] { "--dry-run", "--verify" }, Run = Relink }),
+            Cmd("keep-previous-on", new Spec { Help = "from now on, a mod with a script keeps the version it had when a new one comes, for a rollback", Run = (a, o) => KeepPrevious(o, true) }),
+            Cmd("keep-previous-off", new Spec { Help = "stop keeping earlier versions (the ones kept stay until deleted)", Run = (a, o) => KeepPrevious(o, false) }),
+            Cmd("previous", new Spec { Help = "the earlier versions kept for a rollback (--delete with mods, or --delete --all, deletes them; the mods keep the version they have)",
+                                       Many = true, Flags = new[] { "--delete", "--all" }, Run = PreviousCmd }),
+            Cmd("rollback", new Spec { Help = "a mod goes back to the version kept, and the one it had is kept instead (deploy to bring the game up to date)",
+                                       Positionals = new[] { "mod" }, Run = RollbackCmd }),
+            Cmd("skip", new Spec { Help = "the update check stops offering a mod's newest version, until a newer one comes (--clear: offer it again)",
+                                   Positionals = new[] { "mod" }, Flags = new[] { "--clear" }, Run = SkipCmd }),
             Cmd("leftovers", new Spec { Help = "the folders of old versions this program unpacked that no mod uses any more " +
                                                "(--delete with folders, or --delete --all, deletes them; the game is untouched)",
                                         Many = true, Flags = new[] { "--delete", "--all" }, Run = LeftoverCmd }),
@@ -543,6 +551,7 @@ namespace Hd2Mod
             var had = mod.Path;
             var folder = Ops.SourceFolder(a.Pos["path"], cfg, a.Flag("--copy"));
             var manifest = Manifest.Read(folder);
+            bool kept = Versions.Keep(lib, cfg, mod, folder);
             mod.Options = Manifest.Merged(manifest, mod.Options);
             mod.Path = folder;
             mod.Source = Paths.Abs(a.Pos["path"]);
@@ -563,7 +572,8 @@ namespace Hd2Mod
             }
             lib.Save();
             o.WriteLine("replaced: " + mod.Name + "  (" + folder + "), same place and options");
-            if (!a.Flag("--keep-old")) DropOld(lib, cfg, had, folder, o);
+            if (kept) o.WriteLine("the version before is kept: hd2qd rollback " + Ops.Repr(mod.Name) + " goes back to it");
+            else if (!a.Flag("--keep-old")) DropOld(lib, cfg, had, folder, o);
         }
 
         /// <summary>The folder the old version was unpacked into, once the library no longer
@@ -573,9 +583,60 @@ namespace Hd2Mod
         static void DropOld(Library lib, Dictionary<string, object> cfg, string had, string now, TextWriter o)
         {
             if (string.IsNullOrEmpty(had) || string.Equals(Paths.Abs(had), Paths.Abs(now), StringComparison.OrdinalIgnoreCase)) return;
-            if (lib.Mods.Any(m => !string.IsNullOrEmpty(m.Path) && string.Equals(Paths.Abs(m.Path), Paths.Abs(had), StringComparison.OrdinalIgnoreCase))) return;
+            if (Versions.Used(lib).Contains(Paths.Abs(had))) return;
             if (!Ops.Ours(had, cfg)) return;
             if (Ops.Drop(had)) o.WriteLine("the old version's folder is gone: " + had);
+        }
+
+        static void KeepPrevious(TextWriter o, bool on)
+        {
+            Versions.SetKeep(on);
+            o.WriteLine(on ? "mods with a script now keep the version they had when a new one comes" : "earlier versions are no longer kept (the ones kept stay)");
+        }
+
+        static void PreviousCmd(Args a, TextWriter o)
+        {
+            var lib = Library.Load();
+            var kept = lib.Mods.Where(m => m.Previous != null).ToList();
+            if (!a.Flag("--delete"))
+            {
+                if (kept.Count == 0) { o.WriteLine("no earlier version is kept"); return; }
+                foreach (var m in kept)
+                {
+                    long bytes = Directory.Exists(m.Previous.Path) ? StateDoc.LibraryBytes(new DirectoryInfo(m.Previous.Path)) : 0;
+                    o.WriteLine(m.Name + "  " + (m.Previous.Version ?? "?") + "  " + bytes + " bytes  kept " +
+                                DateTimeOffset.FromUnixTimeSeconds(m.Previous.Kept).LocalDateTime.ToString("yyyy-MM-dd HH:mm") + "  " + m.Previous.Path);
+                }
+                return;
+            }
+            if (a.Rest.Count == 0 && !a.Flag("--all")) throw new ModError("name the mods whose earlier version goes, or pass --all");
+            var go = a.Flag("--all") ? kept : a.Rest.Select(r => Ops.Pick(lib, r)).Distinct().ToList();
+            var done = Versions.Forget(lib, go);
+            lib.Save();
+            foreach (var (m, folder, bytes) in done) o.WriteLine("deleted the earlier version of " + m.Name + " (" + bytes + " bytes): " + folder);
+        }
+
+        static void RollbackCmd(Args a, TextWriter o)
+        {
+            var lib = Library.Load();
+            var mod = Ops.Pick(lib, a.Pos["mod"]);
+            Versions.Rollback(lib, mod);
+            lib.Save();
+            o.WriteLine("back to " + mod.Name + " " + (Origins.VersionOf(mod).Version ?? "") + "  (" + mod.Path + "); " +
+                        (mod.Previous.Version ?? "the version it had") + " is kept instead. Deploy to bring the game up to date");
+        }
+
+        static void SkipCmd(Args a, TextWriter o)
+        {
+            var lib = Library.Load();
+            var mod = Ops.Pick(lib, a.Pos["mod"]);
+            if (a.Flag("--clear")) { mod.Skip = null; lib.Save(); o.WriteLine(mod.Name + ": every newer version is offered again"); return; }
+            mod.Skip = null;
+            var u = Updates.One(mod);
+            if (u.Status != "update") throw new ModError(mod.Name + " has no newer version to skip (" + u.Status + ")", "no_update", mod.Name);
+            Versions.Skip(mod, u);
+            lib.Save();
+            o.WriteLine(mod.Name + ": " + u.Latest + " is skipped; a newer one is offered again");
         }
 
         static void LeftoverCmd(Args a, TextWriter o)

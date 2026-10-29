@@ -226,6 +226,15 @@ namespace QuickDeploy
         /// N is clicked the way a click does it, so a test outside can time what follows.</summary>
         void ClickTest()
         {
+            var page = Environment.GetEnvironmentVariable("HD2QD_CLICK_TEST") ?? "";
+            if (page.StartsWith("page:"))
+            {
+                // "page:settings" (pictures only): that page shown 3 s after the start
+                var tp = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+                tp.Tick += (s, e) => { tp.Stop(); ShowPage(page.Substring(5)); };
+                tp.Start();
+                return;
+            }
             if (Environment.GetEnvironmentVariable("HD2QD_CLICK_TEST") == "storage")
             {
                 // "storage": the mod folders with a couple of mods ticked, for their picture
@@ -2924,7 +2933,108 @@ namespace QuickDeploy
                 list.Children.Add(Band(line, band++));
             }
             Storages.Children.Add(Card(list));
+            KeptVersions();
             OldVersions();
+        }
+
+        readonly HashSet<string> prevPick = new HashSet<string>();
+
+        /// <summary>The versions kept for a rollback (Versions; the user, 2026-10-30): seen, opened,
+        /// rolled back to, deleted. Apart from the old versions left over, which no mod uses.</summary>
+        void KeptVersions()
+        {
+            var kept = (st?.Mods ?? new List<ModRow>()).Where(m => m.PrevPath != null).ToList();
+            if (kept.Count == 0) return;
+            prevPick.RemoveWhere(id => !kept.Any(m => m.Id == id));
+            Storages.Children.Add(Label("st_prev", new Thickness(0, 20, 0, 6)));
+            var box = new StackPanel();
+            var bar = new DockPanel { Margin = new Thickness(0, 0, 0, 10) };
+            int picked = kept.Count(m => prevPick.Contains(m.Id));
+            var drop = new Button
+            {
+                Content = picked > 0 ? Texts.F("st_old_drop_n", picked) : Texts.Get("st_old_drop"), Style = (Style)FindResource("Danger"), MinHeight = 34,
+                IsEnabled = picked > 0,
+            };
+            drop.Click += (s, e) => DropKeptVersions();
+            DockPanel.SetDock(drop, Dock.Right);
+            bar.Children.Add(drop);
+            var every = new CheckBox
+            {
+                Style = (Style)FindResource("Tick"), IsChecked = picked == kept.Count, VerticalAlignment = VerticalAlignment.Center,
+                Content = new TextBlock
+                {
+                    Text = Texts.Get("pick_all") + "  ·  " + Texts.F("st_prev_n", kept.Count, Gb(kept.Sum(m => m.PrevBytes))),
+                    FontSize = 12, FontWeight = FontWeights.SemiBold, Foreground = B("Muted"),
+                },
+            };
+            every.Click += (s, e) =>
+            {
+                if (every.IsChecked == true) foreach (var m in kept) prevPick.Add(m.Id);
+                else prevPick.Clear();
+                RenderStorage();
+            };
+            bar.Children.Add(every);
+            box.Children.Add(bar);
+            if (Texts.Hints) box.Children.Add(Small(Texts.Get("st_prev_note"), new Thickness(0, 0, 0, 10)));
+            int band = 0;
+            foreach (var m in kept)
+            {
+                var id = m.Id;
+                var line = new DockPanel { Margin = new Thickness(0, 4, 0, 4) };
+                var tick = new CheckBox { Style = (Style)FindResource("Tick"), IsChecked = prevPick.Contains(id), VerticalAlignment = VerticalAlignment.Center };
+                tick.Click += (s, e) =>
+                {
+                    if (tick.IsChecked == true) prevPick.Add(id); else prevPick.Remove(id);
+                    RenderStorage();
+                };
+                DockPanel.SetDock(tick, Dock.Left);
+                line.Children.Add(tick);
+                var acts = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(12, 0, 0, 0) };
+                var open = new Button { Content = Texts.Get("open"), Style = (Style)FindResource("Ghost"), MinHeight = 28, IsEnabled = m.PrevExists };
+                var path = m.PrevPath;
+                open.Click += (s, e) => OpenFolder(path);
+                acts.Children.Add(open);
+                var back = new Button { Content = Texts.Get("up_rollback_plain"), Style = (Style)FindResource("Ghost"), MinHeight = 28, Margin = new Thickness(8, 0, 0, 0) };
+                back.Click += (s, e) => Rollback(m);
+                acts.Children.Add(back);
+                DockPanel.SetDock(acts, Dock.Right);
+                line.Children.Add(acts);
+                var size = new TextBlock
+                {
+                    Text = Gb(m.PrevBytes), FontFamily = Mono, FontSize = 12, Foreground = B("Muted"), Width = 90,
+                    TextAlignment = TextAlignment.Right, VerticalAlignment = VerticalAlignment.Center,
+                };
+                DockPanel.SetDock(size, Dock.Right);
+                line.Children.Add(size);
+                var words = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+                words.Children.Add(new TextBlock
+                {
+                    Text = m.Name + "  " + (m.PrevVersion != null ? V(m.PrevVersion) : ""), FontSize = 13, Foreground = B("Ink"),
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                });
+                if (m.PrevKept > 0)
+                    words.Children.Add(new TextBlock
+                    {
+                        Text = Texts.F("st_prev_kept", DateTimeOffset.FromUnixTimeSeconds(m.PrevKept).LocalDateTime.ToString("yyyy-MM-dd HH:mm")),
+                        FontSize = 11, Foreground = B("Muted"), FontFamily = Mono,
+                    });
+                line.Children.Add(words);
+                box.Children.Add(Band(line, band++));
+            }
+            Storages.Children.Add(Card(box));
+        }
+
+        async void DropKeptVersions()
+        {
+            var go = (st?.Mods ?? new List<ModRow>()).Where(m => m.PrevPath != null && prevPick.Contains(m.Id)).ToList();
+            if (go.Count == 0) return;
+            long bytes = go.Sum(m => m.PrevBytes);
+            if (!Dialog.AskDanger(this, Texts.F("st_prev_ask", go.Count, Gb(bytes)), Texts.Get("st_old_drop"))) return;
+            var args = new List<string> { "previous", "--delete" };
+            args.AddRange(go.Select(m => m.Id));
+            prevPick.Clear();
+            if (await Act(() => Cli.Run(args.ToArray()), false)) Foot(Texts.F("st_old_done", go.Count, Gb(bytes)), "Blue");
+            Refresh();
         }
 
         /// <summary>The ticked mods deleted from the disk, after one question that names them and their size.</summary>
@@ -5088,6 +5198,7 @@ namespace QuickDeploy
             if (st != null) { RenderNav(); RenderList(); RenderDetail(); }
 
             var text = Texts.F("up_summary", found.Count, upd, Count("current"), Count("unknown"), none);
+            if (Count("skipped") > 0) text += "\n\n" + Texts.F("up_summary_skipped", Count("skipped"));
 #if HAS_NEXUS
             if (noKey > 0) text += "\n\n" + Texts.F("up_summary_key", noKey);
 #endif
@@ -5196,6 +5307,10 @@ namespace QuickDeploy
             if (!string.IsNullOrWhiteSpace(m.SiteVersion) &&
                 !string.Equals((m.SiteVersion ?? "").TrimStart('v', 'V'), (m.ShownVersion ?? "").TrimStart('v', 'V'), StringComparison.OrdinalIgnoreCase))
                 Line("d_site_version", V(m.SiteVersion));
+            // the version kept for a rollback (Versions; the user, 2026-10-30)
+            if (m.PrevPath != null)
+                Line("d_previous", (m.PrevVersion != null ? V(m.PrevVersion) : Texts.Get("up_none")) +
+                                   (m.PrevKept > 0 ? "  ·  " + DateTimeOffset.FromUnixTimeSeconds(m.PrevKept).LocalDateTime.ToString("yyyy-MM-dd") : ""), m.PrevPath);
 
             var u = Checked(m);
             string text, colour = "Muted";
@@ -5214,6 +5329,7 @@ namespace QuickDeploy
                     apply = u.Latest != null;
                     break;
                 case "current": text = Texts.Get("up_current"); colour = "Blue"; break;
+                case "skipped": text = Texts.F("up_skipped", u.Latest ?? "?"); break;
                 case "no_source": text = Texts.Get("up_no_source"); break;
                 case "no_check": text = Texts.F("up_no_check", u.Channel); break;
 #if HAS_NEXUS
@@ -5249,6 +5365,21 @@ namespace QuickDeploy
                 go.Click += (s, e) => ApplyUpdate(m, u);
                 buttons.Add(go);
             }
+            // the newest version skipped, so the check stops offering it, or offered again
+            if (u?.Status == "update" || u?.Status == "skipped")
+            {
+                bool skip = u.Status == "update";
+                var sk = new Button { Content = Texts.Get(skip ? "up_skip" : "up_unskip"), Style = (Style)FindResource("Ghost"), MinHeight = 34 };
+                sk.Click += (s, e) => SkipVersion(m, u, skip);
+                buttons.Add(sk);
+            }
+            if (m.PrevPath != null)
+            {
+                // the version is on the line above, so the button does not say it again
+                var back = new Button { Content = Texts.Get("up_rollback"), Style = (Style)FindResource("Ghost"), MinHeight = 34 };
+                back.Click += (s, e) => Rollback(m);
+                buttons.Add(back);
+            }
             var page = u?.Page ?? m.Page;
             if (page != null)
             {
@@ -5267,6 +5398,36 @@ namespace QuickDeploy
             buttons.Add(set);
             box.Children.Add(Columns(buttons, new Thickness(0, 10, 0, 0)));
             return Panel(box, new Thickness(0, 20, 0, 0));
+        }
+
+        /// <summary>The newest version skipped, so the check stops offering it until a newer one
+        /// comes, or offered again.</summary>
+        async void SkipVersion(ModRow m, UpdateInfo u, bool skip)
+        {
+            if (await Act(() => Cli.Call(() =>
+            {
+                var lib = Library.Load();
+                var mod = lib.Mods.FirstOrDefault(x => x.Id == m.Id) ?? throw new ModError("not in the library any more", "gone");
+                if (skip) Versions.Skip(mod, u); else mod.Skip = null;
+                lib.Save();
+                return skip ? Texts.F("up_skip_done", mod.Name, u.Latest) : "";
+            }), skip))
+                u.Status = skip ? "skipped" : "update";
+            Refresh();
+        }
+
+        /// <summary>The mod back to the version kept, the one it had kept instead; the game follows on the next deploy.</summary>
+        async void Rollback(ModRow m)
+        {
+            if (!m.PrevExists) { Dialog.Tell(this, Texts.F("up_rollback_gone", m.PrevPath)); return; }
+            await Act(() => Cli.Call(() =>
+            {
+                var lib = Library.Load();
+                var mod = lib.Mods.FirstOrDefault(x => x.Id == m.Id) ?? throw new ModError("not in the library any more", "gone");
+                Versions.Rollback(lib, mod);
+                lib.Save();
+                return Texts.F("up_rollback_done", mod.Name, V(Origins.VersionOf(mod).Version ?? Texts.Get("up_none")));
+            }), true);
         }
 
         /// <summary>Why a check failed, in the window's words.</summary>
@@ -6415,6 +6576,20 @@ namespace QuickDeploy
             };
             body.Children.Add(line);
             body.Children.Add(Small(Texts.Get("set_hints_note"), new Thickness(0, 8, 0, 0)));
+
+            // script mods keep the version they had, for a rollback (the user, 2026-10-30)
+            body.Children.Add(Label("set_keep", new Thickness(0, 20, 0, 6)));
+            var kpSw = new CheckBox { Style = (Style)FindResource("Switch"), IsChecked = st?.KeepPrevious == true, VerticalAlignment = VerticalAlignment.Center };
+            var kpLine = new StackPanel { Orientation = Orientation.Horizontal };
+            kpLine.Children.Add(kpSw);
+            kpLine.Children.Add(new TextBlock { Text = Texts.Get("set_keep_on"), Foreground = B("Ink"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 0, 0, 0) });
+            kpSw.Click += async (s, e2) =>
+            {
+                await Exec(kpSw.IsChecked == true ? "keep-previous-on" : "keep-previous-off");
+                Refresh();
+            };
+            body.Children.Add(kpLine);
+            body.Children.Add(Small(Texts.Get("set_keep_note"), new Thickness(0, 8, 0, 0)));
 
             // the jump button by the pointer on a fast wheel (Fling)
             body.Children.Add(Label("set_fling", new Thickness(0, 20, 0, 6)));

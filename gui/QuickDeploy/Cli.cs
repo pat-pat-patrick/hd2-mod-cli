@@ -108,6 +108,11 @@ namespace QuickDeploy
         public List<string> Tags = new List<string>();
         /// <summary>The group the player put it in, else null (Groups: shown only).</summary>
         public string Group;
+        /// <summary>The version kept for a rollback (Versions): its folder (null: none kept), its
+        /// version, when it was replaced (Unix seconds), its size, whether its folder is there.</summary>
+        public string PrevPath, PrevVersion;
+        public long PrevKept, PrevBytes;
+        public bool PrevExists;
         /// <summary>The labels the mod's own manifest declares: read only.</summary>
         public List<string> AutoTags = new List<string>();
         /// <summary>The version shown (the recorded one, else one found in a name) and where it was
@@ -213,6 +218,8 @@ namespace QuickDeploy
         public bool LuaPending;
         /// <summary>The folders of old versions left in the library folder.</summary>
         public List<Leftover> Leftovers = new List<Leftover>();
+        /// <summary>Whether mods with a script keep the version they had when a new one comes.</summary>
+        public bool KeepPrevious;
         /// <summary>The game folder against the library, as the last state read found it.</summary>
         public CheckBlock Check = new CheckBlock();
         /// <summary>Set while another program is writing to the game folder.</summary>
@@ -312,6 +319,7 @@ namespace QuickDeploy
                     Changed = Int(ch, "changed_n"), Copies = Int(ch, "copies"), Checked = Int(ch, "checked"),
                     Wrong = Int(ch, "wrong_n"),
                 };
+            s.KeepPrevious = Bool(d, "keep_previous");
             foreach (var l in List(d, "leftovers").OfType<Dictionary<string, object>>())
                 s.Leftovers.Add(new Leftover { Path = Str(l, "path"), Name = Str(l, "name"), Bytes = Long(l, "bytes") });
             foreach (var c in List(d, "conflicts").OfType<Dictionary<string, object>>())
@@ -378,6 +386,12 @@ namespace QuickDeploy
                 }
                 foreach (var t in List(m, "tags")) if (t is string tag) row.Tags.Add(tag);
                 row.Group = Str(m, "group");
+                var pv = Json.Obj(m, "previous");
+                if (pv != null)
+                {
+                    row.PrevPath = Str(pv, "path"); row.PrevVersion = Str(pv, "version"); row.PrevKept = Long(pv, "kept");
+                    row.PrevBytes = Long(pv, "bytes"); row.PrevExists = Bool(pv, "exists");
+                }
                 foreach (var t in List(m, "auto_tags")) if (t is string tag) row.AutoTags.Add(tag);
                 foreach (var f in List(m, "files").OfType<Dictionary<string, object>>())
                     row.Files.Add(new FileRow { Name = Str(f, "name"), Src = Str(f, "src"), Action = Str(f, "action"), From = Str(f, "from"),

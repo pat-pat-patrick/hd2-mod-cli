@@ -258,6 +258,7 @@ namespace Hd2Mod
             var nexus = new NexusRef { Game = link.Game, Mod = link.Mod, File = link.File, Version = LastFile.Version, Time = LastFile.Time };
             if (had != null)
             {
+                Versions.Keep(lib, cfg, had, folder);
                 had.Options = Manifest.Merged(manifest, had.Options);
                 had.Path = folder;
                 had.Source = page;

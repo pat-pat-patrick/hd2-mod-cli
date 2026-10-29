@@ -206,7 +206,7 @@ namespace Hd2Mod
             };
         }
 
-        static (bool Lua, bool Loader) HasLua(DirectoryInfo folder)
+        internal static (bool Lua, bool Loader) HasLua(DirectoryInfo folder)
         {
             var patches = folder.EnumerateFiles("*", SearchOption.AllDirectories).Where(f => Deploy.Patch.IsMatch(f.Name)).ToList();
             var sig = string.Join("|", patches.Select(f => f.FullName + ":" + f.Length + ":" + f.LastWriteTimeUtc.Ticks));
@@ -391,6 +391,14 @@ namespace Hd2Mod
                     ["shown_version"] = Origins.VersionOf(m).Version, ["version_from"] = Origins.VersionOf(m).From,
                     ["site_author"] = m.Site?.Author, ["site_summary"] = m.Site?.Summary, ["site_version"] = m.Site?.Version,
                     ["tags"] = m.Tags.Cast<object>().ToList(), ["group"] = m.Group,
+                    // the version kept for a rollback (Versions), and the newest one skipped
+                    ["previous"] = m.Previous == null ? null : new Dictionary<string, object>
+                    {
+                        ["version"] = m.Previous.Version, ["kept"] = m.Previous.Kept, ["path"] = m.Previous.Path,
+                        ["exists"] = Directory.Exists(m.Previous.Path),
+                        ["bytes"] = Directory.Exists(m.Previous.Path) ? LibraryBytes(new DirectoryInfo(m.Previous.Path)) : 0L,
+                    },
+                    ["skip"] = m.Skip,
                     ["auto_tags"] = (manifest?.Tags ?? new List<string>()).Cast<object>().ToList(),
                     ["error"] = error,
                 });
@@ -439,6 +447,8 @@ namespace Hd2Mod
                 ["profiles"] = lib.Profiles.Select(p => (object)p.Name).ToList(),
                 ["deploying"] = Deploying(),
                 ["check"] = CheckBlock(lib, game, d),
+                // whether mods with a script keep the version they had (Versions)
+                ["keep_previous"] = Versions.KeepOn(),
                 ["leftovers"] = Ops.Leftovers(lib, null).Select(d => (object)new Dictionary<string, object>
                 {
                     ["path"] = d, ["name"] = System.IO.Path.GetFileName(d), ["bytes"] = LibraryBytes(new DirectoryInfo(d)),

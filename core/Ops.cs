@@ -214,9 +214,8 @@ namespace Hd2Mod
         {
             var mods = Store.ModsDir(cfg);
             if (!Directory.Exists(mods)) return new List<string>();
-            var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var m in lib.Mods)
-                if (!string.IsNullOrEmpty(m.Path)) used.Add(Paths.Abs(m.Path));
+            // the versions kept for a rollback are in use too (Versions)
+            var used = Versions.Used(lib);
             var out_ = new List<string>();
             foreach (var d in Directory.EnumerateDirectories(mods))
                 if (Ours(d, cfg) && !used.Contains(Paths.Abs(d))) out_.Add(Paths.Abs(d));
@@ -291,6 +290,8 @@ namespace Hd2Mod
                 throw new ModError("out of the library and the game, but its folder could not be deleted (" + e.Message + "): " + folder,
                                    "delete_failed", folder);
             }
+            // the version kept for a rollback goes with it
+            try { Versions.Forget(lib, new[] { mod }); } catch (ModError) { }
             return (r, folder, bytes);
         }
 
@@ -319,6 +320,9 @@ namespace Hd2Mod
                     Directory.Delete(x.Folder, true);
                 }
                 catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { failed.Add(x.Folder); }
+            // the versions kept for a rollback go with them
+            foreach (var x in go)
+                try { Versions.Forget(lib, new[] { x.Mod }); } catch (ModError e) { failed.Add(e.Arg ?? x.Mod.Name); }
             return (r, bytes, failed);
         }
 

@@ -180,6 +180,14 @@ namespace Hd2Mod
                 if (Directory.Exists(q)) { m.Path = q; followed++; }
                 else missing++;
             }
+            // the versions kept for a rollback follow too, without being counted as mods
+            foreach (var m in lib.Mods.Where(m => m.Previous != null))
+            {
+                var p = Paths.Abs(m.Previous.Path ?? "").TrimEnd('\\');
+                if (!p.StartsWith(a + "\\", StringComparison.OrdinalIgnoreCase)) continue;
+                var q = b + p.Substring(a.Length);
+                if (Directory.Exists(q)) m.Previous.Path = q;
+            }
             var cfg = Store.Config();
             var list = Json.List(cfg, "library_folders").OfType<string>()
                            .Select(x => string.Equals(Paths.Abs(x).TrimEnd('\\'), a, StringComparison.OrdinalIgnoreCase) ? b : x).ToList();

@@ -11,8 +11,9 @@ namespace Hd2Mod
     public class UpdateInfo
     {
         public string ModId, Name, Channel, Page;
-        /// <summary>"update" (newer there), "current", "unknown" (the mod's own version is not known),
-        /// "no_source", "no_check" (a site without a check), "error".</summary>
+        /// <summary>"update" (newer there), "skipped" (newer there, but the player skipped that one),
+        /// "current", "unknown" (the mod's own version is not known), "no_source", "no_check" (a site
+        /// without a check), "error".</summary>
         public string Status;
         public string Current, Latest, Why;
         /// <summary>GitHub: the release asset to download; Nexus: the newest file's id.</summary>
@@ -85,6 +86,7 @@ namespace Hd2Mod
                 u = busy && m.Nexus != null
                     ? new UpdateInfo { ModId = m.Id, Name = m.Name, Channel = Origins.Of(m).Channel, Page = Origins.Of(m).Page, Status = "error", Why = "nexus_busy" }
                     : One(m, false);
+                Versions.Skipped(m, u);
                 busy |= u.Why == "nexus_busy";
                 out_.Add(u);
                 progress?.Invoke(++i, lib.Mods.Count);
@@ -97,7 +99,7 @@ namespace Hd2Mod
 
         /// <summary>One mod checked on its own channel. A check that cannot be made is a
         /// result too: "no_source", "no_check", or "error" with its reason in Why.</summary>
-        public static UpdateInfo One(Mod m) => One(m, true);
+        public static UpdateInfo One(Mod m) => Versions.Skipped(m, One(m, true));
 
         static UpdateInfo One(Mod m, bool save)
         {
@@ -284,6 +286,7 @@ namespace Hd2Mod
             var unpacked = Ops.SourceFolder(file, Store.Config());
             try { File.Delete(file); } catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { }
             var manifest = Manifest.Read(unpacked);
+            Versions.Keep(lib, Store.Config(), mod, unpacked);
             mod.Options = Manifest.Merged(manifest, mod.Options);
             mod.Path = unpacked;
             mod.Source = u.Page;
