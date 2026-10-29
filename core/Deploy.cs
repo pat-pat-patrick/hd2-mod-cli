@@ -16,6 +16,7 @@ namespace Hd2Mod
     /// <summary>What a deploy would do.</summary>
     public class Diff
     {
+        public NativeConfigs.Plan Native;
         public List<Wanted> All = new List<Wanted>(), Keep = new List<Wanted>(), Writes = new List<Wanted>();
         public List<(string From, string To)> Moves = new List<(string, string)>();
         /// <summary>Files no longer wanted; Replaced: spare files on a wanted name that is rewritten.</summary>
@@ -26,6 +27,7 @@ namespace Hd2Mod
 
     public class DeployResult
     {
+        public int NativeWritten;
         public int Kept, Moved, Written, Deleted, Files, Linked, Copied;
         public long CopiedBytes, SavedBytes;
     }
@@ -153,6 +155,26 @@ namespace Hd2Mod
             }
             // a boot that only starts its own mod goes to the game off the start-up slot, for
             // Boot Mod Loader to run (GuestBoots; the user, 2026-10-26)
+            NativeConfigs.Filter(lib, out_);
+            // Filtering legacy installers can leave holes before a HUD or the loader.
+            // Number the surviving mains and their companions together, preserving order.
+            counters.Clear();
+            var names = new Dictionary<string, string>();
+            foreach (var w in out_)
+            {
+                var match = Patch.Match(w.Name);
+                if (!match.Success) continue;
+                var archive = match.Groups[1].Value;
+                counters.TryGetValue(archive, out var n);
+                counters[archive] = n + 1;
+                names[w.Name] = archive + ".patch_" + n;
+            }
+            foreach (var w in out_)
+            {
+                var suffix = Companions.FirstOrDefault(ext => w.Name.EndsWith(ext, StringComparison.Ordinal)) ?? "";
+                var main = w.Name.Substring(0, w.Name.Length - suffix.Length);
+                if (names.TryGetValue(main, out var name)) w.Name = name + suffix;
+            }
             GuestBoots.Apply(out_);
             return out_;
         }
@@ -307,7 +329,7 @@ namespace Hd2Mod
         public static Diff Compute(Library lib, string game, bool verify = false, Dictionary<string, string> errors = null)
         {
             var data = Data(game);
-            var d = new Diff { All = Plan(lib, errors) };
+            var d = new Diff { All = Plan(lib, errors), Native = NativeConfigs.Prepare(lib, game) };
             var record = Json.Obj(Store.Load("deployed.json"), "files") ?? new Dictionary<string, object>();
             var onDisk = new HashSet<string>(Files(data).Where(f => Managed.IsMatch(f)));
             var byName = new HashSet<string>(d.All.Select(w => w.Name));
@@ -381,18 +403,19 @@ namespace Hd2Mod
             Loaders.ReadAll = true;               // every archive read: a helper is not left out
             try { d = Compute(lib, game, verify); }
             finally { Loaders.ReadAll = false; }
-            var r = new DeployResult { Kept = d.Kept, Moved = d.Moves.Count, Written = d.Writes.Count, Deleted = d.Deleted, Files = d.All.Count };
+            var r = new DeployResult { Kept = d.Kept, Moved = d.Moves.Count, Written = d.Writes.Count, Deleted = d.Deleted, Files = d.All.Count, NativeWritten = d.Native.Changes };
             if (dryRun)
             {
                 if (log != null)
                 {
+                    foreach (var item in d.Native.Items.Where(i => i.Changed || i.TrackingChanged)) log("  native " + (item.Restore ? "restore " : "compose ") + item.Target + " <- " + string.Join(" + ", item.Mods));
                     foreach (var (a, b) in d.Moves) log("  move   " + a + " -> " + b);
                     foreach (var w in d.Writes) log("  write  " + w.Name + "  <- " + w.Src + " (" + w.Mod + ")");
                     foreach (var f in d.Deletes.Concat(d.Replaced)) log("  delete " + f);
                 }
                 return r;
             }
-            if ((d.Moves.Count > 0 || d.Writes.Count > 0 || d.Deleted > 0) && GameRunning())
+            if ((d.Moves.Count > 0 || d.Writes.Count > 0 || d.Deleted > 0 || d.Native.Changes > 0 || d.Native.LegacyChanged) && GameRunning())
                 throw new ModError("the game is running: close it first", "game_running");
             NotWhileBusy();
             using (new Marked(game))
@@ -411,6 +434,7 @@ namespace Hd2Mod
                     r.CopiedBytes += Size(w.Src);
                 }
             }
+            d.Native.Apply();
             // what a manager that purges and copies everything would have written, less what
             // this deploy copied: the running total shown as "saved"
             long total = d.All.Sum(w => Size(w.Src));
@@ -527,6 +551,9 @@ namespace Hd2Mod
             if (game == null) return r;
             var data = Data(game);
             if (!Directory.Exists(data)) return r;
+            var native = plan?.Native ?? NativeConfigs.Prepare(lib, game);
+            r.Checked += native.Items.Count;
+            r.Changed.AddRange(native.Items.Where(i => i.Changed).Select(i => "data/" + i.Target));
             var want = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             foreach (var w in Plan(lib, new Dictionary<string, string>())) want[w.Name] = w.Src;
             var onDisk = new HashSet<string>(Files(data).Where(f => Managed.IsMatch(f)), StringComparer.OrdinalIgnoreCase);
@@ -621,13 +648,17 @@ namespace Hd2Mod
 
         public static int Purge(string game)
         {
+            var native = NativeConfigs.Prepare(Library.Load(), game, true);
             var data = Data(game);
             var files = Files(data).Where(f => Managed.IsMatch(f)).ToList();
             files.Sort(string.CompareOrdinal);
-            if (files.Count > 0 && GameRunning()) throw new ModError("the game is running: close it first", "game_running");
+            if ((files.Count > 0 || native.Changes > 0 || native.LegacyChanged) && GameRunning()) throw new ModError("the game is running: close it first", "game_running");
             NotWhileBusy();
             using (new Marked(game))
-            foreach (var f in files) File.Delete(Paths.Join(data, f));
+            {
+                native.Apply();
+                foreach (var f in files) File.Delete(Paths.Join(data, f));
+            }
             var before = Store.Load("deployed.json");
             Store.Save("deployed.json", new Dictionary<string, object>
             {

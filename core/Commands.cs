@@ -1233,6 +1233,7 @@ namespace Hd2Mod
             var g = Store.GameDir();
             bool dry = a.Flag("--dry-run");
             var s = Deploy.Run(lib, g, dry, a.Flag("--copy"), a.Flag("--verify"), o.WriteLine);
+            if (s.NativeWritten > 0) o.WriteLine((dry ? "would update " : "updated ") + s.NativeWritten + " native configuration file(s)");
             if (dry)
                 o.WriteLine("would keep " + s.Kept + ", move " + s.Moved + ", write " + s.Written + ", delete " + s.Deleted + " of " + s.Files + " files");
             else

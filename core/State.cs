@@ -250,6 +250,7 @@ namespace Hd2Mod
         {
             var errors = new Dictionary<string, string>();
             var d = game != null ? Deploy.Compute(lib, game, verify, errors) : null;
+            var native = d?.Native ?? new NativeConfigs.Plan();
             var data = game != null ? Paths.Join(game, "data") : null;
             var action = new Dictionary<string, (string What, string From)>();
             if (d != null)
@@ -315,6 +316,7 @@ namespace Hd2Mod
                     ["written_bytes"] = Sz(d.Writes),
                     ["copied_bytes"] = Sz(d.Writes.Where(w => !Deploy.SameDrive(w.Src, data))),
                     ["deleted_bytes"] = d.Deletes.Concat(d.Replaced).Sum(f => Deploy.SizeOrZero(Paths.Join(data, f))),
+                    ["native_changed"] = (long)native.Changes,
                 };
             }
             long lf = 0, lb = 0, cf = 0, cb = 0;
@@ -397,6 +399,16 @@ namespace Hd2Mod
             var deletes = d != null ? d.Deletes.Concat(d.Replaced).ToList() : new List<string>();
             deletes.Sort(string.CompareOrdinal);
             var luaCheck = LuaBlock(lib, mods);
+            foreach (var entry in mods.OfType<Dictionary<string, object>>())
+            {
+                var id = Json.Str(entry, "id");
+                if (!native.ModTargets.TryGetValue(id, out var targets)) continue;
+                entry["native_config"] = true;
+                entry["native_targets"] = targets.Cast<object>().ToList();
+                entry["native_changed"] = (long)native.ChangesFor(id);
+                entry["lua"] = false;
+                entry["deploy_bytes"] = Json.Long(entry, "deploy_bytes") + native.Items.Where(i => i.ModIds.Contains(id)).Sum(i => Deploy.SizeOrZero(i.Source));
+            }
             return new Dictionary<string, object>
             {
                 ["tool"] = "hd2-mod-cli", ["version"] = Version, ["game_dir"] = game, ["home"] = Store.Home, ["mods_dir"] = Store.ModsDir(),
@@ -406,6 +418,11 @@ namespace Hd2Mod
                 // the player's groups (Groups): shown only, in the order they were made
                 ["groups"] = lib.Groups.Select(g => (object)new Dictionary<string, object> { ["id"] = g.Id, ["name"] = g.Name, ["parent"] = g.Parent }).ToList(),
                 ["lua_check"] = luaCheck,
+                ["native_configs"] = native.Items.Select(i => (object)new Dictionary<string, object>
+                {
+                    ["target"] = "data/" + i.Target, ["mods"] = i.Mods.Cast<object>().ToList(),
+                    ["action"] = i.Changed || i.TrackingChanged ? (i.Restore ? "restore" : "compose") : "keep", ["sha256"] = i.Hash,
+                }).ToList(),
                 // profiles: whether they are on, the one in use, all of them (Profiles)
                 ["profiles_on"] = lib.ProfilesOn, ["profile"] = lib.ProfilesOn ? lib.Active : null,
                 // the loader in effect, chosen for every profile alike (Loaders); null: none

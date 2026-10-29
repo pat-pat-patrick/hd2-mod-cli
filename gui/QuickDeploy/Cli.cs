@@ -119,7 +119,10 @@ namespace QuickDeploy
         /// <summary>Resources another mod ships too: Conflicts, where the bytes differ and
         /// one version wins, and Shared, where they are the very same bytes.</summary>
         public int Conflicts, Shared;
-        public int Changes => Files.Count(f => f.Action != "keep");
+        public bool NativeConfig;
+        public int NativeChanged;
+        public List<string> NativeTargets = new List<string>();
+        public int Changes => Files.Count(f => f.Action != "keep") + NativeChanged;
         public int Chosen => Options.Sum(o => o.Subs.Count == 0 ? (o.Enabled ? 1 : 0) : (o.Enabled ? o.Subs.Count(x => x.Enabled) : 0));
         public int Choices => Options.Sum(o => o.Subs.Count == 0 ? 1 : o.Subs.Count);
         /// <summary>What a click just changed implies (on, or other options: "pending";
@@ -135,6 +138,7 @@ namespace QuickDeploy
                 if (Error != null) return "broken";
                 if (!Enabled) return "off";
                 if (Changes > 0) return "pending";
+                if (NativeConfig) return "native";
                 if (Files.Count == 0) return "keep";
                 if (Files.All(f => f.Linked)) return "link";
                 if (Files.All(f => !f.Linked)) return "copy";
@@ -187,7 +191,7 @@ namespace QuickDeploy
     class State
     {
         public string GameDir, Home, Version, ModsDir;
-        public int Kept, Moved, Written, Deleted, FileCount, LinkedFiles, CopiedFiles, Deploys;
+        public int Kept, Moved, Written, Deleted, FileCount, LinkedFiles, CopiedFiles, Deploys, NativeChanged;
         public long KeptBytes, MovedBytes, WrittenBytes, CopiedBytes, DeletedBytes, LinkedBytes, CopyBytes, SavedBytes;
         public bool HasSummary;
         public List<string> Deletes = new List<string>();
@@ -217,7 +221,7 @@ namespace QuickDeploy
         public CheckBlock Check = new CheckBlock();
         /// <summary>Set while another program is writing to the game folder.</summary>
         public BusyBlock Deploying;
-        public int Pending => Moved + Written + Deleted;
+        public int Pending => Moved + Written + Deleted + NativeChanged;
     }
 
     class CliResult
@@ -290,6 +294,7 @@ namespace QuickDeploy
                 s.HasSummary = true;
                 s.Kept = Int(sum, "kept"); s.Moved = Int(sum, "moved"); s.Written = Int(sum, "written");
                 s.Deleted = Int(sum, "deleted"); s.FileCount = Int(sum, "files");
+                s.NativeChanged = Int(sum, "native_changed");
                 s.KeptBytes = Long(sum, "kept_bytes"); s.MovedBytes = Long(sum, "moved_bytes"); s.WrittenBytes = Long(sum, "written_bytes");
                 s.CopiedBytes = Long(sum, "copied_bytes"); s.DeletedBytes = Long(sum, "deleted_bytes");
             }
@@ -366,6 +371,8 @@ namespace QuickDeploy
                     SiteAuthor = Str(m, "site_author"), SiteSummary = Str(m, "site_summary"), SiteVersion = Str(m, "site_version"),
                     ShownVersion = Str(m, "shown_version"), VersionFrom = Str(m, "version_from"), DeployBytes = Long(m, "deploy_bytes"),
                     LibraryBytes = Long(m, "library_bytes"),
+                    NativeConfig = Bool(m, "native_config"), NativeChanged = Int(m, "native_changed"),
+                    NativeTargets = List(m, "native_targets").OfType<string>().ToList(),
                 };
                 foreach (var o in List(m, "options").OfType<Dictionary<string, object>>())
                 {

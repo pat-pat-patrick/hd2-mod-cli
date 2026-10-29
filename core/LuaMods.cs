@@ -450,10 +450,12 @@ namespace Hd2Mod
         public static List<ModLua> Of(Library lib, bool knownOnly, out int missing)
         {
             missing = 0;
+            var managed = NativeConfigs.ManagedIds(lib);
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var out_ = new List<ModLua>();
             foreach (var m in lib.Mods)
             {
+                if (managed.Contains(m.Id)) continue;
                 if (!Directory.Exists(m.Path)) continue;
                 List<string> folders;
                 try { folders = Deploy.IncludedFolders(m); }
