@@ -277,15 +277,16 @@ namespace Hd2Mod
             {
                 // the same mods are one entry, and the resources they ship identically another:
                 // those are shared, not fought over
-                var pairs = new List<(List<string> Mods, bool Same, long Count, List<Deploy.Clash> Some)>();
+                var pairs = new List<(List<string> Mods, bool Same, bool Boot, long Count, List<Deploy.Clash> Some)>();
                 foreach (var c in Deploy.Clashes(d.All))
                 {
-                    int i = pairs.FindIndex(p => p.Same == c.Same && p.Mods.SequenceEqual(c.Mods));
-                    if (i < 0) pairs.Add((c.Mods, c.Same, 1, new List<Deploy.Clash> { c }));
+                    bool boot = c.Type == Deploy.LuaType && c.Id == LuaMods.BootId;
+                    int i = pairs.FindIndex(p => p.Same == c.Same && p.Boot == boot && p.Mods.SequenceEqual(c.Mods));
+                    if (i < 0) pairs.Add((c.Mods, c.Same, boot, 1, new List<Deploy.Clash> { c }));
                     else
                     {
                         if (pairs[i].Some.Count < Shown) pairs[i].Some.Add(c);
-                        pairs[i] = (pairs[i].Mods, pairs[i].Same, pairs[i].Count + 1, pairs[i].Some);
+                        pairs[i] = (pairs[i].Mods, pairs[i].Same, pairs[i].Boot, pairs[i].Count + 1, pairs[i].Some);
                     }
                 }
                 // which resources they are (the user, 2026-10-25): the first ones of each pair,
@@ -397,6 +398,29 @@ namespace Hd2Mod
             var deletes = d != null ? d.Deletes.Concat(d.Replaced).ToList() : new List<string>();
             deletes.Sort(string.CompareOrdinal);
             var luaCheck = LuaBlock(lib, mods);
+            // A coordinated start-up slot is still described, but is not an unresolved
+            // resource conflict. Keep it separate from real conflicts between these mods.
+            if (luaCheck != null && !Json.Bool(luaCheck, "pending"))
+            {
+                var owner = Json.Str(luaCheck, "boot_owner");
+                var entries = mods.OfType<Dictionary<string, object>>().ToList();
+                foreach (var c in clashes.OfType<Dictionary<string, object>>())
+                {
+                    var resources = Json.List(c, "resources").OfType<Dictionary<string, object>>().ToList();
+                    if (resources.Count != 1 || Json.Str(resources[0], "type") != "lua" ||
+                        Json.Str(resources[0], "id") != LuaMods.BootId.ToString("x16")) continue;
+                    var names = Json.List(c, "mods").OfType<string>().ToList();
+                    bool coordinated = owner != null && names.Count > 1 && names.All(name =>
+                    {
+                        var m = entries.FirstOrDefault(x => Json.Str(x, "name") == name);
+                        if (m == null) return false;
+                        if (Json.Str(m, "id") == owner) return true;
+                        var info = Json.Obj(m, "lua_info");
+                        return info != null && (Json.Bool(info, "chef_runs") || Json.Bool(info, "guest") || Json.Bool(info, "helper"));
+                    });
+                    if (coordinated) c["managed_boot"] = true;
+                }
+            }
             return new Dictionary<string, object>
             {
                 ["tool"] = "hd2-mod-cli", ["version"] = Version, ["game_dir"] = game, ["home"] = Store.Home, ["mods_dir"] = Store.ModsDir(),

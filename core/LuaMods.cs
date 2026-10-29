@@ -118,7 +118,7 @@ namespace Hd2Mod
 
         // what was found in each archive, kept between runs in lua_scan.json by the archive's
         // size and time; a new version of the checks reads every archive again
-        const int ScanVersion = 5;      // 5: UsesChefApi reads scopes (HUDdle, 2026-10-27)
+        const int ScanVersion = 6;      // 5: UsesChefApi reads scopes (HUDdle, 2026-10-27); 6: HD2FM1 data rows, guarded jit.off()
 
         /// <summary>Chef Shared Loader 1.2.1 reads no Lua resource whose row size is over this
         /// (`MAX_LUA = 4 * 1024 * 1024`, `if size > MAX_LUA` in its core; its log: "Lua resource(s)
@@ -151,6 +151,9 @@ namespace Hd2Mod
                         int n = (int)Math.Min(BitConverter.ToUInt32(data, 0), (uint)(data.Length - 8));
                         var body = new byte[n];
                         Array.Copy(data, 8, body, 0, n);
+                        // Some file-mod installers store configuration data in Lua-typed rows.
+                        // Keep deploying the resource, but do not compile its binary payload.
+                        if (r.Id != BootId && r.Id != ChefCoreId && FileModPayload(body)) continue;
                         var s = Look(r.Id, body);
                         s.Size = r.Size;
                         out_.Add(s);
@@ -162,6 +165,32 @@ namespace Hd2Mod
                 diskDirty = true;
             }
             return out_;
+        }
+
+        static bool FileModPayload(byte[] body)
+        {
+            if (body.Length < 10 || Encoding.ASCII.GetString(body, 0, 6) != "HD2FM1") return false;
+            uint length = BitConverter.ToUInt32(body, 6);
+            if (length == 0 || length > 65536 || length > body.Length - 10) return false;
+            string header;
+            try { header = new UTF8Encoding(false, true).GetString(body, 10, (int)length); }
+            catch (DecoderFallbackException) { return false; }
+            if (header.IndexOf('\0') >= 0) return false;
+            var lines = header.Split('\n').Select(x => x.TrimEnd('\r')).ToArray();
+            string Field(string key)
+            {
+                var values = lines.Where(x => x.StartsWith(key + "=", StringComparison.Ordinal)).ToArray();
+                return values.Length == 1 ? values[0].Substring(key.Length + 1) : null;
+            }
+            var name = Field("name");
+            var target = Field("target");
+            if (string.IsNullOrWhiteSpace(name) || target == null ||
+                !target.StartsWith("data/game/", StringComparison.Ordinal) ||
+                !target.EndsWith(".dl_bin", StringComparison.Ordinal) ||
+                target.IndexOfAny(new[] { '\\', ':', '\0' }) >= 0 ||
+                target.Split('/').Any(x => x.Length == 0 || x == "." || x == "..")) return false;
+            return long.TryParse(Field("size"), NumberStyles.None, CultureInfo.InvariantCulture, out var size) &&
+                   size > 0 && size == body.Length - 10L - length;
         }
 
         static void LoadDisk()
@@ -360,12 +389,23 @@ namespace Hd2Mod
                         prev == LuaSyntax.T.Eq || prev == LuaSyntax.T.Ne || prev == LuaSyntax.T.Elseif || prev == LuaSyntax.T.While ||
                         next == LuaSyntax.T.And || next == LuaSyntax.T.Or || next == LuaSyntax.T.Then || next == LuaSyntax.T.Eq || next == LuaSyntax.T.Ne)
                         tested = true;
-                    if (next == '.' || next == ':' || next == '[') used = true;
+                    if ((next == '.' || next == ':' || next == '[') && !(lib == "jit" && OptionalJitOff(t, i))) used = true;
                 }
                 if (used && !defined && !tested) found.Add(lib);
             }
             return found.ToList();
         }
+
+        // Recognise the installer's optional jit.off() without treating a test elsewhere
+        // in the script as protection for later, unconditional uses of the same global.
+        static bool OptionalJitOff(List<LuaSyntax.Token> t, int i) =>
+            i >= 8 && i + 4 < t.Count && t[i - 8].Kind == LuaSyntax.T.If &&
+            t[i - 7].Kind == LuaSyntax.T.Name && t[i - 7].Text == "rawget" && t[i - 6].Kind == '(' &&
+            t[i - 5].Kind == LuaSyntax.T.Name && t[i - 5].Text == "_G" && t[i - 4].Kind == ',' &&
+            t[i - 3].Kind == LuaSyntax.T.String && t[i - 3].Text == "jit" && t[i - 2].Kind == ')' &&
+            t[i - 1].Kind == LuaSyntax.T.Then && t[i + 1].Kind == '.' &&
+            t[i + 2].Kind == LuaSyntax.T.Name && t[i + 2].Text == "off" &&
+            t[i + 3].Kind == '(' && t[i + 4].Kind == ')';
 
         /// <summary>local chef = ... at the script's top (Chef Shared Loader hands its interface to
         /// the script as its argument), then chef.x / chef:x with that chef never tested (if chef,

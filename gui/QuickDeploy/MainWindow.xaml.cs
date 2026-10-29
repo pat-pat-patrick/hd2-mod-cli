@@ -4542,10 +4542,12 @@ namespace QuickDeploy
             {
                 var box = new StackPanel();
                 var others = string.Join(" / ", c.Mods.Where(x => x != m.Name));
-                var clash = Selectable.Text(Texts.F(c.Same ? "same" : "clash", c.Count, others), 14, c.Same ? "Ink" : "Yellow");
+                var clash = Selectable.Text(Texts.F(c.ManagedBoot ? "managed_boot" : c.Same ? "same" : "clash", c.Count, others), 14, c.Same || c.ManagedBoot ? "Ink" : "Yellow");
                 clash.FontWeight = FontWeights.SemiBold;
                 box.Children.Add(clash);
-                if (c.Same) box.Children.Add(Small(Texts.Get("same_tip"), new Thickness(0, 6, 0, 0)));
+                // a boot the loader coordinates has nothing to choose
+                if (c.ManagedBoot) box.Children.Add(Small(Texts.Get("managed_boot_tip"), new Thickness(0, 6, 0, 0)));
+                else if (c.Same) box.Children.Add(Small(Texts.Get("same_tip"), new Thickness(0, 6, 0, 0)));
                 else
                 {
                     // the one in effect shown at once, and chosen here by a click (the user, 2026-10-27:
@@ -4579,7 +4581,7 @@ namespace QuickDeploy
                 if (list.Children.Count > 0) box.Children.Add(list);
                 if (!st.ResourceNames && c.Resources.Count > 0 && Texts.Hints)
                     box.Children.Add(Small(Texts.Get("clash_no_names"), new Thickness(0, 8, 0, 0)));
-                Detail.Children.Add(new Border { BorderBrush = B(c.Same ? "Grid" : "Yellow"), BorderThickness = new Thickness(1), Padding = new Thickness(12), Margin = new Thickness(0, 16, 0, 0), Child = box });
+                Detail.Children.Add(new Border { BorderBrush = B(c.Same || c.ManagedBoot ? "Grid" : "Yellow"), BorderThickness = new Thickness(1), Padding = new Thickness(12), Margin = new Thickness(0, 16, 0, 0), Child = box });
             }
 
             // how it is deployed

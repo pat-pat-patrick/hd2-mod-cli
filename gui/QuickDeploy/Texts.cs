@@ -246,6 +246,9 @@ namespace QuickDeploy
             ["clash"] = ("{0} resources also in {1}", "与 {1} 有 {0} 处资源冲突"),
             ["clash_1"] = ("1 resource also in {1}", "与 {1} 有 1 处资源冲突"),
             ["clash_win"] = ("By the load order, {0}'s version is used.", "按加载顺序，{0} 的版本生效。"),
+            // a coordinated boot is always the one start-up resource, so no count
+            ["managed_boot"] = ("Start-up script coordinated with {1}", "启动脚本已与 {1} 协调"),
+            ["managed_boot_tip"] = ("The selected loader handles these start-up scripts. They are not counted as unresolved conflicts.", "当前加载器负责执行这些启动脚本，不计入未解决冲突。"),
             ["clash_more"] = ("and {0} more", "另有 {0} 处"),
             ["drag_n"] = ("{0} mods", "{0} 个 MOD"),
             // the mods' Lua (LuaMods), before a deploy

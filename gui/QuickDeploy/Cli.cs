@@ -155,7 +155,7 @@ namespace QuickDeploy
         public int Count;
         public string Winner;
         /// <summary>Every mod ships the very same bytes: shared, not fought over.</summary>
-        public bool Same;
+        public bool Same, ManagedBoot;
         /// <summary>The first of its resources: type, id, and name when HD2SDK's list knows it.</summary>
         public List<(string Type, string Id, string Name)> Resources = new List<(string, string, string)>();
     }
@@ -317,7 +317,7 @@ namespace QuickDeploy
             foreach (var c in List(d, "conflicts").OfType<Dictionary<string, object>>())
                 s.Clashes.Add(new Clash
                 {
-                    Mods = List(c, "mods").OfType<string>().ToList(), Count = Int(c, "count"), Winner = Str(c, "winner"), Same = Bool(c, "same"),
+                    Mods = List(c, "mods").OfType<string>().ToList(), Count = Int(c, "count"), Winner = Str(c, "winner"), Same = Bool(c, "same"), ManagedBoot = Bool(c, "managed_boot"),
                     Resources = List(c, "resources").OfType<Dictionary<string, object>>().Select(r => (Str(r, "type"), Str(r, "id"), Str(r, "name"))).ToList(),
                 });
             s.ResourceNames = Bool(d, "resource_names");
@@ -403,7 +403,7 @@ namespace QuickDeploy
                     }
                     row.Lu = lu;
                 }
-                row.Conflicts = s.Clashes.Where(c => !c.Same && c.Mods.Contains(row.Name)).Sum(c => c.Count);
+                row.Conflicts = s.Clashes.Where(c => !c.Same && !c.ManagedBoot && c.Mods.Contains(row.Name)).Sum(c => c.Count);
                 row.Shared = s.Clashes.Where(c => c.Same && c.Mods.Contains(row.Name)).Sum(c => c.Count);
                 s.Mods.Add(row);
             }
