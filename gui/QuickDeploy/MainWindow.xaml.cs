@@ -33,6 +33,8 @@ namespace QuickDeploy
         readonly HashSet<string> picked = new HashSet<string>();
         bool busy, overMax, acrylic, descOpen, checking;
         string lastDone;
+        // what the download under way is doing, while one is (NexusInstall)
+        string fetchLine;
         /// <summary>The loader panel's i button: it opens the details (LoaderInfo).</summary>
         FrameworkElement loaderInfoBtn;
         /// <summary>The details, while open: the left column is drawn anew on every state, and the popup
@@ -1502,6 +1504,8 @@ namespace QuickDeploy
             // put right is not said here: the Deploy button already counts that (the user,
             // 2026-10-25: a library waiting to be deployed is not a fault)
             else if (st.Check.Wrong > 0) Foot(Texts.F("mismatch", st.Check.Wrong), "Yellow");
+            // a download on its way: the list is free meanwhile, and a state read must not hide it
+            else if (fetchLine != null) Foot(fetchLine, "Blue");
             else if (lastDone != null) Foot(Texts.F("done", lastDone), "Blue");
             else if (st.Pending == 0) Foot(Texts.Get("synced"), "Blue");
             else Foot(Texts.F("pending", st.Written, st.Moved, st.Deleted, Texts.Size(st.CopiedBytes)), "Yellow");
@@ -3760,33 +3764,76 @@ namespace QuickDeploy
                         continue;
                     }
                     if (Nexus.Credential() == null && !await AskKey()) continue;
-                    while (busy) await Task.Delay(200);
                     downloading = Texts.F("dl_unnamed", link.Mod, link.File);
                     ShowPage("download");
-                    long shown = 0;
-                    await Act(() => Cli.Call(() =>
-                    {
-                        var (mod, replaced) = Nexus.Install(link, Nexus.Credential(), (done, total) =>
-                        {
-                            // the footer, at most every 128 KB
-                            if (done - shown < 128 * 1024 && done != total) return;
-                            shown = done;
-                            Dispatcher.BeginInvoke(new Action(() =>
-                            {
-                                var text = total > 0 ? Texts.F("nx_progress", Texts.Size(done), Texts.Size(total), done * 100 / total)
-                                                     : Texts.F("nx_progress_n", Texts.Size(done));
-                                Foot(text, "Blue");
-                                if (progressText != null) progressText.Text = text;
-                            }));
-                        });
-                        return Texts.F(replaced ? "nx_replaced" : "nx_added", mod.Name);
-                    }), true);
+                    var clock = System.Diagnostics.Stopwatch.StartNew();
+                    var (r, mod, replaced) = await NexusInstall(link, text => { if (progressText != null) progressText.Text = text; });
                     downloading = null;
                     progressText = null;
+                    if (!Refused(r) && r.Ok)
+                        lastDone = Texts.F("took", Texts.F(replaced ? "nx_replaced" : "nx_added", mod.Name), Seconds(clock.Elapsed.TotalSeconds));
+                    Refresh();
                     RenderDownloads();
                 }
             }
             finally { linking = false; }
+        }
+
+        // one download at a time, apart from the queue of changes
+        readonly System.Threading.SemaphoreSlim fetchGate = new System.Threading.SemaphoreSlim(1, 1);
+
+        /// <summary>A Nexus file downloaded and unpacked in the background with the window free,
+        /// then put in the library in the queue's turn. A big file stood at 100% for over a
+        /// minute while it unpacked, the list held all the while, with no word whether it had
+        /// failed (the user, 2026-10-30): each stage is said now, in the bottom line and to show.</summary>
+        async Task<(CliResult R, Mod Mod, bool Replaced)> NexusInstall(NxmLink link, Action<string> show)
+        {
+            await fetchGate.WaitAsync();
+            var unpacking = new System.Diagnostics.Stopwatch();
+            var ticker = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+            void Say(string text)
+            {
+                fetchLine = text;
+                Foot(text, "Blue");
+                show(text);
+            }
+            ticker.Tick += (s, e) => Say(Texts.F("nx_unpacking", (int)unpacking.Elapsed.TotalSeconds));
+            try
+            {
+                long shown = 0;
+                Nexus.Fetched f = null;
+                var r = await Task.Run(() => Cli.Call(() =>
+                {
+                    f = Nexus.Fetch(link, Nexus.Credential(), (done, total) =>
+                    {
+                        // at most every 128 KB
+                        if (done - shown < 128 * 1024 && done != total) return;
+                        shown = done;
+                        var text = total > 0 ? Texts.F("nx_progress", Texts.Size(done), Texts.Size(total), done * 100 / total)
+                                             : Texts.F("nx_progress_n", Texts.Size(done));
+                        Dispatcher.BeginInvoke(new Action(() => Say(text)));
+                    }, () => Dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        unpacking.Start();
+                        Say(Texts.F("nx_unpacking", 0));
+                        ticker.Start();
+                    })));
+                    return "";
+                }));
+                ticker.Stop();
+                if (!r.Ok) return (r, null, false);
+                Say(Texts.Get("nx_adding"));
+                Mod mod = null;
+                bool replaced = false;
+                r = await Queued(() => Cli.Call(() => { (mod, replaced) = Nexus.Put(f); return ""; }));
+                return (r, mod, replaced);
+            }
+            finally
+            {
+                ticker.Stop();
+                fetchLine = null;
+                fetchGate.Release();
+            }
         }
 #endif
 
@@ -5466,19 +5513,8 @@ namespace QuickDeploy
 #if HAS_NEXUS
             if (Nexus.Credential() == null && !await AskKey()) return;
             var clock = System.Diagnostics.Stopwatch.StartNew();
-            long shown = 0;
-            var r = await Exec(() => Cli.Call(() =>
-            {
-                var link = new NxmLink { Game = Nexus.Game, Mod = m.NexusMod, File = u.LatestFile };
-                var (mod, _) = Nexus.Install(link, Nexus.Credential(), (done, total) =>
-                {
-                    if (done - shown < 128 * 1024 && done != total) return;
-                    shown = done;
-                    Dispatcher.BeginInvoke(new Action(() => Foot(total > 0 ? Texts.F("nx_progress", Texts.Size(done), Texts.Size(total), done * 100 / total)
-                                                                           : Texts.F("nx_progress_n", Texts.Size(done)), "Blue")));
-                });
-                return Texts.F("up_done", mod.Name, u.Latest);
-            }));
+            var link = new NxmLink { Game = Nexus.Game, Mod = m.NexusMod, File = u.LatestFile };
+            var (r, mod, _) = await NexusInstall(link, text => { });
             if (!r.Ok && r.Refused?.Kind == "nexus_refused")
             {
                 Process.Start(new ProcessStartInfo(u.Page ?? m.Page) { UseShellExecute = true });
@@ -5486,7 +5522,7 @@ namespace QuickDeploy
             }
             else if (!Refused(r) && r.Ok)
             {
-                lastDone = Texts.F("took", Last(r.Out), Seconds(clock.Elapsed.TotalSeconds));
+                lastDone = Texts.F("took", Texts.F("up_done", mod.Name, u.Latest), Seconds(clock.Elapsed.TotalSeconds));
                 updates.Remove(m.Id);
                 updated.Add(m.Id);
             }

@@ -205,19 +205,65 @@ namespace Hd2Mod
         /// <summary>A link's file downloaded and put in the library: a mod already there from the
         /// same Nexus mod gets it as its new version (its place, on/off and options kept);
         /// another is added at the bottom, on.</summary>
-        public static (Mod Mod, bool Replaced) Install(NxmLink link, string key, Action<long, long> progress = null)
+        public static (Mod Mod, bool Replaced) Install(NxmLink link, string key, Action<long, long> progress = null) =>
+            Put(Fetch(link, key, progress));
+
+        /// <summary>A file downloaded and unpacked, not in the library yet (Fetch, then Put).</summary>
+        public class Fetched
         {
-            var clock = System.Diagnostics.Stopwatch.StartNew();
-            long bytes = 0;
+            public NxmLink Link;
+            public string Folder, ModName, Page;
+            public NexusRef Nexus;
+            public long Bytes;
+            public System.Diagnostics.Stopwatch Clock;
+            /// <summary>Seconds the download and the unpacking took (-1: not reached), and the
+            /// archive's kind: kept in the history, to tell which of them a slow one spent its time on.</summary>
+            public double Downloaded = -1, Unpacked = -1;
+            public string Archive;
+        }
+
+        /// <summary>The first half of Install: the download and its unpacking, which take long for
+        /// a big file and touch nothing but a new folder, so the window lets the player go on
+        /// meanwhile (the user, 2026-10-30). unpacking: called once the download is whole.</summary>
+        public static Fetched Fetch(NxmLink link, string key, Action<long, long> progress = null, Action unpacking = null)
+        {
+            var f = new Fetched { Link = link, Clock = System.Diagnostics.Stopwatch.StartNew() };
             try
             {
-                var r = InstallNow(link, key, (done, total) => { bytes = done; progress?.Invoke(done, total); });
-                Remember(link, r.Mod.Name, r.Replaced ? "replaced" : "added", bytes, clock.Elapsed.TotalSeconds, null);
+                if (link.Game != Game) throw new ModError("this link is for another game: " + link.Game, "other_game", link.Game);
+                if (string.IsNullOrEmpty(key)) throw new ModError("not signed in to Nexus Mods", "no_key");
+                var (file, modName) = Download(link, key, (done, total) => { f.Bytes = done; progress?.Invoke(done, total); });
+                f.Downloaded = f.Clock.Elapsed.TotalSeconds;
+                f.Archive = Path.GetExtension(file).TrimStart('.').ToLowerInvariant();
+                unpacking?.Invoke();
+                // unpacked beside it in the mod folder: the archive goes, only the mod's folder stays
+                f.Folder = Ops.SourceFolder(file, Store.Config());
+                f.Unpacked = f.Clock.Elapsed.TotalSeconds - f.Downloaded;
+                try { File.Delete(file); } catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { }
+                f.ModName = modName;
+                f.Page = Page(new NexusRef { Game = link.Game, Mod = link.Mod });
+                f.Nexus = new NexusRef { Game = link.Game, Mod = link.Mod, File = link.File, Version = LastFile.Version, Time = LastFile.Time };
+                return f;
+            }
+            catch (ModError e)
+            {
+                if (e.Kind != "other_game") Remember(f, null, "failed", e.Kind ?? e.Message);
+                throw;
+            }
+        }
+
+        /// <summary>The second half of Install: the folder Fetch made put in the library.</summary>
+        public static (Mod Mod, bool Replaced) Put(Fetched f)
+        {
+            try
+            {
+                var r = PutNow(f);
+                Remember(f, r.Mod.Name, r.Replaced ? "replaced" : "added", null);
                 return r;
             }
             catch (ModError e)
             {
-                if (e.Kind != "other_game") Remember(link, null, "failed", bytes, clock.Elapsed.TotalSeconds, e.Kind ?? e.Message);
+                Remember(f, null, "failed", e.Kind ?? e.Message);
                 throw;
             }
         }
@@ -227,35 +273,35 @@ namespace Hd2Mod
         public static List<Dictionary<string, object>> History() =>
             Json.List(Store.Load("nexus.json"), "history").OfType<Dictionary<string, object>>().ToList();
 
-        static void Remember(NxmLink link, string name, string result, long bytes, double seconds, string why)
+        static void Remember(Fetched f, string name, string result, string why)
         {
+            var link = f.Link;
             var d = Store.Load("nexus.json");
             var h = Json.List(d, "history");
-            h.Insert(0, new Dictionary<string, object>
+            var row = new Dictionary<string, object>
             {
                 ["time"] = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture),
                 ["game"] = link.Game, ["mod"] = link.Mod, ["file"] = link.File, ["name"] = name, ["result"] = result,
-                ["bytes"] = bytes, ["seconds"] = Math.Round(seconds, 2), ["why"] = why,
-            });
+                ["bytes"] = f.Bytes, ["seconds"] = Math.Round(f.Clock.Elapsed.TotalSeconds, 2), ["why"] = why,
+            };
+            if (f.Downloaded >= 0) row["download_seconds"] = Math.Round(f.Downloaded, 2);
+            if (f.Unpacked >= 0) row["unpack_seconds"] = Math.Round(f.Unpacked, 2);
+            if (f.Archive != null) row["archive"] = f.Archive;
+            h.Insert(0, row);
             d["history"] = h;
             Store.Save("nexus.json", d);
         }
 
 
-        static (Mod Mod, bool Replaced) InstallNow(NxmLink link, string key, Action<long, long> progress)
+        static (Mod Mod, bool Replaced) PutNow(Fetched f)
         {
-            if (link.Game != Game) throw new ModError("this link is for another game: " + link.Game, "other_game", link.Game);
-            if (string.IsNullOrEmpty(key)) throw new ModError("not signed in to Nexus Mods", "no_key");
-            var (file, modName) = Download(link, key, progress);
+            var link = f.Link;
+            string folder = f.Folder, page = f.Page, modName = f.ModName;
+            var nexus = f.Nexus;
             var cfg = Store.Config();
-            var folder = Ops.SourceFolder(file, cfg);
-            // unpacked beside it in the mod folder: the archive goes, only the mod's folder stays
-            var page = Page(new NexusRef { Game = link.Game, Mod = link.Mod });
-            try { File.Delete(file); } catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { }
             var lib = Library.Load();
             var manifest = Manifest.Read(folder);
             var had = lib.Mods.FirstOrDefault(m => m.Nexus != null && m.Nexus.Game == link.Game && m.Nexus.Mod == link.Mod);
-            var nexus = new NexusRef { Game = link.Game, Mod = link.Mod, File = link.File, Version = LastFile.Version, Time = LastFile.Time };
             if (had != null)
             {
                 Versions.Keep(lib, cfg, had, folder);

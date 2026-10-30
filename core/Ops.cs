@@ -157,6 +157,12 @@ namespace Hd2Mod
         static bool IsZip(string path)
         {
             if (!File.Exists(path)) return false;
+            // a zip starts "PK": anything else is not opened as one, as .NET looks for a zip's end
+            // record by reading the whole file backwards -- 40 s for a 300 MB 7z, twice per
+            // download, all of it at 100% (the user, 2026-10-30)
+            var head = new byte[4];
+            using (var f = File.OpenRead(path))
+                if (f.Read(head, 0, 4) < 4 || head[0] != 'P' || head[1] != 'K') return false;
             try
             {
                 using (ZipFile.OpenRead(path)) return true;
