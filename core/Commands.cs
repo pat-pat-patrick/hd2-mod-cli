@@ -961,7 +961,8 @@ namespace Hd2Mod
         static string LoaderName(string kind, ModLua ml) =>
             kind == "bml" ? "Boot Mod Loader" + (ml?.Boot?.BootVersion != null ? " " + ml.Boot.BootVersion : "")
             : kind == "chef" ? "Chef Shared Loader" : kind == "chef_stub" ? "Chef Shared Loader's start-up stub"
-            : kind == "bsl" ? "Bingus Shared Loader" : kind == "other" ? (ml != null ? ml.Mod.Name + "'s own start-up script" : "another start-up script")
+            : kind == "bsl" ? "Bingus Shared Loader" : kind == "mdl3" ? "MDL3" + (ml?.Boot?.BootVersion != null ? " " + ml.Boot.BootVersion : "")
+            : kind == "other" ? (ml != null ? ml.Mod.Name + "'s own start-up script" : "another start-up script")
             : "none (the game's own)";
 
         static void LuaCmd(Args a, TextWriter o)
@@ -1023,7 +1024,7 @@ namespace Hd2Mod
             {
                 var what = new List<string>();
                 if (ml.Loader != null) what.Add("loader: " + LoaderName(ml.Loader == "chef" ? "chef" : ml.Loader, ml));
-                if (ml.Needs == "any") what.Add("needs a loader (" + Have("bml", "chef", "bsl") + ")");
+                if (ml.Needs == "any") what.Add("needs a loader (" + Have("bml", "chef", "bsl", "mdl3") + ")");
                 if (ml.Needs == "chef") what.Add("needs Chef Shared Loader" + (ml.NeedsWhy == "declared" ? ", as the mod declares" : ml.NeedsWhy == "api" ? ": its script calls the chef interface that loader provides" : "") + " (" + Have("chef") + ")");
                 if (ml.PackOfName != null) what.Add("translation pack of " + (ml.PackOf?.Name ?? ml.PackOfName));
                 foreach (var s in ml.Broken)

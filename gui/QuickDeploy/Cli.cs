@@ -38,9 +38,9 @@ namespace QuickDeploy
     /// <summary>A mod's Lua, as the core read it from its archives (LuaMods).</summary>
     class LuaInfo
     {
-        /// <summary>"any", "chef" or null; a loader itself: "bml", "chef", "bsl".</summary>
+        /// <summary>"any", "chef" or null; a loader itself: "bml", "chef", "bsl", "mdl3".</summary>
         public string Needs, Loader, LoaderVersion;
-        /// <summary>Its own start-up script's kind (bml, chef_stub, chef, bsl, other), else null.</summary>
+        /// <summary>Its own start-up script's kind (bml, chef_stub, chef, bsl, mdl3, other), else null.</summary>
         public string Boot;
         public List<string> Scripts = new List<string>();
         public List<(string Script, int Line, string Message, string Kind, List<string> Jit, bool LuaJitBytecode)> Broken =
@@ -90,7 +90,7 @@ namespace QuickDeploy
         /// <summary>The name the mod came with, when the player gave it another one.</summary>
         public string RealName;
         public bool Enabled, Exists, HasManifest, SameDrive, Lua, Loader;
-        /// <summary>"bml", "chef", "bsl" for a loader, else null.</summary>
+        /// <summary>"bml", "chef", "bsl", "mdl3" for a loader, else null.</summary>
         public string LoaderKind;
         /// <summary>Its Lua scripts, when it has any.</summary>
         public LuaInfo Lu;

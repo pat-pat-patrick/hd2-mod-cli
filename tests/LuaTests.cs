@@ -140,6 +140,27 @@ namespace Hd2Mod.Tests
             Assert.Empty(Jit("function f(bit) return bit.band(1) end"));                      // a parameter
         }
 
+        /// <summary>MDL3 3.0.0-dev.18's boot (2026-10-30) requires bit only inside a function its
+        /// FFI path hands ffi: that is no use the game's Lua meets. The same require anywhere
+        /// else still counts, and so does a parameter's library outside its function.</summary>
+        [Fact]
+        public void LibrariesInsideAFunctionHandedThemDoNotCount()
+        {
+            const string slots = "function M.resolve_slots(ffi, platform)\n  local bit = package.loaded.bit or require('bit')\n  return bit.band(1, 2)\nend\n";
+            Assert.Empty(Jit(slots));
+            Assert.Empty(Jit("local function f(jit, x) local ffi = require('ffi') return ffi.cast('int', x) end"));
+            Assert.Empty(Jit("function a.b:c(bit) return bit.bxor(1, 2) end"));
+            Assert.Empty(Jit("local f = function(ffi) return function() return require('bit') end end"));   // nested
+            Assert.Empty(Jit("function f(ffi) if x then do local bit = require('bit') end end end"));     // blocks
+            // must fail: the same outside it, after it, or a library it was not handed
+            Assert.Equal(new[] { "bit" }, Jit("local bit = package.loaded.bit or require('bit')\nreturn bit.band(1, 2)"));
+            Assert.Equal(new[] { "bit" }, Jit(slots + "local bit = require('bit')"));
+            Assert.Equal(new[] { "bit" }, Jit("function f(bit) end\nx = bit.band(1)"));
+            Assert.Equal(new[] { "ffi" }, Jit("function f(bit) local ffi = require('ffi') end"));
+            Assert.Equal(new[] { "ffi" }, Jit("function f(x) if x then repeat until x end end\nlocal ffi = require('ffi')"));
+            Assert.Equal(new[] { "ffi" }, Jit("call(function(ffi) end, require('ffi'))"));
+        }
+
         const ulong A1 = 0x1000000000000001, A2 = 0x1000000000000002, A3 = 0x1000000000000003;
 
         string Bml(string version = "0.11.0") => Mod("Boot Mod Loader", new Dictionary<string, byte[]>
@@ -220,6 +241,28 @@ namespace Hd2Mod.Tests
             now = Now();
             Assert.Equal("bml", now.Running);
             Assert.Contains(now.Issues, i => i.Kind == "boot_conflict" && i.Mods[0].Name == "Boot Mod Loader" && i.Mods[1].Name == "Installer");
+        }
+
+        /// <summary>MDL3 3.0.0-dev.18 (2026-10-30) replaces the boot and also names
+        /// CowboyBingusModLoader and Bingus's boot, for the mods made for that loader: it was taken
+        /// for Bingus Shared Loader. Its first line says whose it is.</summary>
+        [Fact]
+        public void Mdl3IsALoaderOfItsOwn()
+        {
+            const string bingus = "local loader = CowboyBingusModLoader\nlocal R_BOOT = '9ba626afa44a3aa3'\n";
+            string Boot(string folder, string text) => Mod(folder, new Dictionary<string, byte[]> { [A + ".patch_0"] = LuaArchive((LuaMods.BootId, text)) });
+            Cli("add", Addon("Lamp", "mods/me/lamp"));
+            Cli("add", Boot("MDL3", "-- MDL3 3.0.0-dev.18 game boot (PUC Lua 5.1). Signed native host 0.4.1,\n-- more\n" + bingus));
+            Assert.Equal("mdl3", Loaders.KindOf(Library.Load().Mods.Single(m => m.Name == "MDL3")));
+            var now = Now();
+            Assert.Equal("mdl3", now.Running);
+            Assert.Empty(now.Issues);                                    // it runs the Addon mods
+            var lua = Cli("lua");
+            Assert.Contains("start-up script (boot): MDL3 (MDL3 3.0.0-dev.18)", lua);
+            Assert.DoesNotContain("Bingus", lua);
+            // must fail: not on the first line, the same boot is not MDL3's
+            Cli("add", Boot("Other", "-- a boot\n-- MDL3 3.0.0-dev.18 game boot (PUC Lua 5.1)\n" + bingus));
+            Assert.Equal("bsl", Loaders.KindOf(Library.Load().Mods.Single(m => m.Name == "Other")));
         }
 
         /// <summary>The user (2026-10-26, "先试试协调方案"): Boot Mod Loader in effect, Chef Shared Loader

@@ -28,7 +28,7 @@ namespace Hd2Mod
         public string ErrorKind;
         /// <summary>LuaJIT libraries it uses without a fallback: "ffi", "bit", "jit".</summary>
         public List<string> Jit = new List<string>();
-        /// <summary>For the script "boot": whose it is ("bml", "chef_stub", "chef", "bsl", "other") and its version.</summary>
+        /// <summary>For the script "boot": whose it is ("bml", "chef_stub", "chef", "bsl", "mdl3", "other") and its version.</summary>
         public string BootKind, BootVersion;
         /// <summary>Whether it wraps the old menus' register calls (a translation pack does).</summary>
         public bool WrapsMenus;
@@ -46,7 +46,7 @@ namespace Hd2Mod
     {
         public Mod Mod;
         public List<LuaScript> Scripts = new List<LuaScript>();
-        /// <summary>A loader itself: "bml", "chef", "bsl"; null otherwise.</summary>
+        /// <summary>A loader itself: "bml", "chef", "bsl", "mdl3"; null otherwise.</summary>
         public string Loader;
         /// <summary>"any" (Boot Mod Loader or Chef Shared Loader), "chef" (Chef Shared Loader
         /// only), null (no mod script).</summary>
@@ -118,7 +118,7 @@ namespace Hd2Mod
 
         // what was found in each archive, kept between runs in lua_scan.json by the archive's
         // size and time; a new version of the checks reads every archive again
-        const int ScanVersion = 6;      // 5: UsesChefApi reads scopes (HUDdle, 2026-10-27); 6: HD2FM1 data rows, guarded jit.off()
+        const int ScanVersion = 7;      // 5: UsesChefApi reads scopes (HUDdle, 2026-10-27); 6: HD2FM1 data rows, guarded jit.off(); 7: MDL3, libraries in functions that take them
 
         /// <summary>Chef Shared Loader 1.2.1 reads no Lua resource whose row size is over this
         /// (`MAX_LUA = 4 * 1024 * 1024`, `if size > MAX_LUA` in its core; its log: "Lua resource(s)
@@ -326,6 +326,10 @@ namespace Hd2Mod
         /// <summary>Whose boot it is, by what each loader's boot says about itself.</summary>
         static (string, string) BootOf(string text)
         {
+            // first: MDL3 (3.0.0-dev.18, 2026-10-30) also names CowboyBingusModLoader and Bingus's
+            // boot 9ba626afa44a3aa3, for the mods made for that loader, and was taken for it
+            var mdl3 = Regex.Match(text, @"^-- MDL3 (\d+\.\d+\.\d+[A-Za-z0-9.\-]*) game boot \(PUC Lua 5\.1\)");
+            if (mdl3.Success) return ("mdl3", mdl3.Groups[1].Value);
             var bml = Regex.Match(text, @"boot-mod-loader-(\d+\.\d+\.\d+)");
             if (text.StartsWith("-- Boot Mod Loader", StringComparison.Ordinal) || bml.Success)
                 return ("bml", bml.Success ? bml.Groups[1].Value : null);
@@ -347,11 +351,14 @@ namespace Hd2Mod
         /// <summary>The LuaJIT libraries a script uses with nothing to fall back on: a require
         /// of ffi, jit or bit outside a pcall, or ffi.x / bit.x / jit.x on a name the script
         /// never defines and never tests. Comments and strings never count (the tokens have
-        /// them resolved).</summary>
+        /// them resolved). Nothing inside a function that is handed the library counts
+        /// (LibsGiven).</summary>
         public static List<string> JitUses(List<LuaSyntax.Token> t)
         {
             const int Name = LuaSyntax.T.Name, Str = LuaSyntax.T.String;
             var libs = new[] { "ffi", "jit", "bit" };
+            var given = LibsGiven(t);
+            bool Given(int i, string lib) => (given[i] & LibBit(lib)) != 0;
             var found = new SortedSet<string>(StringComparer.Ordinal);
             // inside the argument list of pcall( / xpcall(: a failure there is caught
             var guardedFrom = new Stack<int>();
@@ -371,7 +378,7 @@ namespace Hd2Mod
                     string lib = null;
                     if (i + 1 < t.Count && t[i + 1].Kind == Str) lib = t[i + 1].Text;
                     else if (i + 3 < t.Count && t[i + 1].Kind == '(' && t[i + 2].Kind == Str && t[i + 3].Kind == ')') lib = t[i + 2].Text;
-                    if (lib != null && libs.Contains(lib)) found.Add(lib);
+                    if (lib != null && libs.Contains(lib) && !Given(i, lib)) found.Add(lib);
                 }
             }
             foreach (var lib in libs)
@@ -380,7 +387,7 @@ namespace Hd2Mod
                 bool used = false, defined = false, tested = false;
                 for (int i = 0; i < t.Count; i++)
                 {
-                    if (t[i].Kind != Name || t[i].Text != lib) continue;
+                    if (t[i].Kind != Name || t[i].Text != lib || Given(i, lib)) continue;
                     int prev = i > 0 ? t[i - 1].Kind : -1, next = i + 1 < t.Count ? t[i + 1].Kind : -1;
                     if (prev == '.' || prev == ':') continue;                    // a field of something else
                     if (prev == LuaSyntax.T.Local || prev == LuaSyntax.T.Function || next == '=') defined = true;
@@ -394,6 +401,43 @@ namespace Hd2Mod
                 if (used && !defined && !tested) found.Add(lib);
             }
             return found.ToList();
+        }
+
+        static int LibBit(string lib) => lib == "ffi" ? 1 : lib == "jit" ? 2 : lib == "bit" ? 4 : 0;
+
+        /// <summary>For each token, the libraries (LibBit) a function around it is handed as a
+        /// parameter: that function runs only where its caller has them, and its own uses and
+        /// requires are not the script's (MDL3 3.0.0-dev.18's boot, 2026-10-30: `local bit =
+        /// package.loaded.bit or require('bit')` inside `function M.resolve_slots(ffi, platform)`,
+        /// called only on its FFI path, was taken for a boot that cannot run). Handed ffi or jit,
+        /// the caller is on LuaJIT, which has all three; handed bit, only bit (Lua 5.1 with a bit
+        /// library, or a table of the script's own). The parameter's name stands for the library:
+        /// assumed, not read from the callers.</summary>
+        static int[] LibsGiven(List<LuaSyntax.Token> t)
+        {
+            var given = new int[t.Count];
+            // the blocks open now, innermost last: what each has been handed, its own and around it
+            var blocks = new List<int> { 0 };
+            for (int i = 0; i < t.Count; i++)
+            {
+                int kind = t[i].Kind, around = blocks[blocks.Count - 1];
+                if (kind == LuaSyntax.T.Function)
+                {
+                    // its parameters, up to the closing bracket
+                    int own = 0, k = i + 1;
+                    while (k < t.Count && t[k].Kind != '(') k++;
+                    for (k++; k < t.Count && t[k].Kind != ')'; k++)
+                        if (t[k].Kind == LuaSyntax.T.Name)
+                            own |= t[k].Text == "ffi" || t[k].Text == "jit" ? 7 : LibBit(t[k].Text);
+                    blocks.Add(around | own);
+                    given[i] = around;
+                    continue;
+                }
+                if (kind == LuaSyntax.T.Do || kind == LuaSyntax.T.If || kind == LuaSyntax.T.Repeat) blocks.Add(around);
+                else if ((kind == LuaSyntax.T.End || kind == LuaSyntax.T.Until) && blocks.Count > 1) blocks.RemoveAt(blocks.Count - 1);
+                given[i] = blocks[blocks.Count - 1];
+            }
+            return given;
         }
 
         // Recognise the installer's optional jit.off() without treating a test elsewhere
@@ -514,7 +558,7 @@ namespace Hd2Mod
                 var boot = ml.Boot;
                 if (ml.Scripts.Any(s => s.Id == ChefCoreId) || boot?.BootKind == "chef") ml.Loader = "chef";
                 else if (boot?.BootKind == "bml") ml.Loader = "bml";
-                else if (boot?.BootKind == "bsl") ml.Loader = "bsl";
+                else if (boot?.BootKind == "bsl" || boot?.BootKind == "mdl3") ml.Loader = boot.BootKind;
                 if (ml.Loader == null)
                 {
                     var mods = ml.Scripts.Where(s => s.Header == "Addon" || s.Header == "Boot").ToList();
@@ -609,7 +653,7 @@ namespace Hd2Mod
             if (loaders.Select(x => x.Loader).Distinct().Count() > 1)
                 issues.Add(new LuaIssue { Kind = "two_loaders", Mods = loaders.OrderByDescending(x => x == owner).Select(x => x.Mod).ToList(), Detail = running });
             var wanting = on.Where(x => x.Needs != null).ToList();
-            if (wanting.Count > 0 && running != "bml" && running != "chef" && running != "bsl")
+            if (wanting.Count > 0 && running != "bml" && running != "chef" && running != "bsl" && running != "mdl3")
                 issues.Add(new LuaIssue { Kind = "no_loader", Mods = (owner != null ? new[] { owner.Mod } : new Mod[0]).Concat(wanting.Select(x => x.Mod)).ToList(),
                                           Detail = owner != null ? "other" : null });
             else if (running != "chef" && helper == null)

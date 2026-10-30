@@ -5,7 +5,7 @@ using System.Linq;
 
 namespace Hd2Mod
 {
-    /// <summary>The loaders (Boot Mod Loader, Chef Shared Loader, Bingus Shared Loader) are not
+    /// <summary>The loaders (Boot Mod Loader, Chef Shared Loader, Bingus Shared Loader, MDL3) are not
     /// mods the player orders: the user (2026-10-26) wants them out of the list and chosen in a
     /// panel of their own, the manager doing the rest. One is in effect at a time, chosen for
     /// every profile alike (config.json "loader": its id, or "none"); unset, it is the one in
@@ -19,7 +19,7 @@ namespace Hd2Mod
         // what a mod's archives make it, by the archives' sizes and times
         static readonly Dictionary<string, (string Sig, string Kind)> known = new Dictionary<string, (string, string)>(StringComparer.OrdinalIgnoreCase);
 
-        /// <summary>"bml", "chef", "bsl", or null: as LuaMods names a loader, but read only from the
+        /// <summary>"bml", "chef", "bsl", "mdl3", or null: as LuaMods names a loader, but read only from the
         /// archives that hold a boot or Chef Shared Loader's core (a row scan for the others), so a
         /// state read can ask it of every mod without reading their scripts.</summary>
         public static string KindOf(Mod mod)
@@ -54,7 +54,7 @@ namespace Hd2Mod
                 catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { }
             }
             if (chefCore || boot == "chef") kind = "chef";
-            else if (boot == "bml" || boot == "bsl") kind = boot;
+            else if (boot == "bml" || boot == "bsl" || boot == "mdl3") kind = boot;
             lock (known) known[mod.Path] = (sig, kind);
             return kind;
         }

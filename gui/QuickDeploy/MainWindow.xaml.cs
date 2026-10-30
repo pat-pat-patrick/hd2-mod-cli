@@ -1603,6 +1603,7 @@ namespace QuickDeploy
                 case "bml": return "Boot Mod Loader" + (version != null ? " " + version : "");
                 case "chef": case "chef_stub": return "Chef Shared Loader" + (version != null ? " " + version : "");
                 case "bsl": return "Bingus Shared Loader" + (version != null ? " " + version : "");
+                case "mdl3": return "MDL3" + (version != null ? " " + version : "");
                 default: return null;
             }
         }
@@ -1695,7 +1696,7 @@ namespace QuickDeploy
             // there is (the user, 2026-10-26: others may come)
             if (lu.Needs != null)
             {
-                var able = LibraryLoaders(lu.Needs == "chef" ? new[] { "chef" } : new[] { "bml", "chef", "bsl" });
+                var able = LibraryLoaders(lu.Needs == "chef" ? new[] { "chef" } : new[] { "bml", "chef", "bsl", "mdl3" });
                 if (lu.Needs == "chef")
                     Line(Texts.F((lu.NeedsWhy == "declared" ? "lua_needs_chef_declared" : lu.NeedsWhy == "api" ? "lua_needs_chef_api" : able.Length > 0 ? "lua_needs_chef_have" : "lua_needs_chef")
                                  + (able.Length > 0 ? "" : "_none"),
