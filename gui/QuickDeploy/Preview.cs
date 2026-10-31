@@ -197,6 +197,20 @@ namespace QuickDeploy
                 tm.Start();
                 return;
             }
+            if (which == "deletemod")
+            {
+                // "deletemod" (pictures only): the chosen mod's Delete clicked, the first question
+                // of this window (the user, 2026-11-01: it came up with only its buttons)
+                var tx = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(4) };
+                tx.Tick += (s0, e0) =>
+                {
+                    tx.Stop();
+                    var m = st.Mods.FirstOrDefault(x => x.Id == selectedId) ?? st.Mods.First();
+                    DeleteFromDisk(m);
+                };
+                tx.Start();
+                return;
+            }
             if (which == "deletegroup")
             {
                 // "deletegroup" (pictures only): a folder's menu opened and its Delete clicked, as a

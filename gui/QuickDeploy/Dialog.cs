@@ -1,8 +1,12 @@
+using System;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Threading;
 
 namespace QuickDeploy
 {
@@ -93,8 +97,13 @@ namespace QuickDeploy
             return w;
         }
 
+        [DllImport("user32.dll")]
+        static extern bool RedrawWindow(IntPtr hwnd, IntPtr rect, IntPtr region, uint flags);
+
         /// <summary>Once on screen, laid out and drawn again: the first question of a session (Delete
-        /// group, the user, 2026-10-27) came up with only its Cancel button drawn.</summary>
+        /// group, the user, 2026-10-27; Delete, 2026-11-01) came up with only its buttons drawn.
+        /// WPF's own invalidation repaints only what changed, so Windows is asked to paint the
+        /// whole window as well (RDW_INVALIDATE | RDW_ERASE | RDW_FRAME | RDW_ALLCHILDREN | RDW_UPDATENOW).</summary>
         static void Redraw(Window w) =>
             w.ContentRendered += (s, e) =>
             {
@@ -102,6 +111,11 @@ namespace QuickDeploy
                 w.UpdateLayout();
                 if (w.Content is UIElement c) c.InvalidateVisual();
                 w.InvalidateVisual();
+                w.Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    var hwnd = new WindowInteropHelper(w).Handle;
+                    if (hwnd != IntPtr.Zero) RedrawWindow(hwnd, IntPtr.Zero, IntPtr.Zero, 0x0001 | 0x0004 | 0x0400 | 0x0080 | 0x0100);
+                }), DispatcherPriority.Render);
             };
 
         /// <summary>The dialog's window: the tape on top, the text, a body to add to.</summary>
@@ -181,6 +195,7 @@ namespace QuickDeploy
             // moved by any place that is not a button
             w.MouseLeftButtonDown += (s, e) => { if (e.ButtonState == MouseButtonState.Pressed) w.DragMove(); };
             w.Loaded += (s, e) => { if (input != null) input.Focus(); else no.Focus(); };
+            Redraw(w);
             w.ShowDialog();
             return chosen;
         }
