@@ -735,7 +735,11 @@ namespace QuickDeploy
             ["adv_copy"] = ("Copy (keep the originals)", "复制（保留原文件夹）"),
             ["adv_keep"] = ("Keep where they are", "保持现有位置"),
             ["adv_kept"] = ("The mods stay where they are and are deployed as copies. They can be moved on the Storage page at any time.", "mod 保持现有位置，以复制方式部署。之后可随时在“存储”页移动。"),
+#if HAS_NEXUS
             ["search_hint"] = ("Search names, descriptions, options, folders, patch files, Nexus ids…", "搜索名称、说明、可选内容、文件夹、patch 文件、Nexus 编号…"),
+#else
+            ["search_hint"] = ("Search names, descriptions, options, folders, patch files…", "搜索名称、说明、可选内容、文件夹、patch 文件…"),
+#endif
             ["search_none"] = ("No mod matches the search.", "没有符合搜索的 mod。"),
 #if HAS_NEXUS
             // the download page
@@ -921,9 +925,15 @@ namespace QuickDeploy
             ["up_new"] = ("Version {1} is available (installed: {0}).", "有新版本 {1}（当前版本 {0}）。"),
             ["up_new_unknown"] = ("The newest version on the site is {0}. The installed version is not recorded.", "网站上的最新版本为 {0}，当前版本未记录。"),
             ["up_current"] = ("This is the newest version.", "已是最新版本。"),
+#if HAS_NEXUS
             ["up_no_source"] = ("The source of this mod is not recorded, so it cannot be checked. Set its source: a Nexus Mods page or a GitHub repository.",
                                 "未记录此 mod 的来源，无法检查更新。请设置来源：Nexus Mods 的 mod 页面或 GitHub 仓库。"),
+#else
+            ["up_no_source"] = ("The source of this mod is not recorded, so it cannot be checked. Set its source: a GitHub repository.",
+                                "未记录此 mod 的来源，无法检查更新。请设置来源：GitHub 仓库。"),
+#endif
             ["up_no_check"] = ("{0} offers no update check. Open the page to look for a newer version.", "{0} 不提供更新检查，请打开页面查看是否有新版本。"),
+            ["up_no_check_nexus"] = ("This build does not check Nexus Mods. Open the page to look for a newer version.", "此版本不检查 Nexus Mods 上的更新，请打开页面查看是否有新版本。"),
 #if HAS_NEXUS
             ["up_no_key"] = ("Checking Nexus Mods requires your Nexus Mods account. Connect it on the Download page.", "检查 Nexus Mods 上的更新需要你的 Nexus Mods 账号，请在“下载”页面连接。"),
 #endif
@@ -942,14 +952,24 @@ namespace QuickDeploy
                              "向来源网站查询该 mod 的名称、版本、作者、说明与图片，并填入库中。"),
             ["match_done"] = ("matched {0} against its source", "已从来源匹配 {0} 的信息"),
             ["match_done_n"] = ("matched {0} of {1} mods against their sources", "已匹配 {1} 个 mod 中的 {0} 个"),
+#if HAS_NEXUS
             ["match_no_source"] = ("This mod has no Nexus Mods page or GitHub repository recorded. Set one first.",
                                    "该 mod 未记录 Nexus Mods 页面或 GitHub 仓库，请先设置来源。"),
+#else
+            ["match_no_source"] = ("This mod has no GitHub repository recorded. Set one first.",
+                                   "该 mod 未记录 GitHub 仓库，请先设置来源。"),
+#endif
             ["many_match"] = ("Match these {0} against their sources", "匹配选中的 {0} 个的来源信息"),
             ["by_author"] = ("by {0}", "作者：{0}"),
             ["site_words"] = ("FROM THE SITE // DESCRIPTION", "来源网站 // 说明"),
             ["up_set_source"] = ("Set source…", "设置来源…"),
+#if HAS_NEXUS
             ["up_source_ask"] = ("The address of this mod's page: a Nexus Mods mod page or a GitHub repository. Any other address is kept as a page to open.",
                                  "请输入此 mod 的页面地址：Nexus Mods 的 mod 页面或 GitHub 仓库。其他地址仅保存为可打开的页面。"),
+#else
+            ["up_source_ask"] = ("The address of this mod's page: a GitHub repository is checked for updates. Any other address is kept as a page to open.",
+                                 "请输入此 mod 的页面地址：GitHub 仓库可检查更新，其他地址仅保存为可打开的页面。"),
+#endif
             ["up_source_save"] = ("Save", "保存"),
             ["up_source_bad"] = ("This is not a web address: {0}", "这不是有效的网址：{0}"),
             ["up_source_done"] = ("source of {0}: {1}", "已设置 {0} 的来源：{1}"),

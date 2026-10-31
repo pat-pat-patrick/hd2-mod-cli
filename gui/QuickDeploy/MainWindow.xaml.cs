@@ -5384,7 +5384,12 @@ namespace QuickDeploy
                 case "current": text = Texts.Get("up_current"); colour = "Blue"; break;
                 case "skipped": text = Texts.F("up_skipped", u.Latest ?? "?"); break;
                 case "no_source": text = Texts.Get("up_no_source"); break;
-                case "no_check": text = Texts.F("up_no_check", u.Channel); break;
+                case "no_check":
+#if !HAS_NEXUS
+                    // a mod from Nexus Mods: it is this build that does not ask, not the site
+                    if (m.NexusMod > 0) { text = Texts.Get("up_no_check_nexus"); break; }
+#endif
+                    text = Texts.F("up_no_check", u.Channel); break;
 #if HAS_NEXUS
                 default: text = u.Why == "no_key" ? Texts.Get("up_no_key") : Texts.F("up_error", CheckWhy(u.Why)); colour = "Yellow"; break;
 #else

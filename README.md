@@ -227,6 +227,19 @@ from:
 - Mods with updates get a yellow tag in the list and their own filter, **Updates**.
 - An update keeps the mod's place in the load order, on/off and options; then
   deploy.
+- **Skip this version**: the update is no longer offered, and the next newer
+  version is offered again. *Offer it again* takes the skip back.
+  `hd2qd skip MOD [--clear]`.
+- **Previous version** (Settings → *Keep the previous version of script mods*,
+  off by default): when a mod with Lua scripts gets a new version (a zip, a
+  download or an update), the version it had stays on disk, one per mod. Its
+  details show *Previous version* with the version and the date, and **Roll back
+  to the previous version** swaps the two, so the newer one can come back the
+  same way; then deploy. Mods without scripts keep nothing: they are large, and
+  a broken version of them rarely stops a game. The versions kept are listed on
+  the Storage page (*Previous versions kept*), where each can be opened, rolled
+  back to or deleted. `hd2qd keep-previous-on`, `keep-previous-off`,
+  `previous [--delete]`, `rollback MOD`.
 
 ### Nexus Mods
 
@@ -271,7 +284,7 @@ mod's files and never chooses for you.
 | **The loader each mod needs** | Read from the script's first lines. `-- HD2-Addon:` starts on Boot Mod Loader or Chef Shared Loader; `-- HD2-Requires: chef-shared-loader` (or `-- HD2-Boot:`) only on Chef Shared Loader. The details name only the loaders your library has. The list says when no loader is in effect and when a mod needs one that is not. |
 | **Scripts the game's Lua cannot run** | Since the 2026-10-20 update the game runs plain Lua 5.1, without LuaJIT. A script that does not compile (goto, LuaJIT's `ULL` numbers, Lua 5.2+ operators, a BOM, more than 200 locals or 60 upvalues in a function, and the rest), LuaJIT bytecode, or `ffi`, `bit` or `jit` used with no fallback is marked **Cannot run**, with what it uses (FFI, LuaJIT's 64-bit numbers, goto, …) and one sentence on just that: the game does not accept or provide it at present, nor do the loaders in the library. The syntax check follows PUC Lua 5.1's own lexer and parser; it agreed with PUC Lua 5.1 on all 15,394 scripts it was compared on (`tests/lua_syntax_vs_puc.py`). Comments and strings never count. |
 | **Two mods with one name** | Two mods declaring the same `mods/<author>/<name>`: only the later one runs. |
-| **Translation packs** | A pack (the same author's folder, the mod's name and a language, wrapping the old menus' calls, as ActionCam简体中文 does) is one small line under the mod it translates, with its own tick, and is kept right after that mod in the load order. When that mod is off or not installed, the list says the translation does not apply. |
+| **Translation packs** | A pack (the same author's folder, the mod's name and a language, wrapping the old menus' calls, as ActionCam简体中文 does) is one small line under the mod it translates, with its own tick, and is kept right after that mod in the load order. Turning that mod off turns its packs off, and turning it on again brings back the ones it took; a pack turned off or on by hand stays as it is. When that mod is not installed, the list says the translation does not apply. |
 | **The last session** | Boot Mod Loader's log of the last launch: which mods started, how long each took, and which failed or did not compile, with the reason. |
 
 All of it is read outside the game, before a deploy: nothing runs in the game. The list never waits for it: what was found is kept in `lua_scan.json`, and an archive not read yet is read in the background, its findings shown a moment later.
@@ -322,6 +335,10 @@ A change made on the command line shows in an open window half a second later.
 | `check-updates` | Check every mod from GitHub for a newer release. |
 | `self-update` | Whether a newer version of this program is on GitHub (read only). The official build counts releases only; the development build counts pre-releases too. |
 | `update MOD` | Download a mod's newer version from its GitHub releases and put it in its place. |
+| `skip MOD [--clear]` | Stop offering a mod's newest version until a newer one comes (`--clear`: offer it again). |
+| `keep-previous-on` / `keep-previous-off` | From now on, a mod with Lua scripts keeps the version it had when a new one comes, for a rollback (off: no more are kept; the ones kept stay). |
+| `previous [MODS] [--delete] [--all]` | The previous versions kept; `--delete` with mods, or `--delete --all`, deletes them (the mods keep their current versions). |
+| `rollback MOD` | A mod goes back to its previous version, and the version it had is kept instead; deploy afterwards. |
 | `source MOD URL` / `source MOD --clear` | Set where a mod comes from: a Nexus Mods page, a GitHub repository or another page. |
 | `import-hd2mm [--dir DIR] [--replace]` | Add HD2ModManager's mods, order, on/off and options to the library (read only; its folder-name and object options both). |
 | `import-echelon [--file FILE] [--profiles] [--replace]` | Add Echelon's mods, on/off and options from its own library.json, in its active profile's order (read only). `--profiles`: every profile, each with its own mods, order and on/off; the option choices are the active profile's, the only ones Echelon's files hold. |
@@ -559,6 +576,8 @@ mod 库与游戏不在同一分区时无法使用硬链接，有变化的文件�
 - 未记录来源的 mod，可在详情中点击 **设置来源…**，填写该 mod 的 Nexus Mods 页面或 GitHub 仓库地址。
 - 有更新的 mod 在列表中显示黄色标记，并可通过 **有更新** 筛选查看。
 - 更新后，mod 的加载顺序、开关和可选内容保持不变；之后执行部署即可生效。
+- **跳过此版本**：不再提示这次更新，出现更新的版本时会再次提示。点击“取消跳过”可撤销。命令行为 `hd2qd skip MOD [--clear]`。
+- **上一版本**（设置 →“为脚本 MOD 保留上一版本”，默认关闭）：含 Lua 脚本的 mod 换新版本时（拖入 zip、下载或更新），原来的版本保留在磁盘上，每个 mod 保留一个。详情中显示“上一版本”的版本号和日期，点击 **回滚到上一版本** 会将两个版本互换，因此也可以用同样的方式换回新版本；之后执行部署即可生效。不含脚本的 mod 不保留：它们体积较大，坏掉的版本也很少导致游戏无法运行。保留的版本列在存储页的“保留的上一版本”中，可以打开、回滚或删除。命令行为 `hd2qd keep-previous-on`、`keep-previous-off`、`previous [--delete]`、`rollback MOD`。
 
 ### Nexus Mods
 
@@ -585,7 +604,7 @@ mod 库与游戏不在同一分区时无法使用硬链接，有变化的文件�
 | **每个 MOD 需要的加载器** | 读取脚本开头几行。`-- HD2-Addon:` 可由 Boot Mod Loader 或 Chef Shared Loader 启动；`-- HD2-Requires: chef-shared-loader`（或 `-- HD2-Boot:`）仅能由 Chef Shared Loader 启动。详情中只列出库中已有的加载器。没有生效的加载器、需要的加载器未生效时，均会提示。 |
 | **游戏无法运行的脚本** | 2026-10-20 更新后，游戏使用的是 Lua 5.1，而非 LuaJIT。无法编译的脚本（goto、LuaJIT 的 `ULL` 数字、Lua 5.2 及以后的运算符、BOM、单个函数超过 200 个局部变量或 60 个上值等）、LuaJIT 字节码、以及没有备用方案地使用 `ffi`、`bit`、`jit` 的脚本，标为 **无法运行**，并说明它用到了什么（FFI、LuaJIT 的 64 位整数写法、goto 等），再用一句话说明游戏目前不接受或不提供这一项，库中的加载器也未提供。语法检查按照 PUC Lua 5.1 自身的词法和语法分析器实现，与 PUC Lua 5.1 对比的 15,394 个脚本结论全部一致（`tests/lua_syntax_vs_puc.py`）。注释与字符串中的内容不计。 |
 | **同名 MOD** | 两个 mod 声明同一个 `mods/<作者>/<名称>` 时，只有加载顺序靠后的那个会运行。 |
-| **翻译包** | 翻译包（与原 mod 同一作者目录、名称为原 mod 名加语言后缀，并包装旧菜单的登记调用，例如 ActionCam简体中文）显示为原 mod 下方的一行小字，带有自己的勾选框，并在加载顺序中保持紧接在原 mod 之后。原 mod 未启用或未安装时，提示翻译不会生效。 |
+| **翻译包** | 翻译包（与原 mod 同一作者目录、名称为原 mod 名加语言后缀，并包装旧菜单的登记调用，例如 ActionCam简体中文）显示为原 mod 下方的一行小字，带有自己的勾选框，并在加载顺序中保持紧接在原 mod 之后。关闭原 mod 时，它的翻译包一起关闭；重新打开原 mod 时，随它关闭的翻译包一起恢复；手动开关过的翻译包保持原样。原 mod 未安装时，提示翻译不会生效。 |
 | **上一局** | Boot Mod Loader 上次启动游戏时的日志：哪些 mod 已启动、各自用时，以及哪些启动失败或无法编译，并附原因。 |
 
 以上检查均在游戏外、部署前完成，不在游戏中运行任何内容。列表不会因此等待：检查结果保存在 `lua_scan.json` 中，尚未读取的文件在后台读取，结果稍后显示。
@@ -608,6 +627,7 @@ mod 库与游戏不在同一分区时无法使用硬链接，有变化的文件�
     hd2qd folders            # 列出 mod 库文件夹
     hd2qd status             # 显示部署将执行的更改，不做修改
     hd2qd check-updates      # 检查来自 GitHub 的 mod 是否有新版本
+    hd2qd rollback MOD       # 回滚到保留的上一版本（先用 keep-previous-on 开启保留）
     hd2qd lua                # 部署前检查 Lua mod：启动脚本、加载器、无法运行的脚本、上一局、上次崩溃
     hd2qd self-update        # 检查本程序是否有新版本（正式版只看正式发布，开发版也看预发布）
     hd2qd report             # 导出诊断包（zip，默认在桌面），反馈问题时附上
