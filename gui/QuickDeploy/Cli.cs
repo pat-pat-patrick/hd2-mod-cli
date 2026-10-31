@@ -257,17 +257,24 @@ namespace QuickDeploy
             }
             catch (Exception x)
             {
+                ManagerLog.Error("failed: " + ManagerLog.Line(args) + ":\n" + x);
                 return new CliResult { Code = 1, Out = o.ToString(), Err = "hd2qd: " + x.GetType().Name + ": " + x.Message };
             }
         }
 
         /// <summary>A piece of the core called directly, for a result the window words
-        /// itself (deploy, purge, relink); its text is the window's own.</summary>
+        /// itself (deploy, purge, relink); its text is the window's own. What it says goes
+        /// into the manager's log, as the commands' does.</summary>
         public static CliResult Call(Func<string> work)
         {
-            try { return new CliResult { Code = 0, Out = work() }; }
-            catch (ModError e) { return new CliResult { Code = 1, Err = e.Message, Refused = e }; }
-            catch (Exception x) { return new CliResult { Code = 1, Err = x.GetType().Name + ": " + x.Message }; }
+            try
+            {
+                var said = work();
+                ManagerLog.Info(said);
+                return new CliResult { Code = 0, Out = said };
+            }
+            catch (ModError e) { ManagerLog.Warn("refused: " + e.Message + (e.Kind != null ? " (" + e.Kind + ")" : "")); return new CliResult { Code = 1, Err = e.Message, Refused = e }; }
+            catch (Exception x) { ManagerLog.Error("failed:\n" + x); return new CliResult { Code = 1, Err = x.GetType().Name + ": " + x.Message }; }
         }
 
         /// <summary>One argument for a Windows command line (the C runtime's rules).</summary>

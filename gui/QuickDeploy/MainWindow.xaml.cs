@@ -6601,6 +6601,26 @@ namespace QuickDeploy
         /// <summary>The settings page (the user, 2026-10-24; a page, not a window, since
         /// 2026-10-27): the language, whether the explaining lines are shown, who made this and
         /// where it comes from.</summary>
+        /// <summary>The manager's own log on the settings page (ManagerLog).</summary>
+        LogView managerLog;
+        TextBlock managerLogHead;
+
+        LogView ManagerLogView() => managerLog ?? (managerLog = new LogView
+        {
+            Group = "mgrlog", Kinds = () => new List<string> { "manager" }, SessionKey = "set_log_since_start", FullTime = false, Height = 380,
+            // the command line writes between the window's sessions: all of it at first
+            All = true,
+        });
+
+        void Foot_Click(object sender, MouseButtonEventArgs e) => ShowManagerLog();
+
+        /// <summary>The settings page, scrolled to the manager's log (a click on the status line).</summary>
+        void ShowManagerLog()
+        {
+            ShowPage("settings");
+            Dispatcher.BeginInvoke(new Action(() => managerLogHead?.BringIntoView(new Rect(0, 0, 1, 600))), DispatcherPriority.Loaded);
+        }
+
         void RenderSettings()
         {
             SettingsBox.Children.Clear();
@@ -6820,6 +6840,15 @@ namespace QuickDeploy
                 reportBox.Children.Add(btns);
             }
             FillReport();
+
+            // the manager's own log (the user, 2026-11-01): what it was asked to do and how that ended
+            managerLogHead = Label("set_log", new Thickness(0, 20, 0, 6));
+            body.Children.Add(managerLogHead);
+            if (Texts.Hints) body.Children.Add(Small(Texts.Get("set_log_note"), new Thickness(0, 0, 0, 10)));
+            var mlog = ManagerLogView();
+            mlog.Box = new StackPanel();
+            body.Children.Add(mlog.Box);
+            RenderLog(mlog);
 
             // who made it, and where it comes from (last)
             body.Children.Add(Label("set_about", new Thickness(0, 20, 0, 6)));

@@ -39,6 +39,8 @@ namespace Hd2Mod
             public string Time, Level, Text;
             /// <summary>Which session from the end: 0 the last one.</summary>
             public int Session;
+            /// <summary>The log wrote the level itself (else it is read from the words).</summary>
+            public bool Written;
         }
 
         /// <summary>Tests only: the folders the logs are in.</summary>
@@ -62,6 +64,13 @@ namespace Hd2Mod
                         new Source { Kind = kind, Name = "MDL3.log", Path = System.IO.Path.Combine(Local, "MDL3", "Logs", "MDL3.log"), Session = new Regex(@"^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d BOOT ") },
                         new Source { Kind = kind, Name = "MDL.log", Path = System.IO.Path.Combine(Local, "MDL", "Helldivers2", "Logs", "MDL.log") },
                         new Source { Kind = kind, Name = "MDL-Boot.log", Path = System.IO.Path.Combine(bingus, "MDL-Boot.log") },
+                    };
+                // the manager's own (ManagerLog): a session from each start of the window
+                case "manager":
+                    return new List<Source>
+                    {
+                        new Source { Kind = kind, Name = ManagerLog.File, Path = ManagerLog.PathOf, Session = new Regex(@"^\S+ \S+ INFO  \[window\] window started") },
+                        new Source { Kind = kind, Name = ManagerLog.Previous, Path = ManagerLog.PreviousPath },
                     };
                 default: return new List<Source>();
             }
@@ -89,19 +98,28 @@ namespace Hd2Mod
                     var last = entries[entries.Count - 1];
                     last.Text += "\n" + line;
                     var lv = Level(line);
-                    if (Rank(lv) < Rank(last.Level) && lv != "debug") last.Level = lv;
+                    if (!last.Written && Rank(lv) < Rank(last.Level) && lv != "debug") last.Level = lv;
                     continue;
                 }
                 if (s.Session != null && s.Session.IsMatch(line)) starts.Add(entries.Count);
                 var m = Stamp.Match(line);
                 var body = m.Success ? line.Substring(m.Length) : line;
-                entries.Add(new Entry { Time = m.Success ? (m.Groups[1].Success ? m.Groups[1].Value + " " : "") + m.Groups[2].Value : "", Level = Level(body), Text = body });
+                // a level the log writes itself (the manager's own) is taken as written
+                var said = Written.Match(body);
+                if (said.Success) body = body.Substring(said.Length);
+                entries.Add(new Entry
+                {
+                    Time = m.Success ? (m.Groups[1].Success ? m.Groups[1].Value + " " : "") + m.Groups[2].Value : "",
+                    Level = said.Success ? said.Groups[1].Value.ToLowerInvariant() : Level(body), Text = body, Written = said.Success,
+                });
             }
             // sessions counted from the end: 0 is the last one
             for (int i = 0; i < entries.Count; i++)
                 entries[i].Session = s.Session == null ? 0 : starts.Count(x => x > i);
             return entries;
         }
+
+        static readonly Regex Written = new Regex(@"^(ERROR|WARN|INFO|DEBUG)\s+");
 
         static int Rank(string level) => level == "error" ? 0 : level == "warn" ? 1 : level == "info" ? 2 : 3;
 

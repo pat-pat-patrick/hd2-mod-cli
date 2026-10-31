@@ -237,9 +237,16 @@ namespace Hd2Mod
                 err.WriteLine("hd2qd " + argv[0] + ": error: " + e.Message);
                 return 2;
             }
+            // the manager's log: every command that changes something, how it ended and what it said
+            // (the user, 2026-11-01); the reading ones (state, every second in the window) would drown it
+            bool logged = Writes(argv[0], a);
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            var tee = logged ? new ManagerLog.Tee(output) : null;
+            if (logged) ManagerLog.Info("run: " + ManagerLog.Line(argv));
+            string Took() => (clock.ElapsedMilliseconds / 1000.0).ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) + " s";
             try
             {
-                if (Writes(argv[0], a))
+                if (logged)
                 {
                     var elsewhere = Store.Redirected();
                     if (elsewhere != null)
@@ -247,20 +254,40 @@ namespace Hd2Mod
                                            "AppData to that app's own copy (" + elsewhere + "), which no other program reads: " +
                                            "the library would split in two. Run it from your own terminal or the window.", "redirected");
                 }
-                spec.Run(a, output);
+                spec.Run(a, tee ?? output);
+                if (logged)
+                {
+                    ManagerLog.Output(tee.Seen.ToString());
+                    ManagerLog.Info("done: " + argv[0] + " in " + Took());
+                }
                 return 0;
             }
             catch (ModError e)
             {
                 err.WriteLine("hd2qd: " + e.Message);
                 refused = e;
+                if (logged)
+                {
+                    ManagerLog.Output(tee.Seen.ToString());
+                    ManagerLog.Warn("refused: " + argv[0] + " after " + Took() + ": " + e.Message + (e.Kind != null ? " (" + e.Kind + ")" : ""));
+                }
                 return 1;
             }
             catch (Exception e) when (e is IOException || e is UnauthorizedAccessException || e is System.ComponentModel.Win32Exception
                                       || e is FormatException || e is InvalidDataException)
             {
                 err.WriteLine("hd2qd: " + e.Message);
+                if (logged)
+                {
+                    ManagerLog.Output(tee.Seen.ToString());
+                    ManagerLog.Error("failed: " + argv[0] + " after " + Took() + ": " + e.GetType().Name + ": " + e.Message);
+                }
                 return 1;
+            }
+            catch (Exception e) when (logged)
+            {
+                ManagerLog.Error("failed: " + argv[0] + " after " + Took() + ":\n" + e);
+                throw;
             }
         }
 

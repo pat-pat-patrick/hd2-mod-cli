@@ -12,7 +12,7 @@ namespace Hd2Mod
     /// <summary>A problem report: one zip a player can send with a question (the user,
     /// 2026-10-29: players should not have to find the files themselves). It holds the state
     /// as the window sees it, the deploy history, the crash places learned, the settings, the
-    /// Nexus Mods download history, Boot Mod Loader's log, the names of the game's crash
+    /// Nexus Mods download history, the manager's own log, Boot Mod Loader's log, the names of the game's crash
     /// dumps, and MDL3's native part and logs when MDL3 is there. Never the dumps themselves (large, and the game's memory), never nexus.json
     /// itself (the sign-in and any key are in it), and the Windows user's folder is written
     /// as %USERPROFILE% everywhere.</summary>
@@ -57,6 +57,8 @@ namespace Hd2Mod
             var history = Json.List(Store.Load("nexus.json"), "history");
             if (history.Count > 0) entries.Add(("nexus_history.json", Json.Write(new Dictionary<string, object> { ["history"] = history }, true)));
 #endif
+            // the manager's own log: what it was asked to do and how that ended
+            if (File.Exists(ManagerLog.PathOf)) entries.Add((ManagerLog.File, Tail(ManagerLog.PathOf, LogTail)));
             var logs = LuaMods.GameFolderOverride ?? LuaMods.GameFolder;
             var bml = Path.Combine(logs, "boot_mod_loader.log");
             if (File.Exists(bml)) entries.Add(("game/boot_mod_loader.log", Tail(bml, LogTail)));

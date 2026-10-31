@@ -97,3 +97,50 @@ namespace Hd2Mod.Tests
         }
     }
 }
+
+namespace Hd2Mod.Tests
+{
+    /// <summary>The manager's own log (the user, 2026-11-01): what was run and how it ended.</summary>
+    public class ManagerLogWritten : Fixture
+    {
+        [Fact]
+        public void Changes_are_logged_with_their_end_and_reads_are_not()
+        {
+            Cli("add", Mod("Cape", Files((A + ".patch_0", "cape"))));
+            Cli("list");
+            CliCode(1, "remove", "no such mod");
+            var entries = LoaderLogs.Read(LoaderLogs.Of("manager").First());
+            Assert.True(entries.All(e => e.Written));
+            Assert.Contains(entries, e => e.Level == "info" && e.Text.StartsWith("[cli] run: hd2qd add"));
+            Assert.Contains(entries, e => e.Level == "debug" && e.Text.Contains("added 1 Cape"));
+            Assert.Contains(entries, e => e.Level == "info" && e.Text.StartsWith("[cli] done: add in "));
+            Assert.Contains(entries, e => e.Level == "warn" && e.Text.StartsWith("[cli] refused: remove"));
+            Assert.DoesNotContain(entries, e => e.Text.Contains("hd2qd list"));
+        }
+
+        [Fact]
+        public void A_long_log_starts_again_and_keeps_the_one_before()
+        {
+            Cli("add", Mod("Cape", Files((A + ".patch_0", "cape"))));
+            File.AppendAllText(ManagerLog.PathOf, new string('x', (int)ManagerLog.Max + 10));
+            ManagerLog.Info("after");
+            Assert.True(new FileInfo(ManagerLog.PathOf).Length < 1000);
+            Assert.True(File.Exists(ManagerLog.PreviousPath));
+            Assert.Equal("[cli] after", LoaderLogs.Read(LoaderLogs.Of("manager").First()).Single().Text);
+        }
+
+        [Fact]
+        public void The_problem_report_holds_it()
+        {
+            LuaMods.GameFolderOverride = Path.Combine(Root, "game logs");
+            try
+            {
+                Cli("add", Mod("Cape", Files((A + ".patch_0", "cape"))));
+                var (zip, _) = Report.Write(Library.Load(), Game, Path.Combine(Root, "r.zip"));
+                using (var z = System.IO.Compression.ZipFile.OpenRead(zip))
+                    Assert.Contains("run: hd2qd add", new StreamReader(z.GetEntry(ManagerLog.File).Open()).ReadToEnd());
+            }
+            finally { LuaMods.GameFolderOverride = null; }
+        }
+    }
+}

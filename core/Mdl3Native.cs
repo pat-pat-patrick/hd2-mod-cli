@@ -183,17 +183,20 @@ namespace Hd2Mod
             if (Deploy.GameRunning())
             {
                 Last = new Outcome { Kind = "waits", Version = p.Version };
+                ManagerLog.Warn("MDL3 " + p.Version + ": native part waits for the game to close");
                 return "MDL3's native part is installed at the next deploy, with the game closed";
             }
             try
             {
                 var said = Install(p, game);
                 Last = new Outcome { Kind = "installed", Version = p.Version };
+                ManagerLog.Info(said);
                 return said;
             }
             catch (Exception e) when (e is ModError || e is IOException || e is UnauthorizedAccessException)
             {
                 Last = new Outcome { Kind = "failed", Version = p.Version, Detail = e.Message };
+                ManagerLog.Error("MDL3 " + p.Version + ": native part not installed: " + e.Message);
                 return "MDL3's native part was not installed: " + e.Message;
             }
         }

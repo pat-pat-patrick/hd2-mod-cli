@@ -29,17 +29,7 @@ namespace QuickDeploy
     public partial class MainWindow
     {
         const int LuaCols = 3;
-        static readonly string[] Levels = { "error", "warn", "info", "debug" };
 
-        // the log on show: the loader's kind, its file, the levels shown, the last session only, the search
-        string luaLogKind, luaLogFile;
-        readonly HashSet<string> luaLogLevels = new HashSet<string> { "error", "warn", "info" };
-        bool luaLogAll;
-        TextBox luaLogFind;
-        StackPanel luaLogBox;
-        // the logs read, by their size and time
-        readonly Dictionary<string, (string Sig, List<LoaderLogs.Entry> Entries)> luaLogsRead =
-            new Dictionary<string, (string, List<LoaderLogs.Entry>)>(StringComparer.OrdinalIgnoreCase);
 
         void RenderLua()
         {
@@ -140,9 +130,10 @@ namespace QuickDeploy
 
             // ---------------------------------------------------------- the logs
             LuaBox.Children.Add(Label("lp_logs_head", new Thickness(0, 24, 0, 4)));
-            luaLogBox = new StackPanel();
-            LuaBox.Children.Add(Panel(luaLogBox, new Thickness(0, 0, 12, 0)));
-            RenderLuaLog();
+            var log = LuaLog();
+            log.Box = new StackPanel();
+            LuaBox.Children.Add(Panel(log.Box, new Thickness(0, 0, 12, 0)));
+            RenderLog(log);
         }
 
         /// <summary>A number at the top of the page, with what it counts above it.</summary>
@@ -439,149 +430,25 @@ namespace QuickDeploy
 
         // ---------------------------------------------------------------- the logs
 
+        /// <summary>The loaders' logs on this page: the library's loaders first, the one in effect at first.</summary>
+        LogView luaLog;
+
+        LogView LuaLog() => luaLog ?? (luaLog = new LogView
+        {
+            Group = "lualog",
+            Kinds = () => st.Mods.Where(x => x.Loader && x.LoaderKind != null).Select(x => x.LoaderKind).Distinct()
+                            .Concat(new[] { "bml", "chef", "bsl", "mdl3" }).Distinct().ToList(),
+            First = () => st.Lua?.Running ?? ById(st.LoaderChoice)?.LoaderKind,
+        });
+
         /// <summary>A loader's log on show, scrolled to.</summary>
         void ShowLuaLog(string kind)
         {
-            luaLogKind = kind;
-            luaLogFile = null;
-            RenderLuaLog();
-            luaLogBox?.BringIntoView();
+            var v = LuaLog();
+            v.Kind = kind;
+            v.File = null;
+            RenderLog(v);
+            v.Box?.BringIntoView();
         }
-
-        List<LoaderLogs.Entry> LogEntries(LoaderLogs.Source s)
-        {
-            var fi = new FileInfo(s.Path);
-            var sig = fi.Exists ? fi.Length + ":" + fi.LastWriteTimeUtc.Ticks : "";
-            if (luaLogsRead.TryGetValue(s.Path, out var k) && k.Sig == sig) return k.Entries;
-            var entries = fi.Exists ? LoaderLogs.Read(s) : new List<LoaderLogs.Entry>();
-            luaLogsRead[s.Path] = (sig, entries);
-            return entries;
-        }
-
-        /// <summary>The log part of the page: which loader and file, the levels, the session, the
-        /// search, then the lines (the newest last), drawn again alone as these change.</summary>
-        void RenderLuaLog()
-        {
-            if (luaLogBox == null) return;
-            luaLogBox.Children.Clear();
-            // the loaders whose logs are there: the library's first, the one in effect chosen at first
-            var kinds = st.Mods.Where(x => x.Loader && x.LoaderKind != null).Select(x => x.LoaderKind).Distinct()
-                          .Concat(new[] { "bml", "chef", "bsl", "mdl3" }).Distinct()
-                          .Where(k => LoaderLogs.Of(k).Any(l => l.Exists)).ToList();
-            if (kinds.Count == 0) { luaLogBox.Children.Add(Small(Texts.Get("lp_no_logs"), new Thickness(0))); return; }
-            if (luaLogKind == null || !kinds.Contains(luaLogKind))
-                luaLogKind = kinds.Contains(st.Lua?.Running ?? "") ? st.Lua.Running : kinds.Contains(ById(st.LoaderChoice)?.LoaderKind ?? "") ? ById(st.LoaderChoice).LoaderKind : kinds[0];
-            var files = LoaderLogs.Of(luaLogKind).Where(l => l.Exists).ToList();
-            var src = files.FirstOrDefault(f => f.Name == luaLogFile) ?? files[0];
-            luaLogFile = src.Name;
-
-            // which loader, which file
-            var bar = new WrapPanel { Margin = new Thickness(0, 0, 0, 8) };
-            RadioButton Seg(string text, bool now, Action pick, string group)
-            {
-                var b = new RadioButton { Style = (Style)FindResource("Segment"), Content = text, MinWidth = 88, IsChecked = now, GroupName = group };
-                b.Click += (s, e) => pick();
-                return b;
-            }
-            var kindSeg = new StackPanel { Orientation = Orientation.Horizontal };
-            foreach (var k in kinds) kindSeg.Children.Add(Seg(LoaderLabel(k, null), k == luaLogKind, () => { luaLogKind = k; luaLogFile = null; RenderLuaLog(); }, "lualogkind"));
-            bar.Children.Add(new Border { BorderBrush = B("Grid"), BorderThickness = new Thickness(1), Child = kindSeg, Margin = new Thickness(0, 0, 12, 8) });
-            if (files.Count > 1)
-            {
-                var fileSeg = new StackPanel { Orientation = Orientation.Horizontal };
-                foreach (var f in files) fileSeg.Children.Add(Seg(f.Name, f.Name == luaLogFile, () => { luaLogFile = f.Name; RenderLuaLog(); }, "lualogfile"));
-                bar.Children.Add(new Border { BorderBrush = B("Grid"), BorderThickness = new Thickness(1), Child = fileSeg, Margin = new Thickness(0, 0, 12, 8) });
-            }
-            luaLogBox.Children.Add(bar);
-
-            var entries = LogEntries(src);
-            bool sessions = src.Session != null && entries.Any(e => e.Session > 0);
-            var shown = entries.Where(e => luaLogAll || e.Session == 0).ToList();
-            var words = (luaLogFind?.Text ?? "").Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
-            var found = shown.Where(e => words.All(w => e.Text.IndexOf(w, StringComparison.OrdinalIgnoreCase) >= 0)).ToList();
-
-            // the levels, each with how many lines it has; the session; the search; the file
-            var filters = new DockPanel { Margin = new Thickness(0, 0, 0, 8) };
-            var right = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-            var openFile = new Button { Content = Texts.Get("lp_open_file"), Style = (Style)FindResource("Ghost"), MinHeight = 34, Margin = new Thickness(8, 0, 0, 0) };
-            openFile.Click += (s, e) => ShowInFolder(src.Path);
-            var copy = new Button { Content = Texts.Get("lp_copy_shown"), Style = (Style)FindResource("Ghost"), MinHeight = 34, Margin = new Thickness(8, 0, 0, 0) };
-            right.Children.Add(copy);
-            right.Children.Add(openFile);
-            DockPanel.SetDock(right, Dock.Right);
-            filters.Children.Add(right);
-            var left = new WrapPanel { VerticalAlignment = VerticalAlignment.Center };
-            foreach (var lv in Levels)
-            {
-                int n = found.Count(e => e.Level == lv);
-                // a segment of its own group: lit while its level is shown, a click turns it over
-                var chip = new RadioButton
-                {
-                    Content = Texts.F("lp_level_" + lv, n), IsChecked = luaLogLevels.Contains(lv), Style = (Style)FindResource("Segment"),
-                    MinWidth = 72, GroupName = "lualoglevel_" + lv,
-                };
-                var level = lv;
-                chip.Click += (s, e) => { if (!luaLogLevels.Remove(level)) luaLogLevels.Add(level); RenderLuaLog(); };
-                left.Children.Add(new Border { BorderBrush = B("Grid"), BorderThickness = new Thickness(1), Margin = new Thickness(0, 0, 6, 0), Child = chip });
-            }
-            if (sessions)
-            {
-                var sessSeg = new StackPanel { Orientation = Orientation.Horizontal };
-                sessSeg.Children.Add(Seg(Texts.Get("lp_last_session"), !luaLogAll, () => { luaLogAll = false; RenderLuaLog(); }, "lualogsess"));
-                sessSeg.Children.Add(Seg(Texts.Get("lp_all_sessions"), luaLogAll, () => { luaLogAll = true; RenderLuaLog(); }, "lualogsess"));
-                left.Children.Add(new Border { BorderBrush = B("Grid"), BorderThickness = new Thickness(1), Margin = new Thickness(12, 0, 0, 0), Child = sessSeg });
-            }
-            if (luaLogFind == null)
-            {
-                luaLogFind = new TextBox
-                {
-                    Background = B("Ground900"), Foreground = B("Ink"), CaretBrush = B("Ink"), BorderBrush = B("Grid"),
-                    BorderThickness = new Thickness(1), Padding = new Thickness(8, 6, 8, 6), FontSize = 13, Width = 220,
-                    ToolTip = Texts.Get("lp_find_hint"),
-                };
-                luaLogFind.TextChanged += (s, e) => RenderLuaLog();
-            }
-            var findBox = new Grid { Margin = new Thickness(12, 0, 0, 0) };
-            Reuse(luaLogFind, findBox);
-            findBox.Children.Add(new TextBlock
-            {
-                Text = Texts.Get("lp_find_hint"), Foreground = B("Muted"), FontSize = 13, IsHitTestVisible = false, VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(10, 0, 0, 0), Visibility = luaLogFind.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed,
-            });
-            left.Children.Add(findBox);
-            filters.Children.Add(left);
-            luaLogBox.Children.Add(filters);
-
-            // the lines: the newest last, at most a few hundred
-            const int Most = 400;
-            var lines = found.Where(e => luaLogLevels.Contains(e.Level)).ToList();
-            var drawn = lines.Skip(Math.Max(0, lines.Count - Most)).ToList();
-            copy.Click += (s, e) =>
-            {
-                try { Clipboard.SetText(string.Join(Environment.NewLine, drawn.Select(x => (x.Time.Length > 0 ? x.Time + " " : "") + "[" + x.Level + "] " + x.Text))); }
-                catch (System.Runtime.InteropServices.COMException) { }
-            };
-            var list = new StackPanel();
-            foreach (var e in drawn)
-            {
-                var row = new DockPanel { Margin = new Thickness(0, 1, 0, 1) };
-                var time = new TextBlock { Text = e.Time, FontFamily = Mono, FontSize = 11, Foreground = B("Muted"), Width = 132, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 1, 0, 0) };
-                DockPanel.SetDock(time, Dock.Left);
-                row.Children.Add(time);
-                var level = new TextBlock { Text = Texts.Get("lp_lv_" + e.Level), FontSize = 11, FontWeight = FontWeights.SemiBold, Foreground = B(LevelColour(e.Level)), Width = 44, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 1, 0, 0) };
-                DockPanel.SetDock(level, Dock.Left);
-                row.Children.Add(level);
-                var text = Selectable.Text(e.Text, 12, e.Level == "error" ? "Red" : e.Level == "warn" ? "Yellow" : e.Level == "debug" ? "Muted" : "Ink", Mono);
-                row.Children.Add(text);
-                list.Children.Add(row);
-            }
-            if (drawn.Count == 0) list.Children.Add(Small(Texts.Get(entries.Count == 0 ? "lp_log_empty" : "lp_log_none_shown"), new Thickness(0)));
-            var scroll = new ScrollViewer { Content = list, MaxHeight = 460, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
-            luaLogBox.Children.Add(new Border { BorderBrush = B("Grid"), BorderThickness = new Thickness(1), Background = B("Ground700"), Padding = new Thickness(10, 8, 10, 8), Child = scroll });
-            scroll.Loaded += (s, e) => scroll.ScrollToEnd();
-            luaLogBox.Children.Add(Small(Texts.F(lines.Count > Most ? "lp_log_count_cut" : "lp_log_count", drawn.Count, lines.Count, src.Path) + (Texts.Hints ? " " + Texts.Get("lp_level_note") : ""), new Thickness(0, 6, 0, 0)));
-        }
-
-        static string LevelColour(string level) => level == "error" ? "Red" : level == "warn" ? "Yellow" : level == "info" ? "Blue" : "Muted";
     }
 }
