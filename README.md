@@ -370,7 +370,7 @@ A change made on the command line shows in an open window half a second later.
 | `lua-syntax FILE...` | Whether Lua files compile on the game's Lua (PUC 5.1, no LuaJIT): OK, or the line and why. |
 | `conflicts [-v]` | Resources that more than one mod ships, and which one wins; the ones every mod ships byte for byte alike are named as shared, not as a conflict. `-v` lists each resource's type and id, and its name from HD2SDK's name list when HD2SDK is installed. |
 | `state [--verify]` | Everything the window shows, as JSON. |
-| `report [--out PATH]` | A zip to send with a question (on the desktop unless `--out`): the state, the settings, the deploy history, the Nexus Mods download history, Boot Mod Loader's log and the names of the game's crash dumps. Never the dumps themselves and never the sign-in; your user folder is written as `%USERPROFILE%`. A short summary is printed too. |
+| `report [--out PATH]` | A zip to send with a question (on the desktop unless `--out`): the state, the settings, the deploy history, the Nexus Mods download history, Boot Mod Loader's log, the names of the game's crash dumps, and, when MDL3 is installed, whether its native part is in place, with the logs of MDL3, its Data Hub and the mods it runs. Never the dumps themselves and never the sign-in; your user folder is written as `%USERPROFILE%`. A short summary is printed too. |
 
 `MOD` is the mod's number in `list`, its name, or a unique part of its name.
 
@@ -617,7 +617,7 @@ mod 库与游戏不在同一分区时无法使用硬链接，有变化的文件�
 - **请勿直接修改游戏目录中已部署的 patch 文件**：硬链接与 mod 库中的文件为同一文件，修改会同时影响 mod 库。恢复原版不影响 mod 库。
 - 游戏运行时无法部署或恢复原版。
 - 界面语言为本程序独立的设置（设置窗口中选择，下次启动时保留）；未设置时跟随 Windows 的语言。
-- **反馈问题时**：在设置页“问题反馈”中点击“导出诊断包”，桌面上会生成一个 zip 文件，简要摘要同时复制到剪贴板；提问时附上该 zip 即可（命令行为 `hd2qd report`）。诊断包不含崩溃转储和 Nexus Mods 登录信息，Windows 用户文件夹会写成 `%USERPROFILE%`。
+- **反馈问题时**：在设置页“问题反馈”中点击“导出诊断包”，桌面上会生成一个 zip 文件，简要摘要同时复制到剪贴板；提问时附上该 zip 即可（命令行为 `hd2qd report`）。装有 MDL3 时，诊断包还会记录其原生组件是否就位，并附上 MDL3、Data Hub 及其所加载 mod 的日志。诊断包不含崩溃转储和 Nexus Mods 登录信息，Windows 用户文件夹会写成 `%USERPROFILE%`。
 - **hd2qd 可以由 AI 助手调用。** 所有数据保存在 `%USERPROFILE%\.hd2-mod-cli`，而不是 AppData：由打包应用（多数桌面版 AI 助手都是）启动的程序，在 `%APPDATA%` 下新建的文件夹会被 Windows 放进该应用的私有目录，其他程序都读不到，mod 库会在没有任何报错的情况下分成两份。如果仍将 `HD2MOD_HOME` 设在 AppData 下，hd2qd 会在写入前检查，并拒绝执行、说明写入本会落在何处。
 
 ### 命令行 hd2qd

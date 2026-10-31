@@ -277,7 +277,7 @@ namespace Hd2Mod
             finally { if (File.Exists(tmp)) File.Delete(tmp); }
         }
 
-        static Dictionary<string, object> ReadJson(string path)
+        internal static Dictionary<string, object> ReadJson(string path)
         {
             if (!File.Exists(path)) return null;
             try { return Json.Parse(File.ReadAllText(path)) as Dictionary<string, object>; }
@@ -354,7 +354,7 @@ namespace Hd2Mod
         static bool Inside(string path, string folder) =>
             Same(path, folder) || Path.GetFullPath(path).StartsWith(Path.GetFullPath(folder).TrimEnd('\\') + "\\", StringComparison.OrdinalIgnoreCase);
 
-        static string Sha(string path)
+        internal static string Sha(string path)
         {
             using (var f = File.OpenRead(path))
             using (var h = SHA256.Create())

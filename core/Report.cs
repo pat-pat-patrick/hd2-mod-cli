@@ -12,8 +12,8 @@ namespace Hd2Mod
     /// <summary>A problem report: one zip a player can send with a question (the user,
     /// 2026-10-29: players should not have to find the files themselves). It holds the state
     /// as the window sees it, the deploy history, the crash places learned, the settings, the
-    /// Nexus Mods download history, Boot Mod Loader's log and the names of the game's crash
-    /// dumps. Never the dumps themselves (large, and the game's memory), never nexus.json
+    /// Nexus Mods download history, Boot Mod Loader's log, the names of the game's crash
+    /// dumps, and MDL3's native part and logs when MDL3 is there. Never the dumps themselves (large, and the game's memory), never nexus.json
     /// itself (the sign-in and any key are in it), and the Windows user's folder is written
     /// as %USERPROFILE% everywhere.</summary>
     public static class Report
@@ -42,6 +42,8 @@ namespace Hd2Mod
             catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { }
             var state = StateDoc.Build(lib, game);
             var summary = Summary(state, now);
+            var mdl3 = new List<(string Name, string Text)>();
+            if (Mdl3(lib, game, mdl3) is string native) summary += native + Environment.NewLine;
 
             var entries = new List<(string Name, string Text)>
             {
@@ -62,6 +64,7 @@ namespace Hd2Mod
             if (dumps.Count > 0)
                 entries.Add(("game/dumps.txt", string.Join(Environment.NewLine, dumps.Select(d =>
                     d.When.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture) + "  " + d.File)) + Environment.NewLine));
+            entries.AddRange(mdl3);
 
             // written aside, then put in place: a report cut short is never left with the name
             var part = path + ".part";
@@ -77,6 +80,72 @@ namespace Hd2Mod
             }
             finally { try { File.Delete(part); } catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { } }
             return (path, summary);
+        }
+
+        /// <summary>The most of each MDL3, MDL or Data Hub log taken.</summary>
+        public const int Mdl3LogTail = 1 << 18;
+
+        /// <summary>MDL3, when the library has it or this PC has its folder (the user, 2026-11-01: a
+        /// player's MDL3 mods did nothing, and the report could not say whether its native part
+        /// was there): the package the deploy uses, what is in %LOCALAPPDATA%\MDL3, where its boot
+        /// loads the native part from, and the logs of MDL3, MDL and the shared Bingus folder,
+        /// where Data Hub and the mods MDL3 runs write theirs (there, only those of the last
+        /// week). The report's line on it, else null.</summary>
+        static string Mdl3(Library lib, string game, List<(string Name, string Text)> entries)
+        {
+            try
+            {
+                var p = Mdl3Native.Wanted(lib);
+                var data = Mdl3Native.DataDir();
+                if (p == null && !Directory.Exists(data)) return null;
+                string need = null;
+                if (p != null)
+                    try { need = Mdl3Native.Need(p, game) ?? "installed"; }
+                    catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { need = "not readable (" + e.Message + ")"; }
+                var files = new List<object>();
+                if (Directory.Exists(data))
+                    foreach (var f in Directory.GetFiles(data).OrderBy(f => f, StringComparer.OrdinalIgnoreCase))
+                    {
+                        var row = new Dictionary<string, object>
+                        {
+                            ["name"] = Path.GetFileName(f), ["bytes"] = new FileInfo(f).Length,
+                            ["modified"] = File.GetLastWriteTime(f).ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture),
+                        };
+                        if (f.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
+                        {
+                            row["sha256"] = Mdl3Native.Sha(f);
+                            row["signed"] = Mdl3Native.Signed(f);
+                        }
+                        files.Add(row);
+                    }
+                entries.Add(("mdl3/native.json", Json.Write(new Dictionary<string, object>
+                {
+                    ["package"] = p == null ? null : new Dictionary<string, object>
+                    {
+                        ["folder"] = p.Folder, ["version"] = p.Version, ["native_version"] = p.NativeVersion, ["sha256"] = p.Sha256, ["problem"] = p.Problem,
+                    },
+                    ["native_part"] = need,
+                    ["folder"] = data,
+                    ["files"] = files,
+                    ["config"] = Mdl3Native.ReadJson(Path.Combine(data, "config.json")),
+                    ["install_state"] = Mdl3Native.ReadJson(Path.Combine(data, "install-state.json")),
+                }, true)));
+                var week = DateTime.Now.AddDays(-7);
+                foreach (var (dir, every) in new[] { (@"MDL3\Logs", true), (@"MDL\Helldivers2\Logs", true), (@"CowboyBingus\Helldivers2\Logs", false) })
+                {
+                    var full = Path.Combine(Mdl3Native.LocalAppData(), dir);
+                    if (!Directory.Exists(full)) continue;
+                    foreach (var f in Directory.GetFiles(full, "*.log").OrderBy(f => f, StringComparer.OrdinalIgnoreCase))
+                        if (every || File.GetLastWriteTime(f) >= week)
+                            entries.Add(("mdl3/" + dir.Replace('\\', '/') + "/" + Path.GetFileName(f), Tail(f, Mdl3LogTail)));
+                }
+                return p == null ? null : "MDL3 native part: " + need + " (MDL3 " + p.Version + ", native " + p.NativeVersion + ")";
+            }
+            catch (Exception e) when (e is IOException || e is UnauthorizedAccessException)
+            {
+                entries.Add(("mdl3/native.json", Json.Write(new Dictionary<string, object> { ["error"] = e.Message }, true)));
+                return "MDL3 native part: not readable (" + e.Message + ")";
+            }
         }
 
         /// <summary>The Windows user's folder (C:\Users\NAME) as %USERPROFILE%, as it is written

@@ -199,6 +199,61 @@ namespace Hd2Mod.Tests
             Assert.DoesNotContain("MDL3", Cli("deploy"));                // the short name is the same place
         }
 
+        /// <summary>The user, 2026-11-01: a player's MDL3 did nothing, and the report could not say
+        /// whether the native part was there.</summary>
+        [Fact]
+        public void The_report_says_whether_the_native_part_is_there_and_holds_the_logs()
+        {
+            LuaMods.GameFolderOverride = Path.Combine(Root, "game logs");
+            try
+            {
+                Cli("add", Package("MDL3 dev.21", "3.0.0-dev.21", "dll one"));
+                File.WriteAllText(Path.Combine(Local, "MDL3", "Logs", "MDL3.log"), "native host started");
+                File.WriteAllText(Path.Combine(Local, "MDL", "Helldivers2", "Logs", "MDL.log"), "mods started");
+                var bingus = Path.Combine(Local, "CowboyBingus", "Helldivers2", "Logs");
+                File.WriteAllText(Path.Combine(bingus, "HD2DataHub.log"), "E_SERIALIZE codec: structure limit");
+                File.WriteAllText(Path.Combine(bingus, "Old.log"), "a month ago");
+                File.SetLastWriteTime(Path.Combine(bingus, "Old.log"), DateTime.Now.AddDays(-30));
+
+                var (zip, summary) = Report.Write(Library.Load(), Game, Path.Combine(Root, "r1.zip"));
+                Assert.Contains("MDL3 native part: installed (MDL3 3.0.0-dev.21, native 0.4.5)", summary);
+                Dictionary<string, string> e;
+                using (var z = System.IO.Compression.ZipFile.OpenRead(zip))
+                    e = z.Entries.ToDictionary(x => x.FullName, x => new StreamReader(x.Open()).ReadToEnd());
+                Assert.Contains("MDL3 native part: installed", e["info.txt"]);
+                var native = (Dictionary<string, object>)Json.Parse(e["mdl3/native.json"]);
+                Assert.Equal("installed", Json.Str(native, "native_part"));
+                var dll = Json.List(native, "files").OfType<Dictionary<string, object>>().Single(f => Json.Str(f, "name") == "mdl_native_bridge.dll");
+                Assert.Equal(Sha("dll one"), Json.Str(dll, "sha256"));
+                Assert.True(Json.Bool(dll, "signed"));
+                Assert.Equal("3.0.0-dev.21", Json.Str(Json.Obj(native, "install_state"), "version"));
+                Assert.Equal("native host started", e["mdl3/MDL3/Logs/MDL3.log"]);
+                Assert.Equal("mods started", e["mdl3/MDL/Helldivers2/Logs/MDL.log"]);
+                Assert.Contains("structure limit", e["mdl3/CowboyBingus/Helldivers2/Logs/HD2DataHub.log"]);
+                Assert.DoesNotContain("mdl3/CowboyBingus/Helldivers2/Logs/Old.log", e.Keys);
+
+                // the player who never ran MDL3's installer
+                File.Delete(Installed);
+                Assert.Contains("MDL3 native part: not installed (MDL3 3.0.0-dev.21", Report.Write(Library.Load(), Game, Path.Combine(Root, "r2.zip")).Summary);
+            }
+            finally { LuaMods.GameFolderOverride = null; }
+        }
+
+        [Fact]
+        public void A_report_without_mdl3_says_nothing_of_it()
+        {
+            LuaMods.GameFolderOverride = Path.Combine(Root, "game logs");
+            try
+            {
+                Cli("add", Mod("Cape", Files((A + ".patch_0", "cape"))));
+                var (zip, summary) = Report.Write(Library.Load(), Game, Path.Combine(Root, "r.zip"));
+                Assert.DoesNotContain("MDL3", summary);
+                using (var z = System.IO.Compression.ZipFile.OpenRead(zip))
+                    Assert.DoesNotContain(z.Entries, x => x.FullName.StartsWith("mdl3/"));
+            }
+            finally { LuaMods.GameFolderOverride = null; }
+        }
+
         [Fact]
         public void An_unsigned_file_fails_the_real_signature_check()
         {
