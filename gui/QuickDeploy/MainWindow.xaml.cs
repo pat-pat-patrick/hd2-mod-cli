@@ -139,6 +139,7 @@ namespace QuickDeploy
             ViewGroups.Content = Texts.Get("view_groups");
             ViewOrder.Content = Texts.Get("view_order");
             PageDeploy.Content = Texts.Get("page_deploy");
+            PageLua.Content = Texts.Get("page_lua");
             PageDownload.Content = Texts.Get("page_download");
             PageStorage.Content = Texts.Get("page_storage");
             PageTags.Content = Texts.Get("page_tags");
@@ -231,9 +232,17 @@ namespace QuickDeploy
             var page = Environment.GetEnvironmentVariable("HD2QD_CLICK_TEST") ?? "";
             if (page.StartsWith("page:"))
             {
-                // "page:settings" (pictures only): that page shown 3 s after the start
+                // "page:settings" (pictures only): that page shown 3 s after the start;
+                // "page:lua@900": and scrolled 900 down
                 var tp = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
-                tp.Tick += (s, e) => { tp.Stop(); ShowPage(page.Substring(5)); };
+                var at = page.Substring(5).Split('@');
+                tp.Tick += (s, e) =>
+                {
+                    tp.Stop();
+                    ShowPage(at[0]);
+                    if (at.Length > 1 && double.TryParse(at[1], out var y))
+                        Dispatcher.BeginInvoke(new Action(() => OnShow().ScrollToVerticalOffset(y)), DispatcherPriority.Loaded);
+                };
                 tp.Start();
                 return;
             }
@@ -2243,7 +2252,8 @@ namespace QuickDeploy
             if (DownloadPage.Visibility == Visibility.Visible) RenderDownloads();
 #endif
             if (StoragePage.Visibility == Visibility.Visible) RenderStorage();
-            if (startPage == "download" || startPage == "storage" || startPage == "tags") ShowPage(startPage);
+            if (LuaPage.Visibility == Visibility.Visible) RenderLua();
+            if (startPage == "download" || startPage == "storage" || startPage == "tags" || startPage == "lua") ShowPage(startPage);
             startPage = null;
         }
 
@@ -2718,13 +2728,15 @@ namespace QuickDeploy
         void ShowPage(string page)
         {
             if (page == "settings" && SettingsPage.Visibility != Visibility.Visible)
-                pageBack = StoragePage.IsVisible ? "storage" : TagsPage.IsVisible ? "tags" : DownloadPage.IsVisible ? "download" : "deploy";
+                pageBack = StoragePage.IsVisible ? "storage" : TagsPage.IsVisible ? "tags" : DownloadPage.IsVisible ? "download" : LuaPage.IsVisible ? "lua" : "deploy";
             PageDeploy.IsChecked = page == "deploy";
+            PageLua.IsChecked = page == "lua";
             PageDownload.IsChecked = page == "download";
             PageStorage.IsChecked = page == "storage";
             PageTags.IsChecked = page == "tags";
             Body.Visibility = page == "deploy" ? Visibility.Visible : Visibility.Collapsed;
             DownloadPage.Visibility = page == "download" ? Visibility.Visible : Visibility.Collapsed;
+            LuaPage.Visibility = page == "lua" ? Visibility.Visible : Visibility.Collapsed;
             StoragePage.Visibility = page == "storage" ? Visibility.Visible : Visibility.Collapsed;
             TagsPage.Visibility = page == "tags" ? Visibility.Visible : Visibility.Collapsed;
             SettingsPage.Visibility = page == "settings" ? Visibility.Visible : Visibility.Collapsed;
@@ -2736,12 +2748,13 @@ namespace QuickDeploy
             if (page == "download") RenderDownloads();
 #endif
             if (page == "storage") RenderStorage();
+            if (page == "lua") RenderLua();
             if (page == "tags") RenderTags();
             if (page == "settings") { RenderSettings(); SettingsPage.ScrollToTop(); }
         }
 
         void Page_Click(object sender, RoutedEventArgs e) =>
-            ShowPage(sender == PageDownload ? "download" : sender == PageStorage ? "storage" : sender == PageTags ? "tags" : "deploy");
+            ShowPage(sender == PageDownload ? "download" : sender == PageStorage ? "storage" : sender == PageTags ? "tags" : sender == PageLua ? "lua" : "deploy");
 
         // ---------------------------------------------------------------- the storage page
 
@@ -5322,6 +5335,7 @@ namespace QuickDeploy
             if (checking || !checkingOne.Add(m.Id)) return;
             RenderList();
             RenderDetail();
+            if (LuaPage.IsVisible) RenderLua();
             string was = null, failed = null;
             UpdateInfo u = null;
             try
@@ -5342,7 +5356,7 @@ namespace QuickDeploy
             if (failed != null)
             {
                 Foot(Texts.F("failed", failed), "Yellow");
-                if (st != null) { RenderList(); RenderDetail(); }
+                if (st != null) { RenderList(); RenderDetail(); if (LuaPage.IsVisible) RenderLua(); }
                 return;
             }
             updates[u.ModId] = u;
@@ -5909,6 +5923,7 @@ namespace QuickDeploy
         /// <summary>The scroll of the page on show.</summary>
         ScrollViewer OnShow() =>
             StoragePage.Visibility == Visibility.Visible ? StoragePage
+            : LuaPage.Visibility == Visibility.Visible ? LuaPage
             : TagsPage.Visibility == Visibility.Visible ? TagsPage
             : DownloadPage.Visibility == Visibility.Visible ? DownloadPage
             : SettingsPage.Visibility == Visibility.Visible ? SettingsPage

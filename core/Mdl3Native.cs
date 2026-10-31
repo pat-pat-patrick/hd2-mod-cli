@@ -394,11 +394,20 @@ namespace Hd2Mod
         static bool Inside(string path, string folder) =>
             Same(path, folder) || Path.GetFullPath(path).StartsWith(Path.GetFullPath(folder).TrimEnd('\\') + "\\", StringComparison.OrdinalIgnoreCase);
 
+        // the hashes taken, by the file's size and time: the window asks for them at every state read
+        static readonly Dictionary<string, (string Sig, string Sha)> shas = new Dictionary<string, (string, string)>(StringComparer.OrdinalIgnoreCase);
+
         internal static string Sha(string path)
         {
+            var fi = new FileInfo(path);
+            var sig = fi.Length + ":" + fi.LastWriteTimeUtc.Ticks;
+            lock (shas) if (shas.TryGetValue(fi.FullName, out var k) && k.Sig == sig) return k.Sha;
+            string sha;
             using (var f = File.OpenRead(path))
             using (var h = SHA256.Create())
-                return BitConverter.ToString(h.ComputeHash(f)).Replace("-", "").ToLowerInvariant();
+                sha = BitConverter.ToString(h.ComputeHash(f)).Replace("-", "").ToLowerInvariant();
+            lock (shas) shas[fi.FullName] = (sig, sha);
+            return sha;
         }
 
         // Authenticode through WinVerifyTrust (no revocation check, no network), then the

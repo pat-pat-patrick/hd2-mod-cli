@@ -81,6 +81,8 @@ namespace QuickDeploy
         public int CrashTimes, CrashRecent;
         public bool CrashCommon;
         public List<string> CrashAdded;
+        /// <summary>MDL3's native part: the package's mod, "installed" or why not, its version.</summary>
+        public string Mdl3Mod, Mdl3State, Mdl3Native, Mdl3Problem;
     }
 
     class ModRow
@@ -360,6 +362,13 @@ namespace QuickDeploy
                     lua.CrashRecent = Int(cr, "recent");
                     lua.CrashCommon = Bool(cr, "common");
                     lua.CrashAdded = cr.TryGetValue("added", out var ad) && ad is List<object> al ? al.OfType<string>().ToList() : null;
+                }
+                if (lc.TryGetValue("mdl3_native", out var nv) && nv is Dictionary<string, object> na)
+                {
+                    lua.Mdl3Mod = Str(na, "mod");
+                    lua.Mdl3State = Str(na, "state");
+                    lua.Mdl3Native = Str(na, "native_version");
+                    lua.Mdl3Problem = Str(na, "problem");
                 }
                 s.Lua = lua;
             }

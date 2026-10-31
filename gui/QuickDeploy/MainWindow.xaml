@@ -68,6 +68,7 @@
                   VerticalAlignment="Center" WindowChrome.IsHitTestVisibleInChrome="True">
             <StackPanel Orientation="Horizontal">
               <RadioButton x:Name="PageDeploy" Style="{StaticResource Segment}" MinWidth="104" GroupName="page" IsChecked="True" Click="Page_Click"/>
+              <RadioButton x:Name="PageLua" Style="{StaticResource Segment}" MinWidth="104" GroupName="page" Click="Page_Click"/>
               <RadioButton x:Name="PageDownload" Style="{StaticResource Segment}" MinWidth="104" GroupName="page" Click="Page_Click"/>
               <RadioButton x:Name="PageStorage" Style="{StaticResource Segment}" MinWidth="104" GroupName="page" Click="Page_Click"/>
               <RadioButton x:Name="PageTags" Style="{StaticResource Segment}" MinWidth="104" GroupName="page" Click="Page_Click"/>
@@ -197,6 +198,10 @@
           </ScrollViewer>
         </Border>
       </Grid>
+      <!-- the Lua loaders page (LuaPage.cs): the loaders, the Lua mods, the conflicts, the logs -->
+      <ScrollViewer x:Name="LuaPage" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" Focusable="False">
+        <StackPanel x:Name="LuaBox" Margin="32,24,20,32" MaxWidth="1240"/>
+      </ScrollViewer>
       <!-- the storage page: the mod folders, as Steam's library folders -->
       <ScrollViewer x:Name="StoragePage" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" Focusable="False">
         <StackPanel x:Name="Storages" Margin="32,24,32,32" MaxWidth="1100"/>

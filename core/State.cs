@@ -203,7 +203,27 @@ namespace Hd2Mod
                     ["started"] = (long)session.StartedCount, ["total"] = (long)session.Total,
                 },
                 ["crash"] = crash,
+                ["mdl3_native"] = Mdl3NativeState(lib),
             };
+        }
+
+        /// <summary>MDL3's native part for the Lua loaders page: the package the deploy uses (its
+        /// mod), and whether its part is installed ("installed", or why not: Mdl3Native.Need); null
+        /// when no enabled mod is an MDL3 package.</summary>
+        static Dictionary<string, object> Mdl3NativeState(Library lib)
+        {
+            try
+            {
+                var mod = lib.Mods.FirstOrDefault(m => m.Enabled && Profiles.InProfile(lib, m) && Mdl3Native.Find(m.Path) != null);
+                if (mod == null) return null;
+                var p = Mdl3Native.Find(mod.Path);
+                return new Dictionary<string, object>
+                {
+                    ["mod"] = mod.Id, ["version"] = p.Version, ["native_version"] = p.NativeVersion,
+                    ["state"] = Mdl3Native.Need(p, Store.GameDir(required: false)) ?? "installed", ["problem"] = p.Problem,
+                };
+            }
+            catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { return null; }
         }
 
         internal static (bool Lua, bool Loader) HasLua(DirectoryInfo folder)
