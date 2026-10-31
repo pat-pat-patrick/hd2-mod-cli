@@ -216,8 +216,9 @@
         <StackPanel x:Name="Downloads" Margin="32,24,32,32" MaxWidth="1100"/>
       </ScrollViewer>
       <!-- the settings page, opened by the gear in the title bar: one readable column (720
-           wide) in the middle of the window, not at the left of the other pages' wide one -->
-      <ScrollViewer x:Name="SettingsPage" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" Focusable="False">
+           wide) in the middle of the window, not at the left of the other pages' wide one. Its
+           scroll bar always there: the column stays put when the other tab is taller -->
+      <ScrollViewer x:Name="SettingsPage" Visibility="Collapsed" VerticalScrollBarVisibility="Visible" Focusable="False">
         <StackPanel x:Name="SettingsBox" Margin="32,24,32,32" MaxWidth="720"/>
       </ScrollViewer>
       </Grid>

@@ -424,6 +424,10 @@ namespace QuickDeploy
             ["page_lua"] = ("Lua loaders", "LUA 加载器"),
             // the Lua loaders page (LuaPage.cs)
             ["lp_title"] = ("Lua loaders", "LUA 加载器"),
+            ["set_tab_general"] = ("General", "常规"),
+            ["set_tab_about"] = ("About and diagnostics", "关于与诊断"),
+            ["set_group_ui"] = ("Interface", "界面"),
+            ["set_group_mods"] = ("Mod management", "MOD 管理"),
             ["set_log"] = ("MANAGER LOG", "管理器日志"),
             ["set_log_note"] = ("What this manager was asked to do, from this window or the command line, and how each ended: errors, refusals, what it said. It goes into the problem report too. A click on the status line at the bottom of the window opens it.", "本管理器执行过的操作（来自窗口或命令行）及每项的结果：错误、被拒绝的操作及输出内容。导出的诊断包也包含此日志。点击窗口底部的状态栏也可打开此处。"),
             ["set_log_since_start"] = ("Since the window opened", "本次打开以来"),

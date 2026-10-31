@@ -236,6 +236,8 @@ namespace QuickDeploy
                 // "page:lua@900": and scrolled 900 down
                 var tp = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
                 var at = page.Substring(5).Split('@');
+                // "page:about": the settings on their second tab
+                if (at[0] == "about") { settingsTab = "about"; at[0] = "settings"; }
                 tp.Tick += (s, e) =>
                 {
                     tp.Stop();
@@ -6595,12 +6597,19 @@ namespace QuickDeploy
         }
 
         /// <summary>The gear: the settings page, or back to the page it was opened from.</summary>
-        void Settings_Click(object sender, RoutedEventArgs e) =>
-            ShowPage(SettingsPage.Visibility == Visibility.Visible ? pageBack : "settings");
+        /// <summary>The gear: the settings, on General; on About and diagnostics while a newer
+        /// version of this program is out, where it is said (the red dot).</summary>
+        void Settings_Click(object sender, RoutedEventArgs e)
+        {
+            if (SettingsPage.Visibility == Visibility.Visible) { ShowPage(pageBack); return; }
+            settingsTab = UpdateDot.Visibility == Visibility.Visible ? "about" : "general";
+            ShowPage("settings");
+        }
 
-        /// <summary>The settings page (the user, 2026-10-24; a page, not a window, since
-        /// 2026-10-27): the language, whether the explaining lines are shown, who made this and
-        /// where it comes from.</summary>
+        /// <summary>The settings' tab on show: "general" (what the manager does and shows) or
+        /// "about" (its version, the problem report, its log, who made it).</summary>
+        string settingsTab = "general";
+
         /// <summary>The manager's own log on the settings page (ManagerLog).</summary>
         LogView managerLog;
         TextBlock managerLogHead;
@@ -6617,17 +6626,40 @@ namespace QuickDeploy
         /// <summary>The settings page, scrolled to the manager's log (a click on the status line).</summary>
         void ShowManagerLog()
         {
+            settingsTab = "about";
+            if (SettingsPage.Visibility == Visibility.Visible) RenderSettings();
             ShowPage("settings");
             Dispatcher.BeginInvoke(new Action(() => managerLogHead?.BringIntoView(new Rect(0, 0, 1, 600))), DispatcherPriority.Loaded);
         }
 
+        /// <summary>The settings page (the user, 2026-10-24; a page, not a window, since
+        /// 2026-10-27) in two tabs (the user, 2026-11-01: it had become a muddle): General, the
+        /// interface and how mods are managed; About and diagnostics, this program's version and
+        /// updates, the problem report, its log, who made it.</summary>
         void RenderSettings()
         {
             SettingsBox.Children.Clear();
-            SettingsBox.Children.Add(new TextBlock { Text = Texts.Get("settings"), FontSize = 28, FontWeight = FontWeights.Bold });
-            var body = new StackPanel { Margin = new Thickness(0, 4, 0, 0) };
-            SettingsBox.Children.Add(body);
+            var head = new DockPanel();
+            var tabs = new StackPanel { Orientation = Orientation.Horizontal };
+            foreach (var (key, label) in new[] { ("general", "set_tab_general"), ("about", "set_tab_about") })
+            {
+                var b = new RadioButton { Style = (Style)FindResource("Segment"), GroupName = "settab", Content = Texts.Get(label), MinWidth = 120, IsChecked = settingsTab == key };
+                var k = key;
+                b.Click += (s, e2) => { settingsTab = k; RenderSettings(); SettingsPage.ScrollToTop(); };
+                tabs.Children.Add(b);
+            }
+            var tabBox = new Border { BorderBrush = B("Grid"), BorderThickness = new Thickness(1), VerticalAlignment = VerticalAlignment.Center, Child = tabs };
+            DockPanel.SetDock(tabBox, Dock.Right);
+            head.Children.Add(tabBox);
+            head.Children.Add(new TextBlock { Text = Texts.Get("settings"), FontSize = 28, FontWeight = FontWeights.Bold, VerticalAlignment = VerticalAlignment.Center });
+            SettingsBox.Children.Add(head);
+            var general = new StackPanel { Margin = new Thickness(0, 4, 0, 0) };
+            var about = new StackPanel { Margin = new Thickness(0, 4, 0, 0) };
+            SettingsBox.Children.Add(settingsTab == "about" ? about : general);
+            TextBlock Group(string key) => new TextBlock { Text = Texts.Get(key), FontSize = 18, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 24, 0, 0) };
+            var body = general;
 
+            body.Children.Add(Group("set_group_ui"));
             // the language
             body.Children.Add(Label("set_lang", new Thickness(0, 20, 0, 6)));
             var langs = new Border { BorderBrush = B("Grid"), BorderThickness = new Thickness(1), HorizontalAlignment = HorizontalAlignment.Left };
@@ -6641,20 +6673,23 @@ namespace QuickDeploy
             langs.Child = pair;
             body.Children.Add(langs);
 
-            // profiles: a switch of their own (the user, 2026-10-25)
-            body.Children.Add(Label("set_profiles", new Thickness(0, 20, 0, 6)));
-            var pfSw = new CheckBox { Style = (Style)FindResource("Switch"), IsChecked = st?.ProfilesOn == true, VerticalAlignment = VerticalAlignment.Center };
-            var pfLine = new StackPanel { Orientation = Orientation.Horizontal };
-            pfLine.Children.Add(pfSw);
-            pfLine.Children.Add(new TextBlock { Text = Texts.Get("set_profiles_on"), Foreground = B("Ink"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 0, 0, 0) });
-            pfSw.Click += async (s, e2) =>
+            // the explaining lines
+            body.Children.Add(Label("set_hints", new Thickness(0, 20, 0, 6)));
+            var sw = new CheckBox { Style = (Style)FindResource("Switch"), IsChecked = Texts.Hints, VerticalAlignment = VerticalAlignment.Center };
+            var line = new StackPanel { Orientation = Orientation.Horizontal };
+            line.Children.Add(sw);
+            line.Children.Add(new TextBlock { Text = Texts.Get("set_hints_on"), Foreground = B("Ink"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 0, 0, 0) });
+            sw.Click += (s, e2) =>
             {
-                viewLibrary = false;
-                await Exec(pfSw.IsChecked == true ? "profiles-on" : "profiles-off");
-                Refresh();
+                Texts.ShowHints(sw.IsChecked == true);
+                rows.Clear();
+                List.Children.Clear();
+                Words();
+                if (st != null) Render();
+                if (TagsPage.Visibility == Visibility.Visible) RenderTags();
             };
-            body.Children.Add(pfLine);
-            body.Children.Add(Small(Texts.Get("set_profiles_note"), new Thickness(0, 8, 0, 0)));
+            body.Children.Add(line);
+            body.Children.Add(Small(Texts.Get("set_hints_note"), new Thickness(0, 8, 0, 0)));
 
             // which way the list is shown: the winner at the bottom (the load order as it is) or at the top
             body.Children.Add(Label("set_order", new Thickness(0, 20, 0, 6)));
@@ -6679,23 +6714,35 @@ namespace QuickDeploy
             body.Children.Add(orders);
             body.Children.Add(Small(Texts.Get("set_order_note"), new Thickness(0, 8, 0, 0)));
 
-            // the explaining lines
-            body.Children.Add(Label("set_hints", new Thickness(0, 20, 0, 6)));
-            var sw = new CheckBox { Style = (Style)FindResource("Switch"), IsChecked = Texts.Hints, VerticalAlignment = VerticalAlignment.Center };
-            var line = new StackPanel { Orientation = Orientation.Horizontal };
-            line.Children.Add(sw);
-            line.Children.Add(new TextBlock { Text = Texts.Get("set_hints_on"), Foreground = B("Ink"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 0, 0, 0) });
-            sw.Click += (s, e2) =>
+            // the jump button by the pointer on a fast wheel (Fling)
+            body.Children.Add(Label("set_fling", new Thickness(0, 20, 0, 6)));
+            var fsw = new CheckBox { Style = (Style)FindResource("Switch"), IsChecked = Texts.FlingButton, VerticalAlignment = VerticalAlignment.Center };
+            var fline = new StackPanel { Orientation = Orientation.Horizontal };
+            fline.Children.Add(fsw);
+            fline.Children.Add(new TextBlock { Text = Texts.Get("set_fling_on"), Foreground = B("Ink"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 0, 0, 0) });
+            fsw.Click += (s, e2) =>
             {
-                Texts.ShowHints(sw.IsChecked == true);
-                rows.Clear();
-                List.Children.Clear();
-                Words();
-                if (st != null) Render();
-                if (TagsPage.Visibility == Visibility.Visible) RenderTags();
+                Texts.ShowFlingButton(fsw.IsChecked == true);
+                if (!Texts.FlingButton) HideFling();
             };
-            body.Children.Add(line);
-            body.Children.Add(Small(Texts.Get("set_hints_note"), new Thickness(0, 8, 0, 0)));
+            body.Children.Add(fline);
+            body.Children.Add(Small(Texts.Get("set_fling_note"), new Thickness(0, 8, 0, 0)));
+
+            body.Children.Add(Group("set_group_mods"));
+            // profiles: a switch of their own (the user, 2026-10-25)
+            body.Children.Add(Label("set_profiles", new Thickness(0, 20, 0, 6)));
+            var pfSw = new CheckBox { Style = (Style)FindResource("Switch"), IsChecked = st?.ProfilesOn == true, VerticalAlignment = VerticalAlignment.Center };
+            var pfLine = new StackPanel { Orientation = Orientation.Horizontal };
+            pfLine.Children.Add(pfSw);
+            pfLine.Children.Add(new TextBlock { Text = Texts.Get("set_profiles_on"), Foreground = B("Ink"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 0, 0, 0) });
+            pfSw.Click += async (s, e2) =>
+            {
+                viewLibrary = false;
+                await Exec(pfSw.IsChecked == true ? "profiles-on" : "profiles-off");
+                Refresh();
+            };
+            body.Children.Add(pfLine);
+            body.Children.Add(Small(Texts.Get("set_profiles_note"), new Thickness(0, 8, 0, 0)));
 
             // script mods keep the version they had, for a rollback (the user, 2026-10-30)
             body.Children.Add(Label("set_keep", new Thickness(0, 20, 0, 6)));
@@ -6711,19 +6758,8 @@ namespace QuickDeploy
             body.Children.Add(kpLine);
             body.Children.Add(Small(Texts.Get("set_keep_note"), new Thickness(0, 8, 0, 0)));
 
-            // the jump button by the pointer on a fast wheel (Fling)
-            body.Children.Add(Label("set_fling", new Thickness(0, 20, 0, 6)));
-            var fsw = new CheckBox { Style = (Style)FindResource("Switch"), IsChecked = Texts.FlingButton, VerticalAlignment = VerticalAlignment.Center };
-            var fline = new StackPanel { Orientation = Orientation.Horizontal };
-            fline.Children.Add(fsw);
-            fline.Children.Add(new TextBlock { Text = Texts.Get("set_fling_on"), Foreground = B("Ink"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 0, 0, 0) });
-            fsw.Click += (s, e2) =>
-            {
-                Texts.ShowFlingButton(fsw.IsChecked == true);
-                if (!Texts.FlingButton) HideFling();
-            };
-            body.Children.Add(fline);
-            body.Children.Add(Small(Texts.Get("set_fling_note"), new Thickness(0, 8, 0, 0)));
+            // About and diagnostics
+            body = about;
 
             // this program's own updates (the user, 2026-10-25)
             body.Children.Add(Label("set_update", new Thickness(0, 20, 0, 6)));
