@@ -424,6 +424,11 @@ namespace QuickDeploy
             ["page_lua"] = ("Lua loaders", "LUA 加载器"),
             // the Lua loaders page (LuaPage.cs)
             ["lp_title"] = ("Lua loaders", "LUA 加载器"),
+            ["lp_tab_loaders"] = ("Loaders", "加载器"),
+            ["lp_tab_mods"] = ("Lua mods · {0}", "LUA MOD · {0}"),
+            ["lp_tab_logs"] = ("Logs", "日志"),
+            ["lp_tile_open_loaders"] = ("Show the loaders and the conflicts", "查看加载器与冲突"),
+            ["lp_tile_open_mods"] = ("Show the Lua mods", "查看 Lua mod"),
             ["set_tab_general"] = ("General", "常规"),
             ["set_tab_about"] = ("About and diagnostics", "关于与诊断"),
             ["set_group_ui"] = ("Interface", "界面"),

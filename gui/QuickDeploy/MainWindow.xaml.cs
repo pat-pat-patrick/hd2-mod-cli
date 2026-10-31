@@ -238,6 +238,8 @@ namespace QuickDeploy
                 var at = page.Substring(5).Split('@');
                 // "page:about": the settings on their second tab
                 if (at[0] == "about") { settingsTab = "about"; at[0] = "settings"; }
+                // "page:lua-mods", "page:lua-logs": the Lua loaders page on that tab
+                if (at[0].StartsWith("lua-")) { luaTab = at[0].Substring(4); at[0] = "lua"; }
                 tp.Tick += (s, e) =>
                 {
                     tp.Stop();

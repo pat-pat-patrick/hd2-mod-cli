@@ -158,12 +158,14 @@ namespace QuickDeploy
                 catch (System.Runtime.InteropServices.COMException) { }
             };
             var list = new StackPanel();
+            // the time's column as wide as the times shown: a log that writes only the hour has no gap
+            bool longTimes = v.FullTime && drawn.Any(x => x.Time.Length > 8);
             foreach (var e in drawn)
             {
                 var row = new DockPanel { Margin = new Thickness(0, 1, 0, 1) };
                 // from the hour on in a narrow view: the date is in the session anyway
                 var when = v.FullTime || e.Time.Length <= 8 ? e.Time : e.Time.Substring(e.Time.Length - 8);
-                var time = new TextBlock { Text = when, FontFamily = Mono, FontSize = 11, Foreground = B("Muted"), Width = v.FullTime ? 132 : 62, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 1, 0, 0) };
+                var time = new TextBlock { Text = when, FontFamily = Mono, FontSize = 11, Foreground = B("Muted"), Width = longTimes ? 132 : 62, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 1, 0, 0) };
                 DockPanel.SetDock(time, Dock.Left);
                 row.Children.Add(time);
                 var level = new TextBlock { Text = Texts.Get("lp_lv_" + e.Level), FontSize = 11, FontWeight = FontWeights.SemiBold, Foreground = B(LevelColour(e.Level)), Width = 44, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 1, 0, 0) };

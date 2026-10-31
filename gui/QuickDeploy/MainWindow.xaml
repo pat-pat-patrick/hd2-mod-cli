@@ -200,7 +200,7 @@
         </Border>
       </Grid>
       <!-- the Lua loaders page (LuaPage.cs): the loaders, the Lua mods, the conflicts, the logs -->
-      <ScrollViewer x:Name="LuaPage" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" Focusable="False">
+      <ScrollViewer x:Name="LuaPage" Visibility="Collapsed" VerticalScrollBarVisibility="Visible" Focusable="False">
         <StackPanel x:Name="LuaBox" Margin="32,24,20,32" MaxWidth="1240"/>
       </ScrollViewer>
       <!-- the storage page: the mod folders, as Steam's library folders -->

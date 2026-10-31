@@ -66,15 +66,30 @@ namespace QuickDeploy
             int starting = now.Count(c => c.Colour == "Blue"), stopped = now.Count(c => c.Colour == "Yellow"), broken = now.Count(c => c.Colour == "Red");
             var problems = Problems();
             // the loader's name gets the widest tile
-            var tiles = new Grid { Margin = new Thickness(0, 0, 0, 24) };
+            var tiles = new Grid { Margin = new Thickness(0, 0, 0, 16) };
             foreach (var w in new[] { 1.8, 1, 1, 1, 1 }) tiles.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(w, GridUnitType.Star) });
-            tiles.Children.Add(Tile("lp_tile_loader", RunningLabel() ?? Texts.Get("lp_none_in_effect"), RunningLabel() != null ? "Blue" : on.Count > 0 ? "Yellow" : "Ink", 0));
-            tiles.Children.Add(Tile("lp_tile_start", Texts.F("lp_n_of_m", starting, on.Count), "Blue", 1));
-            tiles.Children.Add(Tile("lp_tile_stop", stopped.ToString(), stopped > 0 ? "Yellow" : "Ink", 1));
-            tiles.Children.Add(Tile("lp_tile_broken", broken.ToString(), broken > 0 ? "Red" : "Ink", 1));
-            tiles.Children.Add(Tile("lp_tile_conflicts", problems.Count.ToString(), problems.Count > 0 ? "Yellow" : "Ink", 2));
+            tiles.Children.Add(Tile("lp_tile_loader", RunningLabel() ?? Texts.Get("lp_none_in_effect"), RunningLabel() != null ? "Blue" : on.Count > 0 ? "Yellow" : "Ink", "loaders"));
+            tiles.Children.Add(Tile("lp_tile_start", Texts.F("lp_n_of_m", starting, on.Count), "Blue", "mods"));
+            tiles.Children.Add(Tile("lp_tile_stop", stopped.ToString(), stopped > 0 ? "Yellow" : "Ink", "mods"));
+            tiles.Children.Add(Tile("lp_tile_broken", broken.ToString(), broken > 0 ? "Red" : "Ink", "mods"));
+            tiles.Children.Add(Tile("lp_tile_conflicts", problems.Count.ToString(), problems.Count > 0 ? "Yellow" : "Ink", "loaders"));
             for (int c = 0; c < tiles.Children.Count; c++) Grid.SetColumn(tiles.Children[c], c);
             LuaBox.Children.Add(tiles);
+
+            // ---------------------------------------------------------- the tabs
+            // (the user, 2026-11-01: with a long list of Lua mods the logs were far down the page)
+            var tabs = new StackPanel { Orientation = Orientation.Horizontal };
+            foreach (var (key, text) in new[] { ("loaders", Texts.Get("lp_tab_loaders")), ("mods", Texts.F("lp_tab_mods", mods.Count)), ("logs", Texts.Get("lp_tab_logs")) })
+            {
+                var b = new RadioButton { Style = (Style)FindResource("Segment"), GroupName = "luatab", Content = text, MinWidth = 120, IsChecked = luaTab == key };
+                var k = key;
+                b.Click += (s, e) => ShowLuaTab(k);
+                tabs.Children.Add(b);
+            }
+            LuaBox.Children.Add(new Border { BorderBrush = B("Grid"), BorderThickness = new Thickness(1), HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 0, 0, 16), Child = tabs });
+
+            if (luaTab == "mods") { LuaModsTab(mods, on, starting, stopped, broken); return; }
+            if (luaTab == "logs") { LuaLogsTab(); return; }
 
             // ---------------------------------------------------------- the loaders
             LuaBox.Children.Add(Label("lp_choose_head", new Thickness(0, 0, 0, 4)));
@@ -105,18 +120,23 @@ namespace QuickDeploy
                 plist.Children.Add(t);
             }
             LuaBox.Children.Add(Panel(plist, new Thickness(0, 0, 12, 0)));
+        }
 
-            // ---------------------------------------------------------- the Lua mods
-            var modsHead = new DockPanel { Margin = new Thickness(0, 24, 12, 4) };
-            var count = new TextBlock
-            {
-                Text = Texts.F("lp_mods_summary", on.Count, starting, stopped, broken), FontFamily = Mono, FontSize = 12, Foreground = B("Muted"),
-                VerticalAlignment = VerticalAlignment.Bottom,
-            };
-            DockPanel.SetDock(count, Dock.Right);
-            modsHead.Children.Add(count);
-            modsHead.Children.Add(Label("lp_mods_head", new Thickness(0)));
-            LuaBox.Children.Add(modsHead);
+        /// <summary>The tab of the Lua loaders page on show: "loaders" (the cards and the
+        /// conflicts), "mods" (every Lua mod), "logs" (the loaders' logs).</summary>
+        string luaTab = "loaders";
+
+        void ShowLuaTab(string tab)
+        {
+            luaTab = tab;
+            RenderLua();
+            LuaPage.ScrollToTop();
+        }
+
+        /// <summary>The Lua mods' tab: every Lua mod, the ones in trouble first.</summary>
+        void LuaModsTab(List<ModRow> mods, List<ModRow> on, int starting, int stopped, int broken)
+        {
+            // the tab is its title and the tiles above count them: no head of its own
             if (mods.Count == 0) LuaBox.Children.Add(Small(Texts.Get("lp_no_lua_mods"), new Thickness(0, 4, 0, 0)));
             else
             {
@@ -127,29 +147,39 @@ namespace QuickDeploy
                 foreach (var x in mods.OrderBy(Rank).ThenBy(x => x.Index)) table.Children.Add(LuaRow(x));
                 LuaBox.Children.Add(new Border { BorderBrush = B("Grid"), BorderThickness = new Thickness(1, 1, 1, 0), Background = B("Ground700"), Child = table, Margin = new Thickness(0, 0, 12, 0) });
             }
+        }
 
-            // ---------------------------------------------------------- the logs
-            LuaBox.Children.Add(Label("lp_logs_head", new Thickness(0, 24, 0, 4)));
+        /// <summary>The logs' tab: the loaders' own logs.</summary>
+        void LuaLogsTab()
+        {
             var log = LuaLog();
             log.Box = new StackPanel();
             LuaBox.Children.Add(Panel(log.Box, new Thickness(0, 0, 12, 0)));
             RenderLog(log);
         }
 
-        /// <summary>A number at the top of the page, with what it counts above it.</summary>
-        FrameworkElement Tile(string key, string value, string colour, int at) => new Border
+        /// <summary>A number at the top of the page, with what it counts above it; a click opens
+        /// the tab that lists them.</summary>
+        FrameworkElement Tile(string key, string value, string colour, string tab)
         {
-            BorderBrush = B("Grid"), BorderThickness = new Thickness(1), Background = B("Ground900"), Padding = new Thickness(16, 12, 16, 12),
-            Margin = new Thickness(0, 0, 12, 0),
-            Child = new StackPanel
+            var tile = new Border
             {
-                Children =
+                BorderBrush = B("Grid"), BorderThickness = new Thickness(1), Background = B("Ground900"), Padding = new Thickness(16, 12, 16, 12),
+                Margin = new Thickness(0, 0, 12, 0), Cursor = Cursors.Hand, ToolTip = Texts.Get("lp_tile_open_" + tab),
+                Child = new StackPanel
                 {
-                    new TextBlock { Text = Texts.Get(key), FontSize = 12, Foreground = B("Muted") },
-                    new TextBlock { Text = value, FontSize = 20, FontWeight = FontWeights.SemiBold, Foreground = B(colour), Margin = new Thickness(0, 4, 0, 0), TextTrimming = TextTrimming.CharacterEllipsis, ToolTip = value },
+                    Children =
+                    {
+                        new TextBlock { Text = Texts.Get(key), FontSize = 12, Foreground = B("Muted") },
+                        new TextBlock { Text = value, FontSize = 20, FontWeight = FontWeights.SemiBold, Foreground = B(colour), Margin = new Thickness(0, 4, 0, 0), TextTrimming = TextTrimming.CharacterEllipsis },
+                    },
                 },
-            },
-        };
+            };
+            tile.MouseEnter += (s, e) => tile.BorderBrush = B("Muted");
+            tile.MouseLeave += (s, e) => tile.BorderBrush = B("Grid");
+            tile.MouseLeftButtonUp += (s, e) => ShowLuaTab(tab);
+            return tile;
+        }
 
         /// <summary>The conflicts between mods' scripts, each in one sentence: start-up scripts, two
         /// loaders, a script name declared twice, a translation pack without its mod. What depends on
@@ -435,7 +465,7 @@ namespace QuickDeploy
 
         LogView LuaLog() => luaLog ?? (luaLog = new LogView
         {
-            Group = "lualog",
+            Group = "lualog", Height = 620,
             Kinds = () => st.Mods.Where(x => x.Loader && x.LoaderKind != null).Select(x => x.LoaderKind).Distinct()
                             .Concat(new[] { "bml", "chef", "bsl", "mdl3" }).Distinct().ToList(),
             First = () => st.Lua?.Running ?? ById(st.LoaderChoice)?.LoaderKind,
@@ -447,8 +477,7 @@ namespace QuickDeploy
             var v = LuaLog();
             v.Kind = kind;
             v.File = null;
-            RenderLog(v);
-            v.Box?.BringIntoView();
+            ShowLuaTab("logs");
         }
     }
 }
