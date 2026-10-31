@@ -1381,7 +1381,26 @@ namespace QuickDeploy
             if (Refused(r)) return false;
             if (done && r.Ok) lastDone = Texts.F("took", Last(r.Out), Seconds(clock.Elapsed.TotalSeconds));
             Refresh();
+            var m3 = Mdl3Said(out bool bad);
+            if (m3 != null)
+            {
+                mdl3Note = m3;
+                if (bad) Dialog.Tell(this, m3);
+                else Foot(m3, "Blue");
+            }
             return r.Ok;
+        }
+
+        /// <summary>What an add or a deploy did about MDL3's native part (Mdl3Native), said once.</summary>
+        string mdl3Note;
+
+        static string Mdl3Said(out bool bad)
+        {
+            var o = Mdl3Native.Last;
+            Mdl3Native.Last = null;
+            bad = o?.Kind == "failed";
+            if (o == null) return null;
+            return o.Kind == "installed" ? Texts.F("mdl3_installed", o.Version) : o.Kind == "waits" ? Texts.Get("mdl3_waits") : Texts.F("mdl3_failed", o.Detail);
         }
 
         /// <summary>A quick change (a switch, an option, the order): shown at once from
@@ -6904,8 +6923,10 @@ namespace QuickDeploy
         Task<bool> DeployNow() => Act(() => Cli.Call(() =>
         {
             var r = Hd2Mod.Deploy.Run(Library.Load(), Store.GameDir());
-            return Texts.F("deployed", Texts.N(r.Kept), Texts.N(r.Moved), Texts.N(r.Written), Texts.N(r.Linked), Texts.N(r.Copied),
-                           Texts.N(r.Deleted), Texts.N(r.Files));
+            var said = Texts.F("deployed", Texts.N(r.Kept), Texts.N(r.Moved), Texts.N(r.Written), Texts.N(r.Linked), Texts.N(r.Copied),
+                               Texts.N(r.Deleted), Texts.N(r.Files));
+            var m3 = Mdl3Native.Last?.Kind == "failed" ? null : Mdl3Said(out _);
+            return m3 != null ? said + " · " + m3 : said;
         }), true);
 
         /// <summary>The game through Steam; changes not deployed yet are deployed first,
@@ -7017,15 +7038,17 @@ namespace QuickDeploy
             if (busy) return;
             var before = new HashSet<string>(Library.Load().Mods.Select(m => m.Id));
             int added = 0;
+            mdl3Note = null;
             foreach (var p in many) if (await Act(() => Cli.Run("add", p), false)) added++;
             var fresh = Library.Load().Mods.Where(m => !before.Contains(m.Id)).ToList();
+            var foot = Texts.F("drop_processed", Texts.N(added)) + (mdl3Note != null ? " · " + mdl3Note : "");
             if (fresh.Count == 0)
             {
-                if (added > 0) Foot(Texts.F("drop_processed", Texts.N(added)), "Blue");
+                if (added > 0) Foot(foot, "Blue");
                 return;
             }
             Current(fresh[0].Id);
-            Foot(Texts.F("drop_processed", Texts.N(added)), "Blue");
+            Foot(foot, "Blue");
             AdviseDrive(fresh);
         }
 

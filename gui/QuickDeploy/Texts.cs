@@ -210,6 +210,9 @@ namespace QuickDeploy
                              "无法安装拖入的内容，请拖入 zip 压缩包（.zip、.7z、.rar）或 mod 文件夹。"),
             ["drop_done"] = ("{0} mods added", "已添加 {0} 个 mod"),
             ["drop_processed"] = ("{0} mods added or updated", "已添加或更新 {0} 个 mod"),
+            ["mdl3_installed"] = ("MDL3 {0}: native part installed", "MDL3 {0}：原生部分已安装"),
+            ["mdl3_waits"] = ("MDL3's native part will be installed at the next deploy, once the game is closed", "MDL3 原生部分将在游戏关闭后的下次部署时安装"),
+            ["mdl3_failed"] = ("MDL3's native part was not installed: {0}", "MDL3 原生部分未安装：{0}"),
             // the details
             ["manifest"] = ("MANIFEST // DESCRIPTION", "MANIFEST // 作者说明"),
             ["no_desc"] = ("The mod has no description.", "此 mod 没有说明。"),

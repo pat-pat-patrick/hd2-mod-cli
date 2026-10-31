@@ -541,6 +541,15 @@ namespace Hd2Mod
             lib.Mods.Add(mod);
             lib.Save();
             o.WriteLine("added " + lib.Mods.Count + " " + mod.Name + "  (" + folder + ")");
+            Mdl3Line(mod, o);
+        }
+
+        /// <summary>MDL3 dragged in or updated: its native part installed at once when the game is
+        /// closed, else at the next deploy (the user, 2026-10-31).</summary>
+        static void Mdl3Line(Mod mod, TextWriter o)
+        {
+            var said = Mdl3Native.Added(mod, Store.GameDir(required: false));
+            if (said != null) o.WriteLine(said);
         }
 
         static void Replace(Args a, TextWriter o)
@@ -574,6 +583,7 @@ namespace Hd2Mod
             o.WriteLine("replaced: " + mod.Name + "  (" + folder + "), same place and options");
             if (kept) o.WriteLine("the version before is kept: hd2qd rollback " + Ops.Repr(mod.Name) + " goes back to it");
             else if (!a.Flag("--keep-old")) DropOld(lib, cfg, had, folder, o);
+            Mdl3Line(mod, o);
         }
 
         /// <summary>The folder the old version was unpacked into, once the library no longer
@@ -1312,6 +1322,7 @@ namespace Hd2Mod
             var g = Store.GameDir();
             bool dry = a.Flag("--dry-run");
             var s = Deploy.Run(lib, g, dry, a.Flag("--copy"), a.Flag("--verify"), o.WriteLine);
+            if (s.Mdl3 != null) o.WriteLine(s.Mdl3);
             if (dry)
                 o.WriteLine("would keep " + s.Kept + ", move " + s.Moved + ", write " + s.Written + ", delete " + s.Deleted + " of " + s.Files + " files");
             else

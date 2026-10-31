@@ -28,6 +28,8 @@ namespace Hd2Mod
     {
         public int Kept, Moved, Written, Deleted, Files, Linked, Copied;
         public long CopiedBytes, SavedBytes;
+        /// <summary>What was done about MDL3's native part (Mdl3Native.Ensure), else null.</summary>
+        public string Mdl3;
     }
 
     public class RelinkResult
@@ -382,6 +384,8 @@ namespace Hd2Mod
             try { d = Compute(lib, game, verify); }
             finally { Loaders.ReadAll = false; }
             var r = new DeployResult { Kept = d.Kept, Moved = d.Moves.Count, Written = d.Writes.Count, Deleted = d.Deleted, Files = d.All.Count };
+            // MDL3's boot needs its native part: installed or updated with it (the user, 2026-10-31)
+            r.Mdl3 = Mdl3Native.Ensure(lib, game, dryRun);
             if (dryRun)
             {
                 if (log != null)
