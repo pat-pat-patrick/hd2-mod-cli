@@ -12,7 +12,8 @@ namespace Hd2Mod.Tests
     /// %LOCALAPPDATA% in the test's folder, the signature check replaced.</summary>
     public class Mdl3Natives : Fixture
     {
-        readonly string Local;
+        static readonly Func<string, string> RealRedirect = Mdl3Native.Redirected;
+        string Local;
         string signedBy = "dll";
 
         public Mdl3Natives()
@@ -22,6 +23,7 @@ namespace Hd2Mod.Tests
             Mdl3Native.LocalAppData = () => Local;
             // "signed" is what a test says: a DLL whose text starts with the word
             Mdl3Native.Signed = p => File.ReadAllText(p).StartsWith(signedBy);
+            Mdl3Native.Redirected = f => null;
             Mdl3Native.Last = null;
         }
 
@@ -29,6 +31,7 @@ namespace Hd2Mod.Tests
         {
             Mdl3Native.LocalAppData = () => Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
             Mdl3Native.Signed = Mdl3Native.SignedByPublisher;
+            Mdl3Native.Redirected = RealRedirect;
             base.Dispose();
         }
 
@@ -69,10 +72,10 @@ namespace Hd2Mod.Tests
             var state = (Dictionary<string, object>)Json.Parse(File.ReadAllText(Path.Combine(Local, "MDL3", "install-state.json")));
             Assert.Equal("MDL3", Json.Str(state, "product"));
             Assert.Equal("3.0.0-dev.21", Json.Str(state, "version"));
-            // the folders install.ps1 names, read from its text
-            Assert.True(Directory.Exists(Path.Combine(Local, "MDL3", "Logs")));
-            Assert.True(Directory.Exists(Path.Combine(Local, "MDL", "Helldivers2", "Mods")));
-            Assert.True(Directory.Exists(Path.Combine(Local, "HD2Runtime", "mod_data")));
+            // the folders MDL3's boot writes into first (dev.21), not install.ps1's list
+            foreach (var f in new[] { "MDL3/Logs", "MDL/Helldivers2/Mods", "MDL/Helldivers2/Logs", "MDL/Helldivers2/Languages/Options",
+                                      "CowboyBingus/Helldivers2/Logs", "HD2Runtime/mod_data" })
+                Assert.True(Directory.Exists(Path.Combine(Local, f)), f);
             Assert.Equal("installed", Mdl3Native.Last.Kind);
             // nothing more to do: a deploy leaves it alone
             Assert.DoesNotContain("MDL3", Cli("deploy"));
@@ -167,6 +170,33 @@ namespace Hd2Mod.Tests
             Cli("disable", "MDL3 dev.21");
             Assert.DoesNotContain("MDL3", Cli("deploy"));
             Assert.False(File.Exists(Installed));
+        }
+
+        [Fact]
+        public void Writes_that_windows_sends_elsewhere_install_nothing()
+        {
+            Mdl3Native.Redirected = f => Path.Combine(Root, "LocalCache", "MDL3");
+            var said = Cli("add", Package("MDL3 dev.21", "3.0.0-dev.21", "dll one"));
+            Assert.Contains("where the game does not look", said);
+            Assert.False(File.Exists(Installed));
+        }
+
+        [Fact]
+        public void A_path_the_games_lua_cannot_open_is_written_as_its_short_name()
+        {
+            Local = Path.Combine(Root, "用户", "Local");
+            Directory.CreateDirectory(Local);
+            var said = Cli("add", Package("MDL3 dev.21", "3.0.0-dev.21", "dll one"));
+            if (said.Contains("no 8.3 short name"))
+            {
+                Assert.False(File.Exists(Installed));          // a volume without short names: refused
+                return;
+            }
+            Assert.Contains("installed", said);
+            var dll = Json.Str(Config(), "dll");
+            Assert.True(dll.All(c => c < 127), dll);
+            Assert.Equal(File.ReadAllText(Installed), File.ReadAllText(dll));
+            Assert.DoesNotContain("MDL3", Cli("deploy"));                // the short name is the same place
         }
 
         [Fact]

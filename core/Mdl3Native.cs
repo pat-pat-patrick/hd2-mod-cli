@@ -5,7 +5,6 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
-using System.Text.RegularExpressions;
 
 namespace Hd2Mod
 {
@@ -20,21 +19,34 @@ namespace Hd2Mod
     ///   names another DLL or game folder.
     /// - Later versions: the package is known by its files, not its version; the publisher by
     ///   the certificate's name, not its thumbprint (certificates are renewed); config.json keeps
-    ///   every key it had; the folders made are the ones the package's install.ps1 names, read as
-    ///   text.
+    ///   every key it had.
     /// - What it cannot follow (a second native file, BUILD.json asking for more) it does not
-    ///   guess at: it says to run the package's own installer.</summary>
+    ///   guess at: it says to run the package's own installer.
+    /// - Paths are the ones MDL3's game-side boot uses (read in dev.21), not install.ps1's, whose
+    ///   paths went wrong before: the folder is os.getenv('LOCALAPPDATA') .. '/MDL3' and the DLL
+    ///   sits in it under its own name (the boot maps an older native\&lt;version&gt;\ path there).
+    ///   The boot hands config.json's dll to package.loadlib and its game_dir to io, both in the
+    ///   system's ANSI code page, so a path with other characters is written as its 8.3 short name;
+    ///   one without a short name is refused rather than written in a form the game cannot open.
+    ///   A process whose writes to AppData Windows sends elsewhere (a packaged app) installs
+    ///   nothing: the game would not see it.</summary>
     public static class Mdl3Native
     {
         /// <summary>The name in MDL3's code-signing certificate (Certum, 3.0.0-dev.18 to dev.21).</summary>
         public const string Publisher = "CHIEI INTERNET TECHNOLOGY LLC";
         const string CodeSigning = "1.3.6.1.5.5.7.3.3";
-        /// <summary>install.ps1's folders up to dev.21, when its text names none.</summary>
-        static readonly string[] KnownFolders =
-            { "MDL3/Logs", "MDL/Helldivers2/Mods", "MDL/Helldivers2/Logs", "MDL/Helldivers2/Languages/Options", "CowboyBingus/Helldivers2/Logs", "HD2Runtime/mod_data" };
+        /// <summary>The folders the boot (dev.21) writes into before its native part could make them,
+        /// under %LOCALAPPDATA%: its log, MDL's own folders, the shared Bingus log folder, HD2Runtime's data.</summary>
+        static readonly string[] Folders =
+            { @"MDL3\Logs", @"MDL\Helldivers2\Mods", @"MDL\Helldivers2\Logs", @"MDL\Helldivers2\Languages\Options", @"CowboyBingus\Helldivers2\Logs", @"HD2Runtime\mod_data" };
 
-        /// <summary>%LOCALAPPDATA%; tests replace it.</summary>
-        public static Func<string> LocalAppData = () => Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        /// <summary>%LOCALAPPDATA% as the game reads it (the variable, as the boot's os.getenv);
+        /// tests replace it.</summary>
+        public static Func<string> LocalAppData = () =>
+            Environment.GetEnvironmentVariable("LOCALAPPDATA") is string v && v.Length > 0 ? v : Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        /// <summary>Where this process's writes to a folder really land when Windows sends them
+        /// elsewhere, else null; tests replace it.</summary>
+        public static Func<string, string> Redirected = FindRedirect;
         public static string DataDir() => Path.Combine(LocalAppData(), "MDL3");
         /// <summary>Whether a file carries a valid signature of MDL3's publisher; tests replace it.</summary>
         public static Func<string, bool> Signed = SignedByPublisher;
@@ -44,8 +56,7 @@ namespace Hd2Mod
 
         public class Package
         {
-            public string Folder, Dll, DllName, Version, NativeVersion, Sha256, Installer;
-            public List<string> Folders;
+            public string Folder, Dll, DllName, Version, NativeVersion, Sha256;
             /// <summary>Why it cannot be installed here, else null.</summary>
             public string Problem;
         }
@@ -74,9 +85,6 @@ namespace Hd2Mod
                 Folder = folder, Dll = dll, DllName = name, Version = Json.Str(build, "version"), NativeVersion = Json.Str(build, "native_version"),
                 Sha256 = (Json.Str(build, "native_sha256") ?? "").ToLowerInvariant(),
             };
-            var installer = Path.Combine(folder, "install.ps1");
-            p.Installer = File.Exists(installer) ? installer : null;
-            p.Folders = FoldersOf(p.Installer);
             // install.ps1 (dev.18-dev.21) refuses a package whose BUILD.json does not say false here
             if (!(build.TryGetValue("requires_signature", out var rs) && rs is bool b && !b))
                 p.Problem = "its BUILD.json asks for what this manager does not know (requires_signature)";
@@ -85,22 +93,6 @@ namespace Hd2Mod
             else if (p.Sha256.Length != 64 || Sha(dll) != p.Sha256)
                 p.Problem = "its DLL is not the one BUILD.json names";
             return p;
-        }
-
-        /// <summary>The folders install.ps1 makes, from its text ($folders=@('a/b',...)); the
-        /// known ones when it names none. Only plain relative names count.</summary>
-        static List<string> FoldersOf(string installer)
-        {
-            if (installer != null)
-            {
-                var m = Regex.Match(File.ReadAllText(installer), @"\$folders\s*=\s*@\(([^)]*)\)");
-                if (m.Success)
-                {
-                    var list = Regex.Matches(m.Groups[1].Value, "'([^']*)'").Cast<Match>().Select(x => x.Groups[1].Value).ToList();
-                    if (list.Count > 0 && list.All(f => Regex.IsMatch(f, @"^[A-Za-z0-9 _\-]+(/[A-Za-z0-9 _\-]+)*$"))) return list;
-                }
-            }
-            return KnownFolders.ToList();
         }
 
         /// <summary>The package the deploy uses: the first enabled mod that is one.</summary>
@@ -178,6 +170,10 @@ namespace Hd2Mod
             NoLinks(data);
             if (Inside(data, game)) throw new ModError("MDL3's folder " + data + " is inside the game folder", "mdl3_place");
             Directory.CreateDirectory(data);
+            var away = Redirected(data);
+            if (away != null)
+                throw new ModError("this program's writes to " + data + " go to " + away + ", where the game does not look: install from HD2 Mod Quick Deploy started on its own", "mdl3_redirected");
+            var gameDir = ForGame(game);
             var target = Path.Combine(data, p.DllName);
             var configPath = Path.Combine(data, "config.json");
             var statePath = Path.Combine(data, "install-state.json");
@@ -193,8 +189,8 @@ namespace Hd2Mod
                 Put(p.Dll, target, data);
                 var config = ReadJson(configPath) ?? new Dictionary<string, object>();
                 if (!config.ContainsKey("schema")) config["schema"] = 1L;
-                config["dll"] = target;
-                config["game_dir"] = Path.GetFullPath(game).TrimEnd('\\');
+                config["dll"] = ForGame(target);
+                config["game_dir"] = gameDir;
                 Write(config, configPath, data);
                 Write(new Dictionary<string, object>
                 {
@@ -210,9 +206,9 @@ namespace Hd2Mod
                 Restore(backup);
                 throw;
             }
-            foreach (var f in p.Folders)
+            foreach (var f in Folders)
             {
-                var dir = f == "MDL3/Logs" ? Path.Combine(data, "Logs") : Path.Combine(LocalAppData(), f.Replace('/', '\\'));
+                var dir = Path.Combine(LocalAppData(), f);
                 NoLinks(dir);
                 Directory.CreateDirectory(dir);
             }
@@ -297,8 +293,63 @@ namespace Hd2Mod
         }
 
         static bool Same(string a, string b) =>
-            !string.IsNullOrEmpty(a) && !string.IsNullOrEmpty(b) &&
-            string.Equals(Path.GetFullPath(a).TrimEnd('\\'), Path.GetFullPath(b).TrimEnd('\\'), StringComparison.OrdinalIgnoreCase);
+            !string.IsNullOrEmpty(a) && !string.IsNullOrEmpty(b) && string.Equals(Long(a), Long(b), StringComparison.OrdinalIgnoreCase);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+        static extern uint GetShortPathName(string longPath, System.Text.StringBuilder shortPath, uint size);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+        static extern uint GetLongPathName(string shortPath, System.Text.StringBuilder longPath, uint size);
+
+        /// <summary>A path in full, its 8.3 parts spelled out (a short name written to config.json
+        /// is the same place as the long one).</summary>
+        static string Long(string path)
+        {
+            var full = Path.GetFullPath(path.Replace('/', '\\')).TrimEnd('\\');
+            var sb = new System.Text.StringBuilder(1024);
+            var n = GetLongPathName(full, sb, (uint)sb.Capacity);
+            return n > 0 && n < sb.Capacity ? sb.ToString().TrimEnd('\\') : full;
+        }
+
+        static bool Ascii(string s) => s.All(c => c >= ' ' && c < 127);
+
+        /// <summary>A path as the game's Lua can open it: the boot passes it to package.loadlib / io
+        /// in the ANSI code page, so one with other characters is given as its 8.3 short name.</summary>
+        public static string ForGame(string path)
+        {
+            var full = Path.GetFullPath(path).TrimEnd('\\');
+            if (Ascii(full)) return full;
+            var sb = new System.Text.StringBuilder(1024);
+            var n = GetShortPathName(full, sb, (uint)sb.Capacity);
+            if (n > 0 && n < sb.Capacity && Ascii(sb.ToString())) return sb.ToString().TrimEnd('\\');
+            throw new ModError(full + " has characters the game's Lua cannot open, and no 8.3 short name to use instead", "mdl3_place", full);
+        }
+
+        /// <summary>Writes a probe into a folder under %LOCALAPPDATA% and looks for it in every
+        /// package's LocalCache: found there, this process's writes are being sent there.</summary>
+        static string FindRedirect(string folder)
+        {
+            var local = Path.GetFullPath(LocalAppData()).TrimEnd('\\');
+            var full = Path.GetFullPath(folder).TrimEnd('\\');
+            var packages = Path.Combine(local, "Packages");
+            if (!full.StartsWith(local + "\\", StringComparison.OrdinalIgnoreCase) || !Directory.Exists(packages)) return null;
+            var rel = full.Substring(local.Length + 1);
+            var name = ".where-" + Guid.NewGuid().ToString("N");
+            var probe = Path.Combine(full, name);
+            try
+            {
+                File.WriteAllText(probe, "");
+                foreach (var pkg in Directory.EnumerateDirectories(packages))
+                    if (File.Exists(Path.Combine(pkg, "LocalCache", "Local", rel, name))) return Path.Combine(pkg, "LocalCache", "Local", rel);
+                return null;
+            }
+            catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { return null; }
+            finally
+            {
+                try { File.Delete(probe); }
+                catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { }
+            }
+        }
 
         static bool Inside(string path, string folder) =>
             Same(path, folder) || Path.GetFullPath(path).StartsWith(Path.GetFullPath(folder).TrimEnd('\\') + "\\", StringComparison.OrdinalIgnoreCase);
