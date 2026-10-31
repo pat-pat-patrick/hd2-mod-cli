@@ -95,6 +95,37 @@ namespace Hd2Mod
             return p;
         }
 
+        // the packages seen, by their BUILD.json's and native files' sizes and times: asked at every state read
+        static readonly Dictionary<string, (string Sig, string Version)> packages = new Dictionary<string, (string, string)>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>The MDL3 version of the package an archive sits in (its folder, or the one above
+        /// when the archive is in an option folder), "" when BUILD.json names none; null when it is in
+        /// none. A package is MDL3's by its DLL: the one BUILD.json names, with the hash it gives,
+        /// signed by MDL3's publisher. The boot's text is not asked: dev.25 (2026-11-01) ships it
+        /// obfuscated, without the first line that named it.</summary>
+        public static string VersionOf(string archive)
+        {
+            string Stamp(string f) { var fi = new FileInfo(f); return f + ":" + fi.Length + ":" + fi.LastWriteTimeUtc.Ticks; }
+            try
+            {
+                var dir = Path.GetDirectoryName(Path.GetFullPath(archive));
+                for (int up = 0; up < 2 && !string.IsNullOrEmpty(dir); up++, dir = Path.GetDirectoryName(dir))
+                {
+                    var build = Path.Combine(dir, "BUILD.json");
+                    if (!File.Exists(build)) continue;
+                    var native = Path.Combine(dir, "Native");
+                    var sig = string.Join("|", new[] { Stamp(build) }.Concat(Directory.Exists(native) ? Directory.GetFiles(native).OrderBy(f => f).Select(Stamp) : new string[0]));
+                    lock (packages) if (packages.TryGetValue(dir, out var k) && k.Sig == sig) return k.Version;
+                    var p = Find(dir);
+                    var version = p != null && Sha(p.Dll) == p.Sha256 && Signed(p.Dll) ? p.Version ?? "" : null;
+                    lock (packages) packages[dir] = (sig, version);
+                    return version;
+                }
+            }
+            catch (Exception e) when (e is IOException || e is UnauthorizedAccessException || e is ArgumentException) { }
+            return null;
+        }
+
         /// <summary>The package the deploy uses: the first enabled mod that is one.</summary>
         public static Package Wanted(Library lib)
         {

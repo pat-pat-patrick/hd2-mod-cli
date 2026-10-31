@@ -39,6 +39,15 @@ namespace Hd2Mod
         public bool ChefApi;
         /// <summary>The resource's size in its archive's row (the text and 8 bytes before it).</summary>
         public long Size;
+
+        /// <summary>The same script as another loader's boot (what was read stays as it is).</summary>
+        internal LuaScript AsBoot(string kind, string version)
+        {
+            var s = (LuaScript)MemberwiseClone();
+            s.BootKind = kind;
+            s.BootVersion = version;
+            return s;
+        }
     }
 
     /// <summary>What a mod's Lua is: its scripts, what it needs, what stops it.</summary>
@@ -130,6 +139,16 @@ namespace Hd2Mod
         /// <summary>The Lua scripts of one patch archive, read once while it is unchanged; with
         /// knownOnly, null when it would have to be read now.</summary>
         public static List<LuaScript> Read(string path, bool knownOnly = false)
+        {
+            var scripts = ReadArchive(path, knownOnly);
+            // a boot its text does not name, in an MDL3 package: MDL3's (dev.25, 2026-11-01, ships
+            // it obfuscated, without the first line that named it)
+            var boot = scripts?.FirstOrDefault(s => s.Id == BootId && s.BootKind == "other");
+            if (boot == null || !(Mdl3Native.VersionOf(path) is string version)) return scripts;
+            return scripts.Select(s => s == boot ? s.AsBoot("mdl3", version.Length > 0 ? version : null) : s).ToList();
+        }
+
+        static List<LuaScript> ReadArchive(string path, bool knownOnly)
         {
             var fi = new FileInfo(path);
             var sig = fi.Length + ":" + fi.LastWriteTimeUtc.Ticks;

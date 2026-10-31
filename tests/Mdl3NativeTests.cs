@@ -42,7 +42,8 @@ namespace Hd2Mod.Tests
         }
 
         /// <summary>An MDL3 package as dev.21 ships it: BUILD.json, Native\the DLL, install.ps1, a boot.</summary>
-        string Package(string name, string version, string dll, string build = null, string installer = null, string extraNative = null)
+        string Package(string name, string version, string dll, string build = null, string installer = null, string extraNative = null,
+                       string boot = null, string guid = "b0ae9d35-4a69-5918-b43d-51d4d10ff001")
         {
             var files = Files(
                 ("BUILD.json", build ?? "{\"native_path\":\"mdl_native_bridge.dll\",\"native_sha256\":\"" + Sha(dll) +
@@ -51,7 +52,8 @@ namespace Hd2Mod.Tests
                 ("install.ps1", installer ?? "$folders=@('MDL3/Logs','MDL/Helldivers2/Mods','HD2Runtime/mod_data')"),
                 ("MDL3/" + A + ".patch_0", "boot " + version));
             if (extraNative != null) files["Native/" + extraNative] = Bytes("x");
-            return Mod(name, files, "{\"Guid\":\"b0ae9d35-4a69-5918-b43d-51d4d10ff001\",\"Name\":\"" + name + "\"," +
+            if (boot != null) files["MDL3/" + A + ".patch_0"] = LuaArchive((LuaMods.BootId, boot));
+            return Mod(name, files, "{\"Guid\":\"" + guid + "\",\"Name\":\"" + name + "\"," +
                                     "\"Options\":[{\"Name\":\"MDL3\",\"Include\":[\"MDL3\"]}]}");
         }
 
@@ -197,6 +199,33 @@ namespace Hd2Mod.Tests
             Assert.True(dll.All(c => c < 127), dll);
             Assert.Equal(File.ReadAllText(Installed), File.ReadAllText(dll));
             Assert.DoesNotContain("MDL3", Cli("deploy"));                // the short name is the same place
+        }
+
+        /// <summary>MDL3 dev.25 (2026-11-01) ships its boot obfuscated: no first line names it. Its
+        /// package does: the DLL BUILD.json names, signed by MDL3's publisher.</summary>
+        [Fact]
+        public void An_obfuscated_boot_is_mdl3s_by_its_signed_package()
+        {
+            const string obfuscated = "local e,K do local T=2 local s=0 local S=table.remove end\n";
+            Mod Named(string n) => Library.Load().Mods.Single(m => m.Name == n);
+            Cli("add", Package("MDL3 dev.25", "3.0.0-dev.25", "dll one", boot: obfuscated));
+            Assert.Equal("mdl3", Loaders.KindOf(Named("MDL3 dev.25")));
+            Assert.Equal("3.0.0-dev.25", Loaders.VersionOf(Named("MDL3 dev.25")));
+            var lib = Library.Load();
+            Assert.Equal("mdl3", LuaMods.Check(lib, LuaMods.Of(lib)).Running);
+            Assert.Contains("start-up script (boot): MDL3 dev.25 (MDL3 3.0.0-dev.25)", Cli("lua"));
+
+            // must fail: the same boot with a DLL not signed by the publisher, with a DLL that is not
+            // the one BUILD.json names, and with no package at all
+            signedBy = "nobody";
+            Cli("add", Package("Unsigned", "3.0.0-dev.25", "dll two", boot: obfuscated, guid: "11111111-1111-1111-1111-111111111111"));
+            Assert.Null(Loaders.KindOf(Named("Unsigned")));
+            signedBy = "dll";
+            Cli("add", Package("Other DLL", "3.0.0-dev.25", "dll three", boot: obfuscated, guid: "22222222-2222-2222-2222-222222222222",
+                               build: "{\"native_path\":\"mdl_native_bridge.dll\",\"native_sha256\":\"" + Sha("dll four") + "\",\"version\":\"3.0.0-dev.25\"}"));
+            Assert.Null(Loaders.KindOf(Named("Other DLL")));
+            Cli("add", Mod("Boot only", new Dictionary<string, byte[]> { [A + ".patch_0"] = LuaArchive((LuaMods.BootId, obfuscated)) }));
+            Assert.Null(Loaders.KindOf(Named("Boot only")));
         }
 
         /// <summary>The user, 2026-11-01: a player's MDL3 did nothing, and the report could not say
