@@ -60,8 +60,10 @@ namespace Hd2Mod
             Cmd("relocate", new Spec { Help = "move mods into another mod folder (--keep: copy, the old folders stay); the game's copies of them become hard links",
                                        Positionals = new[] { "mods" }, Many = true, Values = new[] { "--into" }, Flags = new[] { "--keep" }, Run = RelocateCmd }),
             Cmd("list", new Spec { Help = "the load order (the last wins)", Flags = new[] { "--files", "--paths" }, Run = List }),
-            Cmd("add", new Spec { Help = "add a mod at the bottom: a zip (unpacked once) or a folder (used where it is)",
-                                  Positionals = new[] { "path" }, Values = new[] { "--name" }, Flags = new[] { "--copy", "--whole" }, Run = Add }),
+            Cmd("add", new Spec { Help = "add a mod at the bottom: a zip (unpacked once) or a folder (used where it is). A new version of a " +
+                                         "mod in the library (the same manifest Guid or download source) takes its place; one whose name " +
+                                         "alone matches is asked about (--new: add it as a mod of its own)",
+                                  Positionals = new[] { "path" }, Values = new[] { "--name" }, Flags = new[] { "--copy", "--whole", "--new" }, Run = Add }),
             Cmd("replace", new Spec { Help = "a new version of a mod: same place in the order, same options " +
                                              "(the folder the old version was unpacked into is deleted; --keep-old keeps it)",
                                       Positionals = new[] { "mod", "path" }, Values = new[] { "--name" },
@@ -535,7 +537,26 @@ namespace Hd2Mod
                     return;
                 }
             }
+            // a new version by its download source: put in its place; by its name only: asked
+            // (the user, 2026-11-01: dropping any mod's new version in updates it)
+            if (a.Value("--name") == null && !a.Flag("--new"))
+            {
+                var found = NewVersions.Of(lib, folder, File.Exists(path) ? path : null, mod.Name);
+                if (found != null && found.Sure)
+                {
+                    o.WriteLine("a new version of " + found.Mod.Name + " (the same download source)");
+                    a.Pos["mod"] = found.Mod.Id;
+                    Replace(a, o);
+                    return;
+                }
+                if (found != null)
+                    throw new ModError(Ops.Repr(Path.GetFileName(Paths.Abs(path).TrimEnd('\\'))) + " looks like a new version of " + Ops.Repr(found.Mod.Name) +
+                                       ": hd2qd replace " + Ops.Repr(found.Mod.Name) + " " + Ops.Repr(path) + " puts it in its place; hd2qd add " +
+                                       Ops.Repr(path) + " --new adds it as a mod of its own", "maybe_update", found.Mod.Id + "\n" + Paths.Abs(path));
+            }
             if (File.Exists(path)) Origins.FromFile(mod, path);               // a download: where it came from
+            if (a.Flag("--new"))
+                for (int n = 2; lib.Mods.Any(m => m.Name == mod.Name); n++) mod.Name = System.Text.RegularExpressions.Regex.Replace(mod.Name, @" \(\d+\)$", "") + " (" + n + ")";
             if (lib.Mods.Any(m => m.Name == mod.Name))
                 throw new ModError("a mod named " + Ops.Repr(mod.Name) + " is in the library: use  hd2qd replace  or --name", "duplicate", mod.Name);
             lib.Mods.Add(mod);

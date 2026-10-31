@@ -160,6 +160,10 @@ namespace QuickDeploy
             ["add_library_folder_do"] = ("Add as library folder", "作为库文件夹加入"),
             ["add_dupe"] = ("A mod named “{0}” is already in the library. To use this as its new version, right-click that mod and choose New version.",
                             "库中已有名为「{0}」的 mod。如需替换为此新版本，请右键该 mod，选择「换新版本」。"),
+            ["add_maybe_update"] = ("“{0}” looks like a new version of “{1}”: the names match, but its source cannot confirm it. Use it as the new version of “{1}”?",
+                                    "「{0}」看起来是「{1}」的新版本：名称相符，但无法从来源确认。是否作为「{1}」的新版本？"),
+            ["add_as_new_version"] = ("Use as new version", "作为新版本"),
+            ["add_as_own_mod"] = ("Add as separate mod", "作为新 MOD 加入"),
             // the list
             ["add"] = ("Add mod…", "添加 MOD…"),
             ["add_zip"] = ("From a zip…", "从 zip…"),

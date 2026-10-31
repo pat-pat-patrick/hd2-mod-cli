@@ -1377,6 +1377,7 @@ namespace QuickDeploy
             if (busy) return false;
             var clock = System.Diagnostics.Stopwatch.StartNew();
             var r = await Exec(work);
+            if (r.Refused?.Kind == "maybe_update") r = await NewVersionOrNot(r);
             clock.Stop();
             if (Refused(r)) return false;
             if (done && r.Ok) lastDone = Texts.F("took", Last(r.Out), Seconds(clock.Elapsed.TotalSeconds));
@@ -1389,6 +1390,24 @@ namespace QuickDeploy
                 else Foot(m3, "Blue");
             }
             return r.Ok;
+        }
+
+        /// <summary>A mod added whose name alone matches one in the library (NewVersions): asked
+        /// whether it is that mod's new version, then put in its place or added on its own; a
+        /// cancel adds nothing (the user, 2026-11-01).</summary>
+        async Task<CliResult> NewVersionOrNot(CliResult r)
+        {
+            var parts = r.Refused.Arg.Split('\n');
+            if (parts.Length != 2) return r;
+            var old = Library.Load().Mods.FirstOrDefault(m => m.Id == parts[0]);
+            var name = IOPath.GetFileName(parts[1].TrimEnd('\\'));
+            switch (Dialog.Choose(this, Texts.F("add_maybe_update", name, old?.Name ?? name),
+                                  Texts.Get("add_as_new_version"), Texts.Get("add_as_own_mod"), Texts.Get("cancel")))
+            {
+                case 0: return await Exec(() => Cli.Run("replace", parts[0], parts[1]));
+                case 1: return await Exec(() => Cli.Run("add", parts[1], "--new"));
+                default: return new CliResult { Code = 0, Out = "" };
+            }
         }
 
         /// <summary>What an add or a deploy did about MDL3's native part (Mdl3Native), said once.</summary>

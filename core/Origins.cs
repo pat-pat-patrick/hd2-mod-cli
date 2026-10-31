@@ -54,6 +54,23 @@ namespace Hd2Mod
             if (!string.IsNullOrEmpty(referrer) && referrer.StartsWith("http", StringComparison.OrdinalIgnoreCase)) mod.Page = referrer;
         }
 
+        /// <summary>The file's own name in a Nexus Mods download name ("Super Holo HUD" in "Super Holo
+        /// HUD 12345 1.2.0 2026-10-31T10-00Z 1-1761900000.zip"), from a path or a name; else null.</summary>
+        public static string NexusFileName(string pathOrName)
+        {
+            if (string.IsNullOrEmpty(pathOrName)) return null;
+            var stem = pathOrName.IndexOfAny(new[] { '\\', '/' }) >= 0 ? Path.GetFileNameWithoutExtension(pathOrName) : pathOrName;
+            var n = NexusName.Match(stem);
+            return n.Success && n.Groups["name"].Value.Trim().Length > 0 ? n.Groups["name"].Value.Trim() : null;
+        }
+
+        /// <summary>The Nexus Mods mod id in a download name, else 0.</summary>
+        public static long NexusModOf(string name)
+        {
+            var n = NexusName.Match(name ?? "");
+            return n.Success && long.TryParse(n.Groups["mod"].Value, out var id) ? id : 0;
+        }
+
         static string Field(string zone, string key)
         {
             var m = Regex.Match(zone, "^" + key + @"=(.+)$", RegexOptions.Multiline);

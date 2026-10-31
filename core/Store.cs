@@ -12,7 +12,8 @@ namespace Hd2Mod
     public class ModError : Exception
     {
         /// <summary>For the window, which says it in its own words: "no_game", "duplicate"
-        /// (Arg: the mod's name), else null.</summary>
+        /// (Arg: the mod's name), "maybe_update" (Arg: the library mod's id, a line break, the
+        /// path added), else null.</summary>
         public readonly string Kind, Arg;
 
         public ModError(string message, string kind = null, string arg = null) : base(message)

@@ -984,7 +984,7 @@ namespace Hd2Mod.Tests
         static extern Microsoft.Win32.SafeHandles.SafeFileHandle CreateFile(string name, uint access, uint share, IntPtr security, uint disposition, uint flags, IntPtr template);
 
         /// <summary>A file's Zone.Identifier, as a browser writes it for a download.</summary>
-        static void Zone(string file, string host, string referrer)
+        internal static void Zone(string file, string host, string referrer)
         {
             using (var h = CreateFile(file + ":Zone.Identifier", 0x40000000, 0, IntPtr.Zero, 2, 0, IntPtr.Zero))
             using (var fs = new FileStream(h, FileAccess.Write))
