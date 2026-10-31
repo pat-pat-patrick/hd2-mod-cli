@@ -202,7 +202,7 @@ namespace Hd2Mod.Tests
         }
 
         /// <summary>MDL3 dev.25 (2026-11-01) ships its boot obfuscated: no first line names it. Its
-        /// package does: the DLL BUILD.json names, signed by MDL3's publisher.</summary>
+        /// package does: a native DLL signed by MDL3's publisher (the user: the DLL is what counts).</summary>
         [Fact]
         public void An_obfuscated_boot_is_mdl3s_by_its_signed_package()
         {
@@ -215,15 +215,22 @@ namespace Hd2Mod.Tests
             Assert.Equal("mdl3", LuaMods.Check(lib, LuaMods.Of(lib)).Running);
             Assert.Contains("start-up script (boot): MDL3 dev.25 (MDL3 3.0.0-dev.25)", Cli("lua"));
 
-            // must fail: the same boot with a DLL not signed by the publisher, with a DLL that is not
-            // the one BUILD.json names, and with no package at all
+            // the signed DLL decides alone: a BUILD.json with another hash or none still is MDL3
+            Cli("add", Package("Other hash", "3.0.0-dev.26", "dll three", boot: obfuscated, guid: "22222222-2222-2222-2222-222222222222",
+                               build: "{\"native_path\":\"mdl_native_bridge.dll\",\"native_sha256\":\"" + Sha("dll four") + "\",\"version\":\"3.0.0-dev.26\"}"));
+            Assert.Equal("mdl3", Loaders.KindOf(Named("Other hash")));
+            Assert.Equal("3.0.0-dev.26", Loaders.VersionOf(Named("Other hash")));
+            Cli("add", Mod("No BUILD.json", new Dictionary<string, byte[]>
+            {
+                ["Native/mdl_native_bridge.dll"] = Bytes("dll five"), [A + ".patch_0"] = LuaArchive((LuaMods.BootId, obfuscated)),
+            }));
+            Assert.Equal("mdl3", Loaders.KindOf(Named("No BUILD.json")));
+
+            // must fail: the same boot with a DLL not signed by the publisher, and with no DLL at all
             signedBy = "nobody";
             Cli("add", Package("Unsigned", "3.0.0-dev.25", "dll two", boot: obfuscated, guid: "11111111-1111-1111-1111-111111111111"));
             Assert.Null(Loaders.KindOf(Named("Unsigned")));
             signedBy = "dll";
-            Cli("add", Package("Other DLL", "3.0.0-dev.25", "dll three", boot: obfuscated, guid: "22222222-2222-2222-2222-222222222222",
-                               build: "{\"native_path\":\"mdl_native_bridge.dll\",\"native_sha256\":\"" + Sha("dll four") + "\",\"version\":\"3.0.0-dev.25\"}"));
-            Assert.Null(Loaders.KindOf(Named("Other DLL")));
             Cli("add", Mod("Boot only", new Dictionary<string, byte[]> { [A + ".patch_0"] = LuaArchive((LuaMods.BootId, obfuscated)) }));
             Assert.Null(Loaders.KindOf(Named("Boot only")));
         }

@@ -100,9 +100,10 @@ namespace Hd2Mod
 
         /// <summary>The MDL3 version of the package an archive sits in (its folder, or the one above
         /// when the archive is in an option folder), "" when BUILD.json names none; null when it is in
-        /// none. A package is MDL3's by its DLL: the one BUILD.json names, with the hash it gives,
-        /// signed by MDL3's publisher. The boot's text is not asked: dev.25 (2026-11-01) ships it
-        /// obfuscated, without the first line that named it.</summary>
+        /// none. What makes a package MDL3's is its native DLL: a DLL in Native\ signed by MDL3's
+        /// publisher (the user, 2026-11-01: the DLL is what counts). BUILD.json only gives the
+        /// version. The boot's text is not asked: dev.25 (2026-11-01) ships it obfuscated, without
+        /// the first line that named it.</summary>
         public static string VersionOf(string archive)
         {
             string Stamp(string f) { var fi = new FileInfo(f); return f + ":" + fi.Length + ":" + fi.LastWriteTimeUtc.Ticks; }
@@ -111,13 +112,21 @@ namespace Hd2Mod
                 var dir = Path.GetDirectoryName(Path.GetFullPath(archive));
                 for (int up = 0; up < 2 && !string.IsNullOrEmpty(dir); up++, dir = Path.GetDirectoryName(dir))
                 {
-                    var build = Path.Combine(dir, "BUILD.json");
-                    if (!File.Exists(build)) continue;
                     var native = Path.Combine(dir, "Native");
-                    var sig = string.Join("|", new[] { Stamp(build) }.Concat(Directory.Exists(native) ? Directory.GetFiles(native).OrderBy(f => f).Select(Stamp) : new string[0]));
+                    if (!Directory.Exists(native)) continue;
+                    var dlls = Directory.GetFiles(native, "*.dll").OrderBy(f => f, StringComparer.OrdinalIgnoreCase).ToList();
+                    if (dlls.Count == 0) continue;
+                    var build = Path.Combine(dir, "BUILD.json");
+                    var sig = string.Join("|", dlls.Concat(File.Exists(build) ? new[] { build } : new string[0]).Select(Stamp));
                     lock (packages) if (packages.TryGetValue(dir, out var k) && k.Sig == sig) return k.Version;
-                    var p = Find(dir);
-                    var version = p != null && Sha(p.Dll) == p.Sha256 && Signed(p.Dll) ? p.Version ?? "" : null;
+                    string version = null;
+                    if (dlls.Any(Signed.Invoke))
+                    {
+                        Dictionary<string, object> said = null;
+                        try { said = ReadJson(build); }
+                        catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { }
+                        version = Json.Str(said, "version") ?? "";
+                    }
                     lock (packages) packages[dir] = (sig, version);
                     return version;
                 }
