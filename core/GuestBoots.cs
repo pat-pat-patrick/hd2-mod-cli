@@ -23,25 +23,26 @@ namespace Hd2Mod
     public static class GuestBoots
     {
         public const string Header = "-- HD2-Guest-Boot: ";
-        public static readonly Version FirstHost = new Version(0, 12, 0);
 
-        /// <summary>Whether a loader's boot runs guests.</summary>
-        public static bool Hosts(string kind, string version) =>
-            kind == "bml" && Version.TryParse(version ?? "", out var v) && v >= FirstHost;
+        /// <summary>Whether a loader's boot runs guests (LoaderCaps.HostsGuests).</summary>
+        public static bool Hosts(string kind, string version, IEnumerable<string> marks) =>
+            LoaderCaps.Has(kind, version, marks, LoaderCaps.HostsGuests);
 
-        /// <summary>The boots of the load order, in order (kind as LuaMods names it; a script in
-        /// bytecode cannot be a guest and stays as it is): which of them are run as guests. MDL3's
-        /// too, when a boot comes after it: it reaches the game before another loader only as Boot
-        /// Mod Loader's guest (Loaders.Mdl3GuestFor); as the loader in effect it is last.</summary>
-        public static HashSet<int> Guests(IList<(string Kind, string Version, bool Bytecode)> boots)
+        /// <summary>The boots of the load order, in order (kind as LuaMods names it, with its version
+        /// and markers; a script in bytecode cannot be a guest and stays as it is): which of them are
+        /// run as guests. A quiet guest's too (LoaderCaps.QuietGuest: MDL3), when a boot comes after
+        /// it: it reaches the game before another loader only as its guest (Loaders.Mdl3GuestFor); as
+        /// the loader in effect it is last.</summary>
+        public static HashSet<int> Guests(IList<(string Kind, string Version, bool Bytecode, List<string> Marks)> boots)
         {
             var guests = new HashSet<int>();
             for (int i = 0; i < boots.Count; i++)
-                if ((boots[i].Kind == "other" || (boots[i].Kind == "mdl3" && i < boots.Count - 1)) && !boots[i].Bytecode) guests.Add(i);
+                if ((boots[i].Kind == "other" || (i < boots.Count - 1 && LoaderCaps.Has(boots[i].Kind, boots[i].Version, boots[i].Marks, LoaderCaps.QuietGuest)))
+                    && !boots[i].Bytecode) guests.Add(i);
             if (guests.Count == 0) return guests;
             int winner = -1;
             for (int i = 0; i < boots.Count; i++) if (!guests.Contains(i)) winner = i;
-            if (winner < 0 || !Hosts(boots[winner].Kind, boots[winner].Version)) guests.Clear();
+            if (winner < 0 || !Hosts(boots[winner].Kind, boots[winner].Version, boots[winner].Marks)) guests.Clear();
             return guests;
         }
 
@@ -191,7 +192,7 @@ namespace Hd2Mod
         /// that cannot be read or derived stays as it is.</summary>
         public static void Apply(List<Wanted> plan)
         {
-            var boots = new List<(Wanted W, string Kind, string Version, bool Bytecode)>();
+            var boots = new List<(Wanted W, string Kind, string Version, bool Bytecode, List<string> Marks)>();
             foreach (var w in plan)
             {
                 if (!Deploy.Patch.IsMatch(Path.GetFileName(w.Name))) continue;
@@ -199,11 +200,11 @@ namespace Hd2Mod
                 {
                     if (!HoldsBoot(w.Src)) continue;
                     var s = LuaMods.Read(w.Src).FirstOrDefault(x => x.Id == LuaMods.BootId);
-                    if (s != null) boots.Add((w, s.BootKind, s.BootVersion, s.Bytecode));
+                    if (s != null) boots.Add((w, s.BootKind, s.BootVersion, s.Bytecode, s.Marks));
                 }
                 catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { }
             }
-            foreach (var i in Guests(boots.Select(b => (b.Kind, b.Version, b.Bytecode)).ToList()))
+            foreach (var i in Guests(boots.Select(b => (b.Kind, b.Version, b.Bytecode, b.Marks)).ToList()))
             {
                 var w = boots[i].W;
                 try

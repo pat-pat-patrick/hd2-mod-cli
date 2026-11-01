@@ -1669,9 +1669,9 @@ namespace QuickDeploy
 
         ModRow ById(string id) => id == null ? null : st.Mods.FirstOrDefault(x => x.Id == id);
 
-        /// <summary>The library's loaders of these kinds, by name and version; one that is off says so.</summary>
-        string[] LibraryLoaders(string[] kinds) =>
-            st.Mods.Where(x => x.Lu?.Loader != null && kinds.Contains(x.Lu.Loader))
+        /// <summary>The library's loaders with this capability (LoaderCaps), by name and version; one that is off says so.</summary>
+        string[] LibraryLoaders(string cap) =>
+            st.Mods.Where(x => x.Lu?.Loader != null && x.Lu.Caps.Contains(cap))
                    .Select(x => LoaderLabel(x.Lu.Loader, x.Lu.LoaderVersion) + (x.Id == st.LoaderChoice ? "" : st.LoaderHelpers.Contains(x.Id) ? Texts.Get("lua_helping_suffix") : Texts.Get("lua_off_suffix")))
                    .Distinct().ToArray();
 
@@ -1755,11 +1755,7 @@ namespace QuickDeploy
             // there is (the user, 2026-10-26: others may come)
             if (lu.Needs != null)
             {
-                var able = LibraryLoaders(lu.Needs == "chef" ? new[] { "chef" } : new[] { "bml", "chef", "bsl", "mdl3" });
-                // MDL3 3.0.0-dev.22 or later runs the mods made for Chef too (not those only Chef's name rule takes)
-                if (lu.Needs == "chef" && lu.NeedsWhy != "name")
-                    able = able.Concat(st.Mods.Where(x => x.LoaderKind == "mdl3" && Loaders.Mdl3TakesChef(x.Lu?.LoaderVersion))
-                                              .Select(x => LoaderLabel(x.LoaderKind, x.Lu?.LoaderVersion) + (x.Id == st.LoaderChoice ? "" : Texts.Get("lua_off_suffix")))).Distinct().ToArray();
+                var able = LibraryLoaders(lu.Needs != "chef" ? LoaderCaps.Addons : lu.NeedsWhy == "name" ? LoaderCaps.ChefNames : LoaderCaps.ChefMods);
                 if (lu.Needs == "chef")
                     Line(Texts.F((lu.NeedsWhy == "declared" ? "lua_needs_chef_declared" : lu.NeedsWhy == "api" ? "lua_needs_chef_api" : able.Length > 0 ? "lua_needs_chef_have" : "lua_needs_chef")
                                  + (able.Length > 0 ? "" : "_none"),

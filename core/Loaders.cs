@@ -75,30 +75,44 @@ namespace Hd2Mod
             return picked ?? loaders.LastOrDefault(m => m.Enabled);
         }
 
-        /// <summary>The first Boot Mod Loader that hands the mods made for Chef Shared Loader over to it
-        /// (its documented hand-off, read from Chef 1.2.1's source; assumed until tried in game).</summary>
-        public static readonly Version FirstHandOff = new Version(0, 13, 0);
-
         /// <summary>Set by a deploy: every archive is read, not only those already known (the window
         /// reads its states with LuaMods.Lazy, and a deploy must not leave a helper out).</summary>
         [ThreadStatic] public static bool ReadAll;
 
-        /// <summary>The version a loader's boot names (Boot Mod Loader's marker), else null.</summary>
-        public static string VersionOf(Mod mod)
+        /// <summary>A loader's version (its boot's, or Chef's core's) and the feature markers its code
+        /// carries (LoaderCaps).</summary>
+        static (string Version, List<string> Marks) Facts(Mod mod)
         {
+            string version = null;
+            var marks = new List<string>();
             try
             {
                 foreach (var folder in Deploy.IncludedFolders(mod).Where(Directory.Exists))
                     foreach (var f in Deploy.List(folder).Where(f => Deploy.Patch.IsMatch(f)))
                     {
                         var p = Paths.Join(folder, f);
-                        if (!Deploy.HoldsLua(p, new[] { LuaMods.BootId })) continue;
-                        var boot = LuaMods.Read(p).FirstOrDefault(s => s.Id == LuaMods.BootId);
-                        if (boot?.BootVersion != null) return boot.BootVersion;
+                        if (!Deploy.HoldsLua(p, new[] { LuaMods.BootId, LuaMods.ChefCoreId })) continue;
+                        foreach (var s in LuaMods.Read(p).Where(s => s.Id == LuaMods.BootId || s.Id == LuaMods.ChefCoreId))
+                        {
+                            version = version ?? s.BootVersion;
+                            marks.AddRange(s.Marks);
+                        }
                     }
             }
             catch (Exception e) when (e is IOException || e is UnauthorizedAccessException || e is ModError) { }
-            return null;
+            return (version, marks.Distinct().ToList());
+        }
+
+        /// <summary>The version a loader's boot or Chef's core names, else null.</summary>
+        public static string VersionOf(Mod mod) => Facts(mod).Version;
+
+        /// <summary>A loader's capabilities (LoaderCaps); none for a mod that is no loader.</summary>
+        public static List<string> CapsOf(Mod mod)
+        {
+            var kind = KindOf(mod);
+            if (kind == null) return new List<string>();
+            var (version, marks) = Facts(mod);
+            return LoaderCaps.Of(kind, version, marks);
         }
 
         /// <summary>Whether a mod's scripts can only start on Chef Shared Loader: it says so, or uses its
@@ -144,53 +158,37 @@ namespace Hd2Mod
             return false;
         }
 
-        /// <summary>Chef Shared Loader as a helper (the user, 2026-10-26: "先试试协调方案"): with Boot Mod
-        /// Loader 0.13.0 or later in effect, the library holding Chef, and an enabled mod made for Chef only,
-        /// Chef goes to the game too, just before Boot Mod Loader (whose boot wins), and Boot Mod Loader
-        /// hands those mods to it. Null otherwise.</summary>
+        /// <summary>Chef Shared Loader as a helper (the user, 2026-10-26: "先试试协调方案"): the loader in
+        /// effect hands the mods made for Chef to it (LoaderCaps.Beside "hand_off": Boot Mod Loader 0.13.0
+        /// or later, Chef 1.2.0 or later), and an enabled mod is made for Chef only. Chef goes to the
+        /// game too, just before the loader (whose boot wins). Null otherwise.</summary>
         public static Mod Helper(Library lib) => HelperFor(lib, Chosen(lib));
 
         /// <summary>Helper, had this loader been chosen (null: none).</summary>
-        public static Mod HelperFor(Library lib, Mod chosen)
-        {
-            if (chosen == null || KindOf(chosen) != "bml") return null;
-            if (!Version.TryParse(VersionOf(chosen) ?? "", out var v) || v < FirstHandOff) return null;
-            var chef = Of(lib).LastOrDefault(m => KindOf(m) == "chef");
-            if (chef == null) return null;
-            return lib.Mods.Any(m => m.Enabled && KindOf(m) == null && NeedsChef(m)) ? chef : null;
-        }
+        public static Mod HelperFor(Library lib, Mod chosen) =>
+            BesideFor(lib, chosen, "hand_off", m => NeedsChef(m));
 
-        /// <summary>MDL3 as Boot Mod Loader's guest (the user, 2026-11-01: mods made for different loaders
-        /// used together): with Boot Mod Loader 0.12.0 or later in effect (the first that runs guests),
-        /// the library holding MDL3, and an enabled mod reading MDL3 or HD2Data, MDL3 goes to the game
-        /// too, before Boot Mod Loader, its boot off the start-up slot for Boot Mod Loader to run
-        /// (GuestBoots). MDL3 then starts no mod of its own: its coordinator starts none when another
-        /// loader holds CowboyBingusModLoader (read in 3.0.0-dev.21's boot; dev.25 and later are
-        /// obfuscated, so assumed for them), and gives its MDL3 global, audio and native part. Mods
-        /// that use them look for them each frame (SHH, HD2 Data Hub 0.3.0), not at load, which is
-        /// before a guest runs. Seen working in a player's video with Quick Deploy 0.12.0, where MDL3
-        /// dev.25 became a guest by accident; not yet tried in game here. Null otherwise.</summary>
-        public static Mod Mdl3GuestFor(Library lib, Mod chosen)
-        {
-            if (chosen == null || KindOf(chosen) != "bml") return null;
-            if (!Version.TryParse(VersionOf(chosen) ?? "", out var v) || v < GuestBoots.FirstHost) return null;
-            var mdl3 = Of(lib).LastOrDefault(m => KindOf(m) == "mdl3");
-            if (mdl3 == null) return null;
-            return lib.Mods.Any(m => m.Enabled && KindOf(m) == null && UsesMdl3(m)) ? mdl3 : null;
-        }
+        /// <summary>MDL3 as the loader's guest (the user, 2026-11-01: mods made for different loaders
+        /// used together): the loader in effect runs guests and MDL3 is a quiet guest that gives what
+        /// it does not (LoaderCaps.Beside "guest": Boot Mod Loader 0.12.0 or later), and an enabled mod
+        /// reads MDL3 or HD2Data. MDL3 goes to the game too, before the loader, its boot off the
+        /// start-up slot for the loader to run (GuestBoots). MDL3 then starts no mod of its own (see
+        /// LoaderCaps.QuietGuest) and gives its MDL3 global, audio and native part. Mods that use them
+        /// look for them each frame (SHH, HD2 Data Hub 0.3.0), not at load, which is before a guest
+        /// runs. Seen working in a player's video with Quick Deploy 0.12.0, where MDL3 dev.25 became a
+        /// guest by accident; not yet tried in game here. Null otherwise.</summary>
+        public static Mod Mdl3GuestFor(Library lib, Mod chosen) =>
+            BesideFor(lib, chosen, "guest", m => UsesMdl3(m));
 
-        /// <summary>Whether this MDL3 runs the mods made for Chef Shared Loader in its place, and the
-        /// start-up scripts deployed before it, as 3.0.0-dev.22 and later do. Their notes (README_zh.md,
-        /// "dev.22：Chef Shared Loader 的 mod", read 2026-11-01): Chef itself need not be deployed, what
-        /// those mods draw on the screen does not show yet, other mods' boots run too when deployed
-        /// before MDL3. Assumed until tried in game: the boot is obfuscated.</summary>
-        public static bool Mdl3TakesChef(string version)
+        /// <summary>The library's last loader that goes beside the one chosen this way, when an enabled
+        /// mod needs it.</summary>
+        static Mod BesideFor(Library lib, Mod chosen, string how, Func<Mod, bool> needs)
         {
-            var m = System.Text.RegularExpressions.Regex.Match(version ?? "", @"^(\d+\.\d+\.\d+)(?:-dev\.(\d+))?");
-            if (!m.Success || !Version.TryParse(m.Groups[1].Value, out var v)) return false;
-            var first = new Version(3, 0, 0);
-            if (v != first) return v > first;
-            return !m.Groups[2].Success || int.Parse(m.Groups[2].Value) >= 22;
+            if (chosen == null) return null;
+            var caps = CapsOf(chosen);
+            var other = Of(lib).LastOrDefault(m => m.Id != chosen.Id && LoaderCaps.Beside(caps, CapsOf(m)) == how);
+            if (other == null) return null;
+            return lib.Mods.Any(m => m.Enabled && KindOf(m) == null && needs(m)) ? other : null;
         }
 
         /// <summary>The loaders that go to the game beside the one in effect, in deploy order: MDL3 as a

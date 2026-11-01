@@ -40,6 +40,8 @@ namespace QuickDeploy
     {
         /// <summary>"any", "chef" or null; a loader itself: "bml", "chef", "bsl", "mdl3".</summary>
         public string Needs, Loader, LoaderVersion;
+        /// <summary>A loader's capabilities (LoaderCaps); empty for a mod.</summary>
+        public List<string> Caps = new List<string>();
         /// <summary>Its own start-up script's kind (bml, chef_stub, chef, bsl, mdl3, other), else null.</summary>
         public string Boot;
         public List<string> Scripts = new List<string>();
@@ -435,6 +437,7 @@ namespace QuickDeploy
                     lu.Guest = Bool(li, "guest");
                     lu.ChefRuns = Bool(li, "chef_runs");
                     lu.Mdl3Runs = Bool(li, "mdl3_runs");
+                    lu.Caps = List(li, "caps").OfType<string>().ToList();
                     lu.Mdl3Chef = Bool(li, "mdl3_chef");
                     lu.UsesMdl3 = Bool(li, "uses_mdl3");
                     lu.Biggest = Long(li, "biggest");

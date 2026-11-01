@@ -152,7 +152,8 @@ namespace Hd2Mod
                 var last = session?.Mods.LastOrDefault(x => addons.Contains(x.Name));
                 entry["lua_info"] = new Dictionary<string, object>
                 {
-                    ["needs"] = ml.Needs, ["needs_why"] = ml.NeedsWhy, ["loader"] = ml.Loader, ["loader_version"] = ml.LoaderVersion, ["boot"] = ml.Boot?.BootKind,
+                    ["needs"] = ml.Needs, ["needs_why"] = ml.NeedsWhy, ["loader"] = ml.Loader, ["loader_version"] = ml.LoaderVersion,
+                    ["caps"] = ml.Caps.Cast<object>().ToList(), ["boot"] = ml.Boot?.BootKind,
                     ["scripts"] = addons.Cast<object>().ToList(),
                     ["broken"] = ml.Broken.Select(b => (object)new Dictionary<string, object>
                     {

@@ -312,13 +312,14 @@ namespace Hd2Mod.Tests
         [Fact]
         public void Mdl3From22RunsTheModsMadeForChef()
         {
-            Assert.False(Loaders.Mdl3TakesChef("3.0.0-dev.21"));
-            Assert.True(Loaders.Mdl3TakesChef("3.0.0-dev.22"));
-            Assert.True(Loaders.Mdl3TakesChef("3.0.0-dev.27"));
-            Assert.True(Loaders.Mdl3TakesChef("3.0.0"));
-            Assert.True(Loaders.Mdl3TakesChef("3.1.0-dev.1"));
-            Assert.False(Loaders.Mdl3TakesChef("2.2.1"));
-            Assert.False(Loaders.Mdl3TakesChef(null));
+            bool Takes(string v) => LoaderCaps.Has("mdl3", v, null, LoaderCaps.ChefMods);
+            Assert.False(Takes("3.0.0-dev.21"));
+            Assert.True(Takes("3.0.0-dev.22"));
+            Assert.True(Takes("3.0.0-dev.27"));
+            Assert.True(Takes("3.0.0"));
+            Assert.True(Takes("3.1.0-dev.1"));
+            Assert.False(Takes("2.2.1"));
+            Assert.False(Takes(null));
 
             Cli("add", Addon("Narrow", "mods/x/narrow", "local chef = ...\nchef.log('x')\n", A2));
             Cli("add", Mod("Installer", new Dictionary<string, byte[]> { [A + ".patch_0"] = LuaArchive((LuaMods.BootId, "-- swaps files\nlocal y = 2\n")) }));
@@ -398,6 +399,79 @@ namespace Hd2Mod.Tests
             var own = Deploy.Plan(Library.Load());
             Assert.Equal("MDL3", own.Last().Mod);
             Assert.All(own, w => Assert.DoesNotContain("guest_boots", w.Src));
+        }
+
+        /// <summary>What each loader can do is one table (LoaderCaps, the user 2026-11-01): a capability
+        /// comes from a version on, or from the feature's marker in the loader's code. A Boot Mod Loader
+        /// that names an old version but carries both markers hosts guests and hands off to Chef; the
+        /// same without them does neither. A Chef core before 1.2.0 without the marker takes no hand-off.</summary>
+        [Fact]
+        public void A_loaders_capabilities_come_from_its_version_or_its_code()
+        {
+            string Marked(string version, string extra) => Mod("Boot Mod Loader", new Dictionary<string, byte[]>
+            {
+                [A + ".patch_0"] = LuaArchive((LuaMods.BootId, "-- Boot Mod Loader: runs HD2-Addon mods\nlocal MARKER = \"boot-mod-loader-" + version + "\"\n" + extra)),
+            });
+            Cli("add", Marked("0.11.0", "local g = \"^%-%- HD2%-Guest%-Boot: \"\nrawset(_G, \"ChefSharedLoaderHandoff\", nil)\n"));
+            Cli("add", Chef());
+            Cli("add", Mdl3());
+            Cli("add", Addon("Narrow", "mods/x/narrow", "local chef = ...\nchef.log('x')\n", A2));
+            Cli("add", Addon("Hud", "mods/me/hud", "local m = rawget(_G, 'MDL3')\n", A3));
+            Cli("loader", "Boot Mod Loader");
+            var lib = Library.Load();
+            var caps = Loaders.CapsOf(lib.Mods.Single(m => m.Name == "Boot Mod Loader"));
+            Assert.Contains(LoaderCaps.HostsGuests, caps);
+            Assert.Contains(LoaderCaps.HandsToChef, caps);
+            Assert.Equal(new[] { "MDL3", "Chef Shared Loader" }, Loaders.Helpers(lib).Select(m => m.Name).ToArray());
+            Assert.Empty(Now().Issues);
+
+            // must fail: the same version without the markers does neither
+            Cli("remove", "Boot Mod Loader");
+            Cli("add", Marked("0.11.0", ""));
+            Cli("loader", "Boot Mod Loader");
+            Assert.Empty(Loaders.Helpers(Library.Load()));
+            Assert.Contains(Now().Issues, i => i.Kind == "needs_chef");
+
+            // a Chef core older than the hand-off, without its marker, is not brought along
+            Assert.False(LoaderCaps.Has("chef", "1.1.0", null, LoaderCaps.TakesHandOff));
+            Assert.True(LoaderCaps.Has("chef", "1.1.0", new[] { "ChefSharedLoaderHandoff" }, LoaderCaps.TakesHandOff));
+        }
+
+        /// <summary>The compatibility table's verdicts come from the same table as the deploy: two
+        /// loaders go together exactly when the deploy brings the second along beside the first.</summary>
+        [Fact]
+        public void The_compatibility_verdicts_agree_with_the_deploy()
+        {
+            List<string> Of(string kind, string version) => LoaderCaps.Of(kind, version, null);
+            var v = LoaderCaps.Pair("bml", Of("bml", "0.13.4"), "chef", Of("chef", "1.3.0"));
+            Assert.Equal(("together", "bml", "chef", "hand_off"), (v.State, v.In, v.Beside, v.How));
+            v = LoaderCaps.Pair("bml", Of("bml", "0.13.4"), "mdl3", Of("mdl3", "3.0.0-dev.27"));
+            Assert.Equal(("together", "bml", "mdl3", "guest"), (v.State, v.In, v.Beside, v.How));
+            v = LoaderCaps.Pair("chef", Of("chef", "1.3.0"), "mdl3", Of("mdl3", "3.0.0-dev.27"));
+            Assert.Equal(("covered", "mdl3"), (v.State, v.Coverer));
+            Assert.Equal("one", LoaderCaps.Pair("chef", Of("chef", "1.3.0"), "mdl3", Of("mdl3", "3.0.0-dev.21")).State);
+            v = LoaderCaps.Pair("bml", Of("bml", "0.13.4"), "bsl", Of("bsl", null));
+            Assert.Equal(("covered", (string)null), (v.State, v.Coverer));
+            // together only with a later Boot Mod Loader: what it lacks is named
+            v = LoaderCaps.Pair("bml", Of("bml", "0.12.1"), "chef", Of("chef", "1.3.0"));
+            Assert.Equal("together", v.State);
+            Assert.Equal(new[] { ("bml", LoaderCaps.HandsToChef) }, v.Short.ToArray());
+
+            // the deploy: for every loader chosen, the others it brings along are those the verdict says go beside it
+            Cli("add", Bml("0.13.0"));
+            Cli("add", Chef());
+            Cli("add", Mdl3());
+            Cli("add", Addon("Narrow", "mods/x/narrow", "local chef = ...\nchef.log('x')\n", A2));
+            Cli("add", Addon("Hud", "mods/me/hud", "local m = rawget(_G, 'MDL3')\n", A3));
+            var lib = Library.Load();
+            var loaders = Loaders.Of(lib);
+            foreach (var chosen in loaders)
+                foreach (var other in loaders.Where(m => m != chosen))
+                {
+                    var p = LoaderCaps.Pair(Loaders.KindOf(chosen), Loaders.CapsOf(chosen), Loaders.KindOf(other), Loaders.CapsOf(other));
+                    bool beside = p.State == "together" && p.Short.Count == 0 && p.In == Loaders.KindOf(chosen);
+                    Assert.True(beside == Loaders.HelpersFor(lib, chosen).Any(m => m.Id == other.Id), chosen.Name + " / " + other.Name);
+                }
         }
 
         /// <summary>Chef Shared Loader 1.2.1 reads no Lua resource whose row is over 4 MB (Super Holo

@@ -40,6 +40,8 @@ namespace Hd2Mod
         /// <summary>Reads the global MDL3 or HD2Data (HD2 Data Hub, which ships with MDL3 and runs on
         /// it): MDL3's audio and data, which no other loader gives (SHH, 2026-11-01).</summary>
         public bool Mdl3Api;
+        /// <summary>For a loader's boot or Chef's core: the feature markers its code carries (LoaderCaps.Markers).</summary>
+        public List<string> Marks = new List<string>();
         /// <summary>The resource's size in its archive's row (the text and 8 bytes before it).</summary>
         public long Size;
 
@@ -70,6 +72,8 @@ namespace Hd2Mod
         /// <summary>The loader's version, from its boot or Chef's core.</summary>
         public string LoaderVersion => Scripts.Select(s => s.BootVersion).FirstOrDefault(v => v != null);
         public IEnumerable<string> Addons => Scripts.Where(s => s.Name != null && (s.Header == "Addon" || s.Header == "Boot")).Select(s => s.Name).Distinct();
+        /// <summary>A loader's capabilities (LoaderCaps), by its kind, version and code; none for a mod.</summary>
+        public List<string> Caps => Loader == null ? new List<string>() : LoaderCaps.Of(Loader, LoaderVersion, Scripts.SelectMany(s => s.Marks).Distinct());
         /// <summary>A mod, not a loader, that reads MDL3 or HD2Data (LuaScript.Mdl3Api).</summary>
         public bool UsesMdl3 => Loader == null && Scripts.Any(s => s.Mdl3Api);
         /// <summary>Its scripts Chef Shared Loader would start that are too big for it (ChefMaxLua).</summary>
@@ -89,7 +93,7 @@ namespace Hd2Mod
         /// log, 2026-10-26: "running another mod's boot script too"). Set by Check.</summary>
         public bool ChefRuns;
         /// <summary>Its boot only starts itself, and MDL3 3.0.0-dev.22 or later, in effect, runs it too
-        /// (Loaders.Mdl3TakesChef). Set by Check.</summary>
+        /// (LoaderCaps.RunsBoots). Set by Check.</summary>
         public bool Mdl3Runs;
         /// <summary>Made for Chef Shared Loader, and MDL3 3.0.0-dev.22 or later, in effect, runs it in
         /// Chef's place, without what it draws on the screen for now. Set by Check.</summary>
@@ -138,7 +142,7 @@ namespace Hd2Mod
 
         // what was found in each archive, kept between runs in lua_scan.json by the archive's
         // size and time; a new version of the checks reads every archive again
-        const int ScanVersion = 8;      // 5: UsesChefApi reads scopes (HUDdle, 2026-10-27); 6: HD2FM1 data rows, guarded jit.off(); 7: MDL3, libraries in functions that take them; 8: Mdl3Api
+        const int ScanVersion = 9;      // 5: UsesChefApi reads scopes (HUDdle, 2026-10-27); 6: HD2FM1 data rows, guarded jit.off(); 7: MDL3, libraries in functions that take them; 8: Mdl3Api; 9: Marks
 
         /// <summary>Chef Shared Loader 1.2.1 reads no Lua resource whose row size is over this
         /// (`MAX_LUA = 4 * 1024 * 1024`, `if size > MAX_LUA` in its core; its log: "Lua resource(s)
@@ -244,7 +248,7 @@ namespace Hd2Mod
                         BmlName = Json.Bool(x, "bml"), ChefOnly = Json.Bool(x, "chef_only"), Bytecode = Json.Bool(x, "bytecode"),
                         LuaJitBytecode = Json.Bool(x, "luajit_bytecode"), BootKind = Json.Str(x, "boot_kind"), BootVersion = Json.Str(x, "version"),
                         WrapsMenus = Json.Bool(x, "wraps_menus"), ChefApi = Json.Bool(x, "chef_api"), Mdl3Api = Json.Bool(x, "mdl3_api"), Size = Json.Long(x, "size"),
-                        Jit = Json.List(x, "jit").OfType<string>().ToList(),
+                        Jit = Json.List(x, "jit").OfType<string>().ToList(), Marks = Json.List(x, "marks").OfType<string>().ToList(),
                     };
                     if (Json.Str(x, "error") != null) { s.Error = ((int)Json.Long(x, "line"), Json.Str(x, "error")); s.ErrorKind = Json.Str(x, "error_kind"); }
                     return s;
@@ -269,7 +273,7 @@ namespace Hd2Mod
                         {
                             ["id"] = s.Id.ToString("x16"), ["header"] = s.Header, ["name"] = s.Name, ["bml"] = s.BmlName, ["chef_only"] = s.ChefOnly,
                             ["bytecode"] = s.Bytecode, ["luajit_bytecode"] = s.LuaJitBytecode, ["boot_kind"] = s.BootKind, ["version"] = s.BootVersion,
-                            ["wraps_menus"] = s.WrapsMenus, ["chef_api"] = s.ChefApi, ["mdl3_api"] = s.Mdl3Api, ["size"] = s.Size, ["jit"] = s.Jit.Cast<object>().ToList(),
+                            ["wraps_menus"] = s.WrapsMenus, ["chef_api"] = s.ChefApi, ["mdl3_api"] = s.Mdl3Api, ["size"] = s.Size, ["jit"] = s.Jit.Cast<object>().ToList(), ["marks"] = s.Marks.Cast<object>().ToList(),
                             ["line"] = (long)(s.Error?.Line ?? 0), ["error"] = s.Error?.Message, ["error_kind"] = s.ErrorKind,
                         }).ToList(),
                     };
@@ -323,6 +327,11 @@ namespace Hd2Mod
                 }
             }
             if (id == BootId) (s.BootKind, s.BootVersion) = BootOf(Latin(body, 1 << 20));
+            if (id == BootId || id == ChefCoreId)
+            {
+                var all = Latin(body, body.Length);
+                s.Marks = LoaderCaps.Markers.Where(m => all.IndexOf(m, StringComparison.Ordinal) >= 0).ToList();
+            }
             if (id == ChefCoreId)
             {
                 var v = Regex.Match(Latin(body, 1 << 20), @"local VERSION = '(\d+\.\d+\.\d+)'");
@@ -674,30 +683,29 @@ namespace Hd2Mod
             var bootMods = on.Where(x => x.Boot != null && !IsHelper(x)).ToList();
             // a boot that only starts its own mod is run by Boot Mod Loader as a guest, off the
             // slot: it takes nothing from the loader and is in no conflict (the user, 2026-10-26)
-            var guests = GuestBoots.Guests(bootMods.Select(x => (x.Boot.BootKind, x.Boot.BootVersion, x.Boot.Bytecode)).ToList())
+            var guests = GuestBoots.Guests(bootMods.Select(x => (x.Boot.BootKind, x.Boot.BootVersion, x.Boot.Bytecode, x.Boot.Marks)).ToList())
                                    .Select(i => bootMods[i]).ToList();
             bootMods = bootMods.Where(x => !guests.Contains(x)).ToList();
-            // Chef Shared Loader in effect runs the boots deployed before it as well (its log,
-            // 2026-10-26: "running another mod's boot script too ... patch_91"): no conflict either.
-            // The same boots Boot Mod Loader takes as guests (GuestBoots.Guests's rule).
-            var chefRuns = new List<ModLua>();
-            if (bootMods.LastOrDefault()?.Boot.BootKind == "chef_stub")
-                chefRuns = bootMods.Where(x => x.Boot.BootKind == "other" && !x.Boot.Bytecode).ToList();
-            bootMods = bootMods.Where(x => !chefRuns.Contains(x)).ToList();
-            // MDL3 3.0.0-dev.22 or later in effect does the same, and runs the mods made for Chef
-            // in its place (Loaders.Mdl3TakesChef)
-            var last = bootMods.LastOrDefault()?.Boot;
-            bool mdl3Chef = last?.BootKind == "mdl3" && Loaders.Mdl3TakesChef(last.BootVersion);
-            var mdl3Runs = mdl3Chef ? bootMods.Where(x => x.Boot.BootKind == "other" && !x.Boot.Bytecode).ToList() : new List<ModLua>();
-            bootMods = bootMods.Where(x => !mdl3Runs.Contains(x)).ToList();
+            // a loader in effect that runs the boots deployed before it (Chef Shared Loader: its log,
+            // 2026-10-26, "running another mod's boot script too ... patch_91"; MDL3 3.0.0-dev.22 and
+            // later) leaves them in no conflict either: the boots Boot Mod Loader takes as guests
+            var lastBoot = bootMods.LastOrDefault();
+            var lastCaps = lastBoot == null ? new List<string>() :
+                lastBoot.Boot.BootKind == "chef_stub" ? (on.LastOrDefault(x => x.Loader == "chef")?.Caps ?? new List<string>()) : lastBoot.Caps;
+            var runs = lastCaps.Contains(LoaderCaps.RunsBoots)
+                ? bootMods.Where(x => x != lastBoot && x.Boot.BootKind == "other" && !x.Boot.Bytecode).ToList() : new List<ModLua>();
+            bootMods = bootMods.Where(x => !runs.Contains(x)).ToList();
+            var runner = lastBoot?.Boot.BootKind == "chef_stub" ? "chef" : lastBoot?.Loader;
+            // a loader other than Chef that runs the mods made for Chef in its place (MDL3 3.0.0-dev.22 and later)
+            bool StartsChef(ModLua x, List<string> caps) => caps.Contains(LoaderCaps.ChefMods) && (x.NeedsWhy != "name" || caps.Contains(LoaderCaps.ChefNames));
             if (mark)
                 foreach (var x in all)
                 {
                     x.Helper = IsHelper(x);
                     x.Guest = guests.Contains(x);
-                    x.ChefRuns = chefRuns.Contains(x);
-                    x.Mdl3Runs = mdl3Runs.Contains(x);
-                    x.Mdl3Chef = mdl3Chef && on.Contains(x) && x.Needs == "chef" && x.NeedsWhy != "name";
+                    x.ChefRuns = runner == "chef" && runs.Contains(x);
+                    x.Mdl3Runs = runner == "mdl3" && runs.Contains(x);
+                    x.Mdl3Chef = runner != "chef" && on.Contains(x) && x.Needs == "chef" && StartsChef(x, lastCaps);
                 }
             var owner = bootMods.LastOrDefault();
             string running;
@@ -715,13 +723,14 @@ namespace Hd2Mod
             if (loaders.Select(x => x.Loader).Distinct().Count() > 1)
                 issues.Add(new LuaIssue { Kind = "two_loaders", Mods = loaders.OrderByDescending(x => x == owner).Select(x => x.Mod).ToList(), Detail = running });
             var wanting = on.Where(x => x.Needs != null).ToList();
-            if (wanting.Count > 0 && running != "bml" && running != "chef" && running != "bsl" && running != "mdl3")
+            var runningCaps = running == null || running == "other" ? new List<string>() : (on.LastOrDefault(x => x.Loader == running)?.Caps ?? lastCaps);
+            if (wanting.Count > 0 && !runningCaps.Contains(LoaderCaps.Addons))
                 issues.Add(new LuaIssue { Kind = "no_loader", Mods = (owner != null ? new[] { owner.Mod } : new Mod[0]).Concat(wanting.Select(x => x.Mod)).ToList(),
                                           Detail = owner != null ? "other" : null });
-            else if (running != "chef" && helper == null)
+            else if (helper == null)
             {
-                // under MDL3 that takes them, only those whose name only Chef takes
-                var chefOnly = wanting.Where(x => x.Needs == "chef" && !(mdl3Chef && x.NeedsWhy != "name")).ToList();
+                // the mods made for Chef that the loader in effect does not start (LoaderCaps)
+                var chefOnly = wanting.Where(x => x.Needs == "chef" && !StartsChef(x, runningCaps)).ToList();
                 if (chefOnly.Count > 0) issues.Add(new LuaIssue { Kind = "needs_chef", Mods = chefOnly.Select(x => x.Mod).ToList(), Detail = running });
             }
             // two mods with the same name: the later one (a higher patch) runs

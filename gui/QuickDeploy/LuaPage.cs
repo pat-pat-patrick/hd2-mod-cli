@@ -392,15 +392,26 @@ namespace QuickDeploy
             return (Texts.Get(lu.Guest ? "lp_now_guest" : lu.ChefRuns ? "lp_now_chef_runs" : lu.Mdl3Runs ? "lp_now_mdl3_runs" : "lp_now_starts"), "Blue");
         }
 
-        /// <summary>Whether an MDL3 of the library runs the mods made for Chef Shared Loader (Loaders.Mdl3TakesChef).</summary>
-        bool Mdl3TakesChef() => st.Mods.Any(x => x.LoaderKind == "mdl3" && Loaders.Mdl3TakesChef(x.Lu?.LoaderVersion));
+        /// <summary>Who starts a mod made for Chef: "Chef Shared Loader only", or the library's loaders
+        /// that do (LoaderCaps), "Chef Shared Loader or MDL3".</summary>
+        string ChefStarters(LuaInfo lu)
+        {
+            var kinds = KindsWith(lu.NeedsWhy == "name" ? LoaderCaps.ChefNames : LoaderCaps.ChefMods);
+            if (!kinds.Contains("chef")) kinds.Insert(0, "chef");
+            return kinds.Count == 1 ? Texts.Get("lp_needs_chef") : string.Join(Texts.Zh ? " 或 " : " or ", kinds.Select(k => LoaderLabel(k, null)));
+        }
+
+        /// <summary>The kinds of the library's loaders that have a capability (LoaderCaps).</summary>
+        List<string> KindsWith(string cap) =>
+            st.Mods.Where(x => x.Loader && x.Lu?.Caps.Contains(cap) == true).Select(x => x.LoaderKind).Distinct().ToList();
 
         // the loaders in the order the compatibility table pairs them
         static readonly string[] CompatKinds = { "bml", "chef", "mdl3", "bsl" };
 
         /// <summary>Which of the library's loaders can be used together, a line for each pair: whether,
-        /// how and under what conditions (the user, 2026-11-01: no basis column).
-        /// Only the loaders the library has (the user, 2026-10-26); null with fewer than two kinds.</summary>
+        /// how and under what conditions (the user, 2026-11-01: no basis column). The verdict is
+        /// LoaderCaps.Pair's, from the same table the deploy asks; this only words it. Only the
+        /// loaders the library has (the user, 2026-10-26); null with fewer than two kinds.</summary>
         FrameworkElement CompatTable(List<ModRow> loaders)
         {
             var byKind = CompatKinds.Select(k => loaders.LastOrDefault(x => x.LoaderKind == k)).Where(x => x != null).ToList();
@@ -427,27 +438,73 @@ namespace QuickDeploy
                 Cell(headRow, new TextBlock { Text = Texts.Get(key), Foreground = B("Muted"), FontSize = 12, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 12, 0) }, col);
             table.Children.Add(new Border { BorderBrush = B("Grid"), BorderThickness = new Thickness(0, 0, 0, 1), Background = B("Ground900"), Child = headRow });
 
+            var sep = Texts.Zh ? "；" : "; ";
             string Name(ModRow x) => LoaderLabel(x.LoaderKind, x.Lu?.LoaderVersion) ?? x.Name;
+            string Short(string kind) => LoaderLabel(kind, null);
+            List<string> Caps(ModRow x) => x.Lu?.Caps ?? new List<string>();
+            // what one does (MDL3 runs the mods made for Chef without what they draw, for now)
+            string Does(string kind, string cap) => Texts.Get("lp_cap_do_" + cap) + (kind == "mdl3" && cap == LoaderCaps.ChefMods ? Texts.Get("lp_cap_note_mdl3_chef_mods") : "");
+            string Lacking(IEnumerable<string> caps) => string.Join(sep, caps.Select(c => Texts.Get("lp_cap_lack_" + c)));
             for (int i = 0; i < byKind.Count; i++)
                 for (int j = i + 1; j < byKind.Count; j++)
                 {
                     ModRow a = byKind[i], b = byKind[j];
-                    var pair = a.LoaderKind + "_" + b.LoaderKind;
-                    // MDL3 3.0.0-dev.22 or later runs the mods made for Chef in its place
-                    if (pair == "chef_mdl3" && Loaders.Mdl3TakesChef(b.Lu?.LoaderVersion)) pair = "chef_mdl3_takes";
-                    bool together = pair == "bml_chef" || pair == "bml_mdl3";
-                    bool now = together && a.Id == st.LoaderChoice && st.LoaderHelpers.Contains(b.Id);
-                    var state = now ? "lp_compat_now" : together ? "lp_compat_together" : pair == "chef_mdl3" ? "lp_compat_one" : "lp_compat_covered";
-                    var how = new StackPanel();
-                    how.Children.Add(Text(Texts.Get("lp_compat_" + pair), "Ink"));
-                    // a Boot Mod Loader too old for the other to come along
-                    var floor = pair == "bml_chef" ? Loaders.FirstHandOff : pair == "bml_mdl3" ? GuestBoots.FirstHost : null;
-                    if (floor != null && (!Version.TryParse(a.Lu?.LoaderVersion ?? "", out var v) || v < floor))
+                    var v = LoaderCaps.Pair(a.LoaderKind, Caps(a), b.LoaderKind, Caps(b));
+                    ModRow Of(string kind) => kind == a.LoaderKind ? a : b;
+                    var lines = new List<(string Text, string Colour)>();
+                    string state;
+                    if (v.State == "together")
                     {
-                        var warn = Text(Texts.F("lp_compat_version", "Boot Mod Loader", a.Lu?.LoaderVersion ?? "?", floor.ToString(3)), "Yellow");
-                        warn.Margin = new Thickness(0, 4, 12, 0);
-                        how.Children.Add(warn);
+                        ModRow inEffect = Of(v.In), beside = Of(v.Beside);
+                        state = inEffect.Id == st.LoaderChoice && st.LoaderHelpers.Contains(beside.Id) ? "lp_compat_now" : "lp_compat_together";
+                        lines.Add((Texts.F(v.How == "hand_off" ? "lp_compat_hand_off" : "lp_compat_guest", Short(v.In), Short(v.Beside)), "Ink"));
+                        var lacks = LoaderCaps.Lacks(Caps(beside), Caps(inEffect));
+                        lines.Add((lacks.Count == 0 ? Texts.F("lp_compat_alone", Short(v.Beside)) : Texts.F("lp_compat_alone_lacks", Short(v.Beside), Lacking(lacks)), "Ink"));
+                        // a loader of the library too old for it
+                        foreach (var (kind, cap) in v.Short)
+                            lines.Add((Texts.F("lp_compat_version", Short(kind), Of(kind).Lu?.LoaderVersion ?? "?", LoaderCaps.Since(kind, cap) ?? "?"), "Yellow"));
                     }
+                    else if (v.State == "covered" && v.Coverer == null)
+                    {
+                        state = "lp_compat_covered";
+                        lines.Add((Texts.Get("lp_compat_same"), "Ink"));
+                    }
+                    else if (v.State == "covered")
+                    {
+                        state = "lp_compat_covered";
+                        ModRow c = Of(v.Coverer), o = c == a ? b : a;
+                        lines.Add((Texts.F("lp_compat_also", Short(c.LoaderKind), Does(c.LoaderKind, LoaderCaps.Own(o.LoaderKind))), "Ink"));
+                        var lacks = LoaderCaps.Lacks(Caps(o), Caps(c));
+                        if (lacks.Count > 0) lines.Add((Texts.F("lp_compat_under", Short(o.LoaderKind), Lacking(lacks)), "Ink"));
+                        lines.Add((Texts.Get("lp_compat_deploy_one"), "Ink"));
+                    }
+                    else
+                    {
+                        state = "lp_compat_one";
+                        lines.Add((Texts.Get("lp_compat_no_hand_off"), "Ink"));
+                        foreach (var (x, y) in new[] { (a, b), (b, a) })
+                        {
+                            var lacks = LoaderCaps.Lacks(Caps(x), Caps(y));
+                            if (lacks.Count > 0) lines.Add((Texts.F("lp_compat_under", Short(x.LoaderKind), Lacking(lacks)), "Ink"));
+                        }
+                        lines.Add((Texts.Get("lp_compat_deploy_one"), "Ink"));
+                        // a later version of one does what the other does
+                        foreach (var (x, y) in new[] { (a, b), (b, a) })
+                        {
+                            var missing = LoaderCaps.Lacks(Caps(x), Caps(y));
+                            if (missing.Count == 0 || LoaderCaps.Lacks(LoaderCaps.Best(x.LoaderKind), Caps(y)).Count > 0) continue;
+                            var since = missing.Select(cap => LoaderCaps.Since(x.LoaderKind, cap)).FirstOrDefault(s => s != null);
+                            if (since != null) lines.Add((Texts.F("lp_compat_newer", Short(x.LoaderKind), since, Does(x.LoaderKind, LoaderCaps.Own(y.LoaderKind))), "Yellow"));
+                        }
+                    }
+                    var how = new StackPanel();
+                    foreach (var (text, colour) in lines)
+                    {
+                        var line = Text(text, colour);
+                        if (how.Children.Count > 0) line.Margin = new Thickness(0, 4, 12, 0);
+                        how.Children.Add(line);
+                    }
+                    bool together = v.State == "together";
                     var row = Row(false);
                     Cell(row, Text(Name(a) + "\n+ " + Name(b), "Ink"), 0);
                     Cell(row, Text(Texts.Get(state), together ? "Blue" : "Muted"), 1);
@@ -492,7 +549,7 @@ namespace QuickDeploy
             Cell(sw, 0);
             Cell(ModLink(m, double.NaN), 1);
             var lu = m.Lu;
-            Cell(Text(lu?.Needs == "chef" ? Texts.Get(lu.NeedsWhy != "name" && Mdl3TakesChef() ? "lp_needs_chef_mdl3" : "lp_needs_chef") : lu?.Needs == "any" ? Texts.Get("lp_needs_any")
+            Cell(Text(lu?.Needs == "chef" ? ChefStarters(lu) : lu?.Needs == "any" ? Texts.Get("lp_needs_any")
                     : lu?.Boot != null ? Texts.Get("lp_needs_boot") : "—", "Muted"), 2);
             var (now, colour) = NowOf(m);
             var nowText = Selectable.Text(now, 13, colour);
