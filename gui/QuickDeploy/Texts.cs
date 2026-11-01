@@ -213,7 +213,7 @@ namespace QuickDeploy
             ["drop_none"] = ("Nothing here can be installed: drop a zip archive (.zip, .7z, .rar) or a mod folder.",
                              "无法安装拖入的内容，请拖入 zip 压缩包（.zip、.7z、.rar）或 mod 文件夹。"),
             ["drop_done"] = ("{0} mods added", "已添加 {0} 个 mod"),
-            ["drop_processed"] = ("{0} mods added or updated", "已添加或更新 {0} 个 mod"),
+            ["drop_processed"] = ("Added or updated: {0}", "已添加或更新 {0} 个 mod"),
             ["mdl3_installed"] = ("MDL3 {0}: native part installed", "MDL3 {0}：原生部分已安装"),
             ["mdl3_waits"] = ("MDL3's native part will be installed at the next deploy, once the game is closed", "MDL3 原生部分将在游戏关闭后的下次部署时安装"),
             ["mdl3_failed"] = ("MDL3's native part was not installed: {0}", "MDL3 原生部分未安装：{0}"),
@@ -300,7 +300,7 @@ namespace QuickDeploy
             ["lua_kind_bytecode"] = ("code compiled for LuaJIT (bytecode)", "为 LuaJIT 编译的代码（字节码）"),
             // one sentence for all that a mod's scripts need: "游戏目前" once (the user, 2026-10-26: no repeats)
             ["lua_basis"] = ("At present the game {0}.", "游戏目前{0}。"),
-            ["lua_basis_loaders"] = ("At present the game {0}, and the library's {1} does not provide it either.", "游戏目前{0}，库中的 {1} 也未提供。"),
+            ["lua_basis_loaders"] = ("At present the game {0}, nor does any loader in the library ({1}).", "游戏目前{0}，库中的 {1} 也未提供。"),
             ["lua_clause_code"] = ("does not accept this", "不接受这种写法"),
             ["lua_clause_code_n"] = ("does not accept these", "不接受这些写法"),
             ["lua_clause_bytecode"] = ("does not run LuaJIT bytecode", "不能运行 LuaJIT 字节码"),
@@ -1060,7 +1060,7 @@ namespace QuickDeploy
             ["up_row_error"] = ("check failed", "检查失败"),
             ["up_row_skipped"] = ("version skipped", "已跳过此版本"),
             ["d_previous"] = ("Previous version", "上一版本"),
-            ["up_rollback"] = ("Roll back to the previous version", "回滚到上一版本"),
+            ["up_rollback"] = ("Roll back", "回滚到上一版本"),
             ["up_rollback_plain"] = ("Roll back", "回滚"),
             ["up_rollback_done"] = ("{0} is back to {1}. Deploy to bring the game up to date.", "{0} 已回滚到 {1}，部署后生效。"),
             ["up_rollback_gone"] = ("The previous version's folder is no longer there:\n{0}", "上一版本的文件夹已不存在：\n{0}"),
@@ -1208,5 +1208,9 @@ namespace QuickDeploy
         }
 
         public static string N(int n) => n.ToString("#,0", CultureInfo.InvariantCulture);
+
+        /// <summary>Between the items of a list in running text: 、 in Chinese, a comma in English
+        /// (hard-coded 、 showed in the English window, 2026-11-01).</summary>
+        public static string Sep => Zh ? "、" : ", ";
     }
 }

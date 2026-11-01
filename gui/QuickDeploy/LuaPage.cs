@@ -197,7 +197,7 @@ namespace QuickDeploy
         List<(string Text, string Colour)> Problems()
         {
             var said = new List<(string, string)>();
-            var sep = Texts.Zh ? "、" : ", ";
+            var sep = Texts.Sep;
             string Names(IEnumerable<string> ids) => string.Join(sep, ids.Select(id => ById(id)?.Name ?? id));
             foreach (var i in st.Lua.Issues)
             {
@@ -258,7 +258,7 @@ namespace QuickDeploy
             var key = x?.Id ?? Loaders.None;
             if (lua.Outcomes.TryGetValue(key, out var outs))
             {
-                var sep = Texts.Zh ? "、" : ", ";
+                var sep = Texts.Sep;
                 if (outs.Count == 0) Say(luaOn == 0 ? Texts.Get("lp_no_lua_on") : Texts.F(on ? "lp_all_start" : "lp_all_start_if", luaOn), "Blue");
                 foreach (var o in outs)
                 {
@@ -354,7 +354,7 @@ namespace QuickDeploy
             var lu = m.Lu;
             if (lu == null) return ("", "Muted");
             if (!m.Enabled) return (Texts.Get("lp_now_off"), "Muted");
-            var sep = Texts.Zh ? "、" : ", ";
+            var sep = Texts.Sep;
             if (lu.Broken.Count > 0)
             {
                 var libs = lu.Broken.SelectMany(b => b.Jit).Distinct().ToList();

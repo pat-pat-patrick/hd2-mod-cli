@@ -1727,7 +1727,7 @@ namespace QuickDeploy
             var helped = st.Mods.Where(y => y.Enabled && !y.Loader && (guest ? y.Lu?.UsesMdl3 == true : y.Lu?.Needs == "chef")).Select(y => y.Name);
             var chosen = ById(st.LoaderChoice);
             return Texts.F(guest ? "lua_info_guest" : "lua_info_helping", chosen != null ? LoaderLabel(chosen.LoaderKind, chosen.Lu?.LoaderVersion) ?? chosen.Name : "?",
-                           string.Join(Texts.Zh ? "、" : ", ", helped));
+                           string.Join(Texts.Sep, helped));
         }
 
         UIElement LuaCard(ModRow m)
@@ -1781,8 +1781,8 @@ namespace QuickDeploy
                 if (lu.Needs == "chef")
                     Line(Texts.F((lu.NeedsWhy == "declared" ? "lua_needs_chef_declared" : lu.NeedsWhy == "api" ? "lua_needs_chef_api" : able.Length > 0 ? "lua_needs_chef_have" : "lua_needs_chef")
                                  + (able.Length > 0 ? "" : "_none"),
-                                 string.Join("、", able)), "Muted");
-                else Line(able.Length > 0 ? Texts.F("lua_needs_any_have", string.Join("、", able)) : Texts.Get("lua_needs_any_none"), "Muted");
+                                 string.Join(Texts.Sep, able)), "Muted");
+                else Line(able.Length > 0 ? Texts.F("lua_needs_any_have", string.Join(Texts.Sep, able)) : Texts.Get("lua_needs_any_none"), "Muted");
                 if (m.Enabled)
                 {
                     var issues = IssuesOf(m).ToList();
@@ -1827,7 +1827,7 @@ namespace QuickDeploy
                         why = b.Kind != null && b.Kind != "syntax" && Texts.Has("lua_kind_" + b.Kind) ? Texts.F("lua_kind_" + b.Kind, b.Script, b.Line)
                             : Texts.F("lua_broken_line", b.Script, b.Line, b.Message);
                     else if (b.LuaJitBytecode) why = Texts.F("lua_kind_bytecode", b.Script);
-                    else why = Texts.F("lua_broken_uses", b.Script, string.Join(Texts.Zh ? "、" : ", ", b.Jit.Select(j => Texts.Get("lua_lib_" + j))));
+                    else why = Texts.F("lua_broken_uses", b.Script, string.Join(Texts.Sep, b.Jit.Select(j => Texts.Get("lua_lib_" + j))));
                     var tb = new DockPanel();
                     var cannot = new TextBlock { Text = Texts.Get("lua_broken") + (Texts.Zh ? "" : " "), FontSize = 12, Foreground = B("Red"), FontWeight = FontWeights.SemiBold };
                     DockPanel.SetDock(cannot, Dock.Left);
@@ -1857,7 +1857,7 @@ namespace QuickDeploy
                 var used = lu.Broken.SelectMany(b => b.Jit).Distinct().ToList();
                 int code = lu.Broken.Where(b => b.Message != null).Select(b => b.Script).Distinct().Count();
                 bool bytecode = lu.Broken.Any(b => b.Message == null && b.LuaJitBytecode);
-                string sep = Texts.Zh ? "、" : ", ";
+                string sep = Texts.Sep;
                 // what the game lacks, as clauses of one sentence: only what the scripts use
                 var clauses = new List<string>();
                 if (code > 0) clauses.Add(Texts.Get(code > 1 ? "lua_clause_code_n" : "lua_clause_code"));
@@ -2070,7 +2070,7 @@ namespace QuickDeploy
             var box = new StackPanel();
             var lua = st.Mods.Any(y => y.Enabled && !y.Loader && y.Lu?.Needs != null);
             bool firstOne = true;
-            var sep = Texts.Zh ? "、" : ", ";
+            var sep = Texts.Sep;
             // every line can be selected and copied (the user, 2026-10-26)
             void Say(string text, string colour)
             {
@@ -2918,7 +2918,7 @@ namespace QuickDeploy
             {
                 var target = GameDriveTarget(folders);
                 var advice = new StackPanel();
-                advice.Children.Add(Heading(Texts.F("st_far", far.Sum(f => f.Mods.Count), string.Join("、", far.Select(f => f.Drive.TrimEnd('\\'))), IOPath.GetPathRoot(GameDir()).TrimEnd('\\'))));
+                advice.Children.Add(Heading(Texts.F("st_far", far.Sum(f => f.Mods.Count), string.Join(Texts.Sep, far.Select(f => f.Drive.TrimEnd('\\'))), IOPath.GetPathRoot(GameDir()).TrimEnd('\\'))));
                 advice.Children.Add(Small(Texts.Get("st_far_why"), new Thickness(0, 8, 0, 0)));
                 var row = new WrapPanel { Margin = new Thickness(0, 12, 0, 0) };
                 var go = new Button { Content = Texts.F("st_far_move", target), Style = (Style)FindResource("Primary"), MinHeight = 40, Margin = new Thickness(0, 0, 8, 0) };
@@ -3603,7 +3603,7 @@ namespace QuickDeploy
             bool allProfiles = false;
             if (several.Count > 0)
             {
-                var which = string.Join("\n", several.Select(x => Texts.F("im_profiles_line", x.Name, string.Join("、", x.ProfileNames))));
+                var which = string.Join("\n", several.Select(x => Texts.F("im_profiles_line", x.Name, string.Join(Texts.Sep, x.ProfileNames))));
                 int how = Dialog.Choose(this, Texts.F("im_profiles_ask", which), Texts.Get("im_profiles_all"), Texts.Get("im_profiles_one"), Texts.Get("cancel"));
                 if (how != 0 && how != 1) return;
                 allProfiles = how == 0;
@@ -3681,7 +3681,7 @@ namespace QuickDeploy
                                       && !kept.Contains(IOPath.GetDirectoryName(m.Path.TrimEnd('\\')), StringComparer.OrdinalIgnoreCase)).ToList();
             if (far.Count == 0) return;
             var target = GameDriveTarget(Storage.Folders(Library.Load(), g));
-            var drives = string.Join("、", far.Select(m => IOPath.GetPathRoot(m.Path).TrimEnd('\\')).Distinct());
+            var drives = string.Join(Texts.Sep, far.Select(m => IOPath.GetPathRoot(m.Path).TrimEnd('\\')).Distinct());
             var text = Texts.F("adv_text", far.Count, drives, IOPath.GetPathRoot(g).TrimEnd('\\')) + "\n\n" + Texts.Get("mv_why") + "\n\n" + Texts.F("adv_where", target);
             int pick = Dialog.Choose(this, text, Texts.Get("adv_move"), Texts.Get("adv_copy"), Texts.Get("adv_keep"));
             if (pick == 0 || pick == 1) MoveModsNow(far, target, pick == 1);
