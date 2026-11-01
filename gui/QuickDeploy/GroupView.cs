@@ -268,7 +268,12 @@ namespace QuickDeploy
                     Margin = new Thickness(14, 8, 14, 8), TextWrapping = TextWrapping.Wrap,
                 });
             foreach (var g in groups) list.Children.Add(FolderItem(g, index, active, under[g.Id]));
-            foreach (var m in mods) list.Children.Add(ModItem(m, index, active));
+            foreach (var m in mods)
+            {
+                list.Children.Add(ModItem(m, index, active));
+                // its translation packs under it, as in the load order (PackLine)
+                foreach (var p in PacksOf(m)) list.Children.Add(PackLine(p, true));
+            }
             if (parent == null || LevelOf(parent) < Groups.Depth)
             {
                 var add = new Button { Template = Plain(), Cursor = Cursors.Hand, FocusVisualStyle = null, HorizontalContentAlignment = HorizontalAlignment.Left };

@@ -4196,19 +4196,25 @@ namespace QuickDeploy
         }
 
         /// <summary>A translation pack as one small line under the mod it translates (the user,
-        /// 2026-10-26): its tick turns it on and off, its name shows its details, its menu is a row's.</summary>
-        UIElement PackLine(ModRow p)
+        /// 2026-10-26): its tick turns it on and off, its name shows its details, its menu is a row's.
+        /// In the groups too, under the mod's own item (the user, 2026-11-01: "分组视图也应该这么显示"),
+        /// its tick where the mod's name starts (the item's edge 3, margin 11, switch 44 + 10, picture
+        /// 40 + 10), without the number: the groups show no load order.</summary>
+        UIElement PackLine(ModRow p, bool inGroups = false)
         {
             bool cur = p.Id == selectedId;
-            var line = new DockPanel { Margin = new Thickness(4, 0, 16, 8), Background = Brushes.Transparent };
+            var line = new DockPanel { Margin = inGroups ? new Thickness(118, 0, 10, 8) : new Thickness(4, 0, 16, 8), Background = Brushes.Transparent };
             // its place in the load order, under the rows' numbers: they do not seem to skip one
-            var num = new TextBlock
+            if (!inGroups)
             {
-                Text = st.ProfilesOn && !p.InProfile ? "" : Num(p).ToString(), FontFamily = Mono, FontSize = 12, Foreground = B("Muted"),
-                Width = 28, TextAlignment = TextAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 92, 0),
-            };
-            DockPanel.SetDock(num, Dock.Left);
-            line.Children.Add(num);
+                var num = new TextBlock
+                {
+                    Text = st.ProfilesOn && !p.InProfile ? "" : Num(p).ToString(), FontFamily = Mono, FontSize = 12, Foreground = B("Muted"),
+                    Width = 28, TextAlignment = TextAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 92, 0),
+                };
+                DockPanel.SetDock(num, Dock.Left);
+                line.Children.Add(num);
+            }
             var tick = new CheckBox { Style = (Style)FindResource("Tick"), IsChecked = p.Enabled, VerticalAlignment = VerticalAlignment.Center, ToolTip = p.Name };
             tick.Click += (s, e) => { bool on = tick.IsChecked == true; Change(p.Id, c => c.Enabled = on, on ? "enable" : "disable", p.Id); };
             DockPanel.SetDock(tick, Dock.Left);
