@@ -13,6 +13,9 @@ namespace Hd2Mod.Tests
     public class Mdl3Natives : Fixture
     {
         static readonly Func<string, string> RealRedirect = Mdl3Native.Redirected;
+        static readonly Func<int> RealCodePage = Mdl3Native.CodePage;
+        static readonly Func<string, string> RealShortName = Mdl3Native.ShortName;
+        static readonly Func<string> RealElsewhere = Mdl3Native.Elsewhere;
         string Local;
         string signedBy = "dll";
 
@@ -24,6 +27,9 @@ namespace Hd2Mod.Tests
             // "signed" is what a test says: a DLL whose text starts with the word
             Mdl3Native.Signed = p => File.ReadAllText(p).StartsWith(signedBy);
             Mdl3Native.Redirected = f => null;
+            // a Chinese system's code page, whatever this machine's; the DLL's other place in the test's folder
+            Mdl3Native.CodePage = () => 936;
+            Mdl3Native.Elsewhere = () => Elsewhere;
             Mdl3Native.Last = null;
         }
 
@@ -32,6 +38,9 @@ namespace Hd2Mod.Tests
             Mdl3Native.LocalAppData = () => Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
             Mdl3Native.Signed = Mdl3Native.SignedByPublisher;
             Mdl3Native.Redirected = RealRedirect;
+            Mdl3Native.CodePage = RealCodePage;
+            Mdl3Native.ShortName = RealShortName;
+            Mdl3Native.Elsewhere = RealElsewhere;
             base.Dispose();
         }
 
@@ -58,6 +67,7 @@ namespace Hd2Mod.Tests
         }
 
         string Installed => Path.Combine(Local, "MDL3", "mdl_native_bridge.dll");
+        string Elsewhere => Path.Combine(Root, "programdata", "MDL3");
 
         Dictionary<string, object> Config() =>
             (Dictionary<string, object>)Json.Parse(File.ReadAllText(Path.Combine(Local, "MDL3", "config.json")));
@@ -183,22 +193,87 @@ namespace Hd2Mod.Tests
             Assert.False(File.Exists(Installed));
         }
 
+        /// <summary>Players with Chinese Windows user names were refused (2026-11-01): the 8.3 short
+        /// name keeps Chinese characters (proven: a folder named with two of them has itself as its
+        /// short name). Under a code page that is not UTF-8 the DLL goes to a folder whose path is
+        /// ASCII, and config.json names it there; MDL3's own files stay in its folder.</summary>
         [Fact]
-        public void A_path_the_games_lua_cannot_open_is_written_as_its_short_name()
+        public void A_Chinese_user_name_puts_the_dll_where_the_game_can_load_it()
         {
-            Local = Path.Combine(Root, "用户", "Local");
+            Local = Path.Combine(Root, "张三", "Local");
             Directory.CreateDirectory(Local);
+            Mdl3Native.ShortName = s => s;                              // as on a Chinese system
             var said = Cli("add", Package("MDL3 dev.21", "3.0.0-dev.21", "dll one"));
-            if (said.Contains("no 8.3 short name"))
-            {
-                Assert.False(File.Exists(Installed));          // a volume without short names: refused
-                return;
-            }
-            Assert.Contains("installed", said);
+            Assert.Contains("installed in", said);
+            Assert.False(File.Exists(Installed));                       // not in MDL3's own folder
             var dll = Json.Str(Config(), "dll");
             Assert.True(dll.All(c => c < 127), dll);
-            Assert.Equal(File.ReadAllText(Installed), File.ReadAllText(dll));
-            Assert.DoesNotContain("MDL3", Cli("deploy"));                // the short name is the same place
+            Assert.StartsWith(Elsewhere, dll);
+            Assert.Equal("dll one", File.ReadAllText(dll));
+            Assert.True(File.Exists(Path.Combine(Local, "MDL3", "install-state.json")));
+            Assert.DoesNotContain("MDL3", Cli("deploy"));               // nothing left to do
+        }
+
+        /// <summary>A short name in ASCII (a long Chinese name, on a volume that makes them): MDL3's
+        /// own folder, written as that name; the same place for the next deploy.</summary>
+        [Fact]
+        public void An_ascii_short_name_keeps_the_dll_in_mdl3s_folder()
+        {
+            Local = Path.Combine(Root, "张三丰同学测试", "Local");
+            Directory.CreateDirectory(Local);
+            var said = Cli("add", Package("MDL3 dev.21", "3.0.0-dev.21", "dll one"));
+            Assert.Contains("installed in", said);
+            var dll = Json.Str(Config(), "dll");
+            Assert.True(dll.All(c => c < 127), dll);
+            var shortName = RealShortName(Local);
+            if (shortName != null && shortName.All(c => c < 127)) Assert.Equal("dll one", File.ReadAllText(Installed));
+            else Assert.StartsWith(Elsewhere, dll);                     // a volume without short names
+            Assert.Equal("dll one", File.ReadAllText(dll));
+            Assert.DoesNotContain("MDL3", Cli("deploy"));
+        }
+
+        /// <summary>The code page UTF-8 (65001, Windows' beta option): config.json's UTF-8 is what the
+        /// game reads, so the path is written as it is.</summary>
+        [Fact]
+        public void Under_utf8_a_Chinese_path_is_written_as_it_is()
+        {
+            Local = Path.Combine(Root, "张三", "Local");
+            Directory.CreateDirectory(Local);
+            Mdl3Native.CodePage = () => 65001;
+            Mdl3Native.ShortName = s => s;
+            Assert.Contains("installed in", Cli("add", Package("MDL3 dev.21", "3.0.0-dev.21", "dll one")));
+            Assert.Equal(Installed, Json.Str(Config(), "dll"));
+            Assert.Equal("dll one", File.ReadAllText(Installed));
+        }
+
+        /// <summary>Must fail: a user name the code page cannot write (Chinese under 1252) is a folder
+        /// MDL3 itself cannot open: nothing installed anywhere, and why said.</summary>
+        [Fact]
+        public void A_user_name_the_code_page_cannot_write_is_refused()
+        {
+            Local = Path.Combine(Root, "张三", "Local");
+            Directory.CreateDirectory(Local);
+            Mdl3Native.CodePage = () => 1252;
+            Mdl3Native.ShortName = s => s;
+            var said = Cli("add", Package("MDL3 dev.21", "3.0.0-dev.21", "dll one"));
+            Assert.Contains("MDL3 cannot open its folder", said);
+            Assert.False(File.Exists(Installed));
+            Assert.False(Directory.Exists(Elsewhere));
+        }
+
+        /// <summary>A path the game opens: ASCII as it is, a Chinese one only through an ASCII short
+        /// name or under UTF-8; else none (a game folder then stays out of config.json).</summary>
+        [Fact]
+        public void ForGame_gives_a_path_the_game_opens_or_none()
+        {
+            var cn = Path.Combine(Root, "游戏");
+            Mdl3Native.ShortName = s => s;
+            Assert.Null(Mdl3Native.ForGame(cn));
+            Mdl3Native.ShortName = s => Path.Combine(Root, "YOUXI~1");
+            Assert.Equal(Path.Combine(Root, "YOUXI~1"), Mdl3Native.ForGame(cn));
+            Mdl3Native.CodePage = () => 65001;
+            Assert.Equal(cn, Mdl3Native.ForGame(cn));
+            Assert.Equal(Path.Combine(Root, "game"), Mdl3Native.ForGame(Path.Combine(Root, "game")));
         }
 
         /// <summary>MDL3 dev.25 (2026-11-01) ships its boot obfuscated: no first line names it. Its

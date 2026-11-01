@@ -128,6 +128,8 @@ namespace Hd2Mod
                     },
                     ["native_part"] = need,
                     ["folder"] = data,
+                    // where the DLL goes: MDL3's folder, or this program's when the game cannot open that path
+                    ["dll_folder"] = Mdl3Native.DllHome(), ["code_page"] = (long)Mdl3Native.CodePage(),
                     ["files"] = files,
                     ["config"] = Mdl3Native.ReadJson(Path.Combine(data, "config.json")),
                     ["install_state"] = Mdl3Native.ReadJson(Path.Combine(data, "install-state.json")),

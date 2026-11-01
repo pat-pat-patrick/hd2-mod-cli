@@ -5,6 +5,7 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
+using System.Text;
 
 namespace Hd2Mod
 {
@@ -26,8 +27,17 @@ namespace Hd2Mod
     ///   paths went wrong before: the folder is os.getenv('LOCALAPPDATA') .. '/MDL3' and the DLL
     ///   sits in it under its own name (the boot maps an older native\&lt;version&gt;\ path there).
     ///   The boot hands config.json's dll to package.loadlib and its game_dir to io, both in the
-    ///   system's ANSI code page, so a path with other characters is written as its 8.3 short name;
-    ///   one without a short name is refused rather than written in a form the game cannot open.
+    ///   system's ANSI code page (assumed: MDL3's own notes say the game's os.getenv and io.open use
+    ///   it, and PUC Lua's loadlib is LoadLibraryA), while config.json is UTF-8. So a path is written
+    ///   as it is when it is ASCII or that code page is UTF-8 (65001); else as its 8.3 short name when
+    ///   that is ASCII. A short name keeps Chinese characters (proven 2026-11-01: a folder named
+    ///   with two of them has itself as its short name), so for most Chinese Windows user names
+    ///   there is none: the DLL then goes to a folder of this program's under %ProgramData%, whose
+    ///   path is ASCII, and config.json names it there (players with Chinese user names were
+    ///   refused, 2026-11-01). A game folder with no such path is left out of config.json: the boot
+    ///   then finds the game from its working folder. MDL3's own folder itself is reached through
+    ///   os.getenv, so its path has to be one the code page can write; when it is not, MDL3 cannot
+    ///   run there and nothing is installed.
     ///   A process whose writes to AppData Windows sends elsewhere (a packaged app) installs
     ///   nothing: the game would not see it.</summary>
     public static class Mdl3Native
@@ -48,6 +58,13 @@ namespace Hd2Mod
         /// elsewhere, else null; tests replace it.</summary>
         public static Func<string, string> Redirected = FindRedirect;
         public static string DataDir() => Path.Combine(LocalAppData(), "MDL3");
+        /// <summary>The system's ANSI code page, in which the game's Lua opens paths; tests replace it.</summary>
+        public static Func<int> CodePage = () => GetACP();
+        /// <summary>A path's 8.3 short form, else null; tests replace it.</summary>
+        public static Func<string, string> ShortName = ShortPathOf;
+        /// <summary>Where the DLL goes when MDL3's folder has no path the game opens; tests replace it.</summary>
+        public static Func<string> Elsewhere = () =>
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "HD2 Mod Quick Deploy", "MDL3");
         /// <summary>Whether a file carries a valid signature of MDL3's publisher; tests replace it.</summary>
         public static Func<string, bool> Signed = SignedByPublisher;
         /// <summary>What the last install or wait in this process came to, for the window to say
@@ -150,13 +167,24 @@ namespace Hd2Mod
         /// <summary>Why the installed native part is not this package's, else null.</summary>
         public static string Need(Package p, string game)
         {
-            var target = Path.Combine(DataDir(), p.DllName);
+            var target = Path.Combine(DllHome(), p.DllName);
             if (!File.Exists(target)) return "not installed";
             if (Sha(target) != p.Sha256) return "another version";
             var config = ReadJson(Path.Combine(DataDir(), "config.json"));
             if (config == null) return "no settings";
-            if (!Same(Json.Str(config, "dll"), target) || !Same(Json.Str(config, "game_dir"), game)) return "settings for another place";
+            if (!Same(Json.Str(config, "dll"), target)) return "settings for another place";
+            // a game folder the game cannot open by its path is left out (ForGame)
+            if (game != null && (ForGame(game) == null ? config.ContainsKey("game_dir") : !Same(Json.Str(config, "game_dir"), game)))
+                return "settings for another place";
             return null;
+        }
+
+        /// <summary>The folder the DLL goes to: MDL3's own when the game can open its path (ForGame),
+        /// else Elsewhere.</summary>
+        public static string DllHome()
+        {
+            var data = DataDir();
+            return ForGame(data) != null ? data : Elsewhere();
         }
 
         /// <summary>At a deploy: the wanted package's native part installed when it is not;
@@ -213,12 +241,26 @@ namespace Hd2Mod
             var data = DataDir();
             NoLinks(data);
             if (Inside(data, game)) throw new ModError("MDL3's folder " + data + " is inside the game folder", "mdl3_place");
+            // the boot reaches its folder through os.getenv, in the code page: one it cannot write is
+            // a folder MDL3 cannot open, wherever the DLL goes
+            if (!Writable(data))
+                throw new ModError("MDL3 cannot open its folder " + data + ": the code page Windows uses for non-Unicode programs (" + CodePage() +
+                                   ") cannot write its characters. A Windows user name in letters and digits, or Windows' option \"Beta: Use Unicode UTF-8 for worldwide language support\", makes it work", "mdl3_place", data);
             Directory.CreateDirectory(data);
             var away = Redirected(data);
             if (away != null)
                 throw new ModError("this program's writes to " + data + " go to " + away + ", where the game does not look: install from HD2 Mod Quick Deploy started on its own", "mdl3_redirected");
             var gameDir = ForGame(game);
-            var target = Path.Combine(data, p.DllName);
+            // the DLL where the game can load it from (DllHome); MDL3's folder exists now, so its 8.3 name too
+            var home = DllHome();
+            if (!Same(home, data))
+            {
+                NoLinks(home);
+                if (Inside(home, game)) throw new ModError(home + " is inside the game folder", "mdl3_place");
+                Directory.CreateDirectory(home);
+                if (ForGame(home) == null) throw new ModError(home + " has characters the game's Lua cannot open", "mdl3_place", home);
+            }
+            var target = Path.Combine(home, p.DllName);
             var configPath = Path.Combine(data, "config.json");
             var statePath = Path.Combine(data, "install-state.json");
             var state = ReadJson(statePath);
@@ -230,16 +272,17 @@ namespace Hd2Mod
             var backup = Backup(data, new[] { target, configPath, statePath });
             try
             {
-                Put(p.Dll, target, data);
+                Put(p.Dll, target, home);
                 var config = ReadJson(configPath) ?? new Dictionary<string, object>();
                 if (!config.ContainsKey("schema")) config["schema"] = 1L;
                 config["dll"] = ForGame(target);
-                config["game_dir"] = gameDir;
+                if (gameDir != null) config["game_dir"] = gameDir;
+                else config.Remove("game_dir");
                 Write(config, configPath, data);
                 Write(new Dictionary<string, object>
                 {
                     ["schema"] = 2L, ["product"] = "MDL3", ["version"] = p.Version, ["native_version"] = p.NativeVersion,
-                    ["data"] = data, ["game"] = config["game_dir"],
+                    ["data"] = data, ["game"] = gameDir ?? game,
                     ["files"] = new List<object> { new Dictionary<string, object> { ["path"] = target, ["sha256"] = p.Sha256 } },
                     ["installed_utc"] = DateTime.UtcNow.ToString("o"),
                 }, statePath, data);
@@ -256,7 +299,7 @@ namespace Hd2Mod
                 NoLinks(dir);
                 Directory.CreateDirectory(dir);
             }
-            return "MDL3's native part " + p.NativeVersion + " (MDL3 " + p.Version + ") installed in " + data;
+            return "MDL3's native part " + p.NativeVersion + " (MDL3 " + p.Version + ") installed in " + home;
         }
 
         static bool Tracked(Dictionary<string, object> state, string target) =>
@@ -357,16 +400,38 @@ namespace Hd2Mod
 
         static bool Ascii(string s) => s.All(c => c >= ' ' && c < 127);
 
-        /// <summary>A path as the game's Lua can open it: the boot passes it to package.loadlib / io
-        /// in the ANSI code page, so one with other characters is given as its 8.3 short name.</summary>
+        [DllImport("kernel32.dll")]
+        static extern int GetACP();
+
+        /// <summary>A path written in config.json (UTF-8) as the game's Lua can open it, else null:
+        /// as it is when it is ASCII or the code page is UTF-8; else its 8.3 short name when that is
+        /// ASCII (see the class comment).</summary>
         public static string ForGame(string path)
         {
             var full = Path.GetFullPath(path).TrimEnd('\\');
-            if (Ascii(full)) return full;
-            var sb = new System.Text.StringBuilder(1024);
-            var n = GetShortPathName(full, sb, (uint)sb.Capacity);
-            if (n > 0 && n < sb.Capacity && Ascii(sb.ToString())) return sb.ToString().TrimEnd('\\');
-            throw new ModError(full + " has characters the game's Lua cannot open, and no 8.3 short name to use instead", "mdl3_place", full);
+            if (Ascii(full) || CodePage() == 65001) return full;
+            var s = ShortName(full);
+            return s != null && Ascii(s) ? s.TrimEnd('\\') : null;
+        }
+
+        /// <summary>Whether the code page can write a path, as os.getenv hands it to the game's Lua.</summary>
+        static bool Writable(string path)
+        {
+            var cp = CodePage();
+            if (cp == 65001 || Ascii(path)) return true;
+            try
+            {
+                Encoding.GetEncoding(cp, EncoderFallback.ExceptionFallback, DecoderFallback.ExceptionFallback).GetBytes(path);
+                return true;
+            }
+            catch (Exception e) when (e is ArgumentException || e is NotSupportedException) { return false; }
+        }
+
+        static string ShortPathOf(string path)
+        {
+            var sb = new StringBuilder(1024);
+            var n = GetShortPathName(path, sb, (uint)sb.Capacity);
+            return n > 0 && n < sb.Capacity ? sb.ToString() : null;
         }
 
         /// <summary>Writes a probe into a folder under %LOCALAPPDATA% and looks for it in every
