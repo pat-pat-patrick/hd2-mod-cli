@@ -109,6 +109,15 @@ namespace QuickDeploy
             }
             LuaBox.Children.Add(cards);
 
+            // ---------------------------------------------------------- loaders together
+            var compat = CompatTable(loaders);
+            if (compat != null)
+            {
+                LuaBox.Children.Add(Label("lp_compat_head", new Thickness(0, 12, 0, 4)));
+                if (Texts.Hints) LuaBox.Children.Add(Small(Texts.Get("lp_compat_note"), new Thickness(0, 0, 12, 10)));
+                LuaBox.Children.Add(compat);
+            }
+
             // ---------------------------------------------------------- conflicts and problems
             LuaBox.Children.Add(Label("lp_problems_head", new Thickness(0, 12, 0, 4)));
             var plist = new StackPanel();
@@ -376,7 +385,72 @@ namespace QuickDeploy
                 if (i.Kind == "pack_alone" && first) return (Texts.Get("lua_tag_pack_off") + Texts.Get("lp_colon") + Texts.F("lp_pack_alone", lu.PackOfName), "Yellow");
             }
             if (lu.LastState == "failed" || lu.LastState == "no_compile") return (Texts.Get("lua_tag_failed"), "Red");
+            // a mod that uses MDL3's audio or data: whether MDL3 runs beside the loader in effect
+            if (lu.UsesMdl3 && st.Lua.Running != "mdl3")
+                return (Texts.Get(st.Mods.Any(x => x.LoaderKind == "mdl3" && st.LoaderHelpers.Contains(x.Id)) ? "lp_now_mdl3_guest" : "lp_now_no_mdl3"), "Blue");
             return (Texts.Get(lu.Guest ? "lp_now_guest" : lu.ChefRuns ? "lp_now_chef_runs" : "lp_now_starts"), "Blue");
+        }
+
+        // the loaders in the order the compatibility table pairs them
+        static readonly string[] CompatKinds = { "bml", "chef", "mdl3", "bsl" };
+
+        /// <summary>Which of the library's loaders can be used together, a line for each pair: whether,
+        /// how and under what conditions, and on what that rests (tried in game, read in the source).
+        /// Only the loaders the library has (the user, 2026-10-26); null with fewer than two kinds.</summary>
+        FrameworkElement CompatTable(List<ModRow> loaders)
+        {
+            var byKind = CompatKinds.Select(k => loaders.LastOrDefault(x => x.LoaderKind == k)).Where(x => x != null).ToList();
+            if (byKind.Count < 2) return null;
+            var table = new StackPanel();
+            Grid Row(bool head)
+            {
+                var g = new Grid { Margin = new Thickness(12, head ? 6 : 8, 12, head ? 6 : 8) };
+                foreach (var w in new[] { 220.0, 150, 0, 260 })
+                    g.ColumnDefinitions.Add(new ColumnDefinition { Width = w == 0 ? new GridLength(1, GridUnitType.Star) : new GridLength(w) });
+                return g;
+            }
+            void Cell(Grid g, UIElement e, int col) { Grid.SetColumn(e, col); g.Children.Add(e); }
+            FrameworkElement Text(string t, string colour, double size = 13)
+            {
+                var x = Selectable.Text(t, size, colour);
+                x.TextWrapping = TextWrapping.Wrap;
+                x.VerticalAlignment = VerticalAlignment.Top;
+                // 12 px text one lower: its baseline on the 13 px lines' (measured 2026-11-01)
+                x.Margin = new Thickness(0, size < 13 ? 1 : 0, 12, 0);
+                return x;
+            }
+            var headRow = Row(true);
+            foreach (var (key, col) in new[] { ("lp_compat_col_pair", 0), ("lp_compat_col_state", 1), ("lp_compat_col_how", 2), ("lp_compat_col_basis", 3) })
+                Cell(headRow, new TextBlock { Text = Texts.Get(key), Foreground = B("Muted"), FontSize = 12, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 12, 0) }, col);
+            table.Children.Add(new Border { BorderBrush = B("Grid"), BorderThickness = new Thickness(0, 0, 0, 1), Background = B("Ground900"), Child = headRow });
+
+            string Name(ModRow x) => LoaderLabel(x.LoaderKind, x.Lu?.LoaderVersion) ?? x.Name;
+            for (int i = 0; i < byKind.Count; i++)
+                for (int j = i + 1; j < byKind.Count; j++)
+                {
+                    ModRow a = byKind[i], b = byKind[j];
+                    var pair = a.LoaderKind + "_" + b.LoaderKind;
+                    bool together = pair == "bml_chef" || pair == "bml_mdl3";
+                    bool now = together && a.Id == st.LoaderChoice && st.LoaderHelpers.Contains(b.Id);
+                    var state = now ? "lp_compat_now" : together ? "lp_compat_together" : pair == "chef_mdl3" ? "lp_compat_one" : "lp_compat_covered";
+                    var how = new StackPanel();
+                    how.Children.Add(Text(Texts.Get("lp_compat_" + pair), "Ink"));
+                    // a Boot Mod Loader too old for the other to come along
+                    var floor = pair == "bml_chef" ? Loaders.FirstHandOff : pair == "bml_mdl3" ? GuestBoots.FirstHost : null;
+                    if (floor != null && (!Version.TryParse(a.Lu?.LoaderVersion ?? "", out var v) || v < floor))
+                    {
+                        var warn = Text(Texts.F("lp_compat_version", "Boot Mod Loader", a.Lu?.LoaderVersion ?? "?", floor.ToString(3)), "Yellow");
+                        warn.Margin = new Thickness(0, 4, 12, 0);
+                        how.Children.Add(warn);
+                    }
+                    var row = Row(false);
+                    Cell(row, Text(Name(a) + "\n+ " + Name(b), "Ink"), 0);
+                    Cell(row, Text(Texts.Get(state), together ? "Blue" : "Muted"), 1);
+                    Cell(row, how, 2);
+                    Cell(row, Text(Texts.Get("lp_compat_" + pair + "_basis"), "Muted", 12), 3);
+                    table.Children.Add(new Border { BorderBrush = B("Grid"), BorderThickness = new Thickness(0, 0, 0, 1), Child = row });
+                }
+            return new Border { BorderBrush = B("Grid"), BorderThickness = new Thickness(1, 1, 1, 0), Background = B("Ground700"), Child = table, Margin = new Thickness(0, 0, 12, 0) };
         }
 
         // the table's columns: switch, mod, what starts it, under the loader in effect, last session
