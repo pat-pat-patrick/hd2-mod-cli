@@ -142,7 +142,7 @@ namespace Hd2Mod
 
         // what was found in each archive, kept between runs in lua_scan.json by the archive's
         // size and time; a new version of the checks reads every archive again
-        const int ScanVersion = 9;      // 5: UsesChefApi reads scopes (HUDdle, 2026-10-27); 6: HD2FM1 data rows, guarded jit.off(); 7: MDL3, libraries in functions that take them; 8: Mdl3Api; 9: Marks
+        const int ScanVersion = 10;      // 5: UsesChefApi reads scopes (HUDdle, 2026-10-27); 6: HD2FM1 data rows, guarded jit.off(); 7: MDL3, libraries in functions that take them; 8: Mdl3Api; 9: Marks; 10: MDL3 runtime annotations
 
         /// <summary>Chef Shared Loader 1.2.1 reads no Lua resource whose row size is over this
         /// (`MAX_LUA = 4 * 1024 * 1024`, `if size > MAX_LUA` in its core; its log: "Lua resource(s)
@@ -369,7 +369,7 @@ namespace Hd2Mod
         {
             // first: MDL3 (3.0.0-dev.18, 2026-10-30) also names CowboyBingusModLoader and Bingus's
             // boot 9ba626afa44a3aa3, for the mods made for that loader, and was taken for it
-            var mdl3 = Regex.Match(text, @"^-- MDL3 (\d+\.\d+\.\d+[A-Za-z0-9.\-]*) game boot \(PUC Lua 5\.1\)");
+            var mdl3 = Regex.Match(text, @"^-- MDL3 (\d+\.\d+\.\d+[A-Za-z0-9.\-]*) game boot \(PUC Lua 5\.1(?:,[^\r\n)]*)?\)");
             if (mdl3.Success) return ("mdl3", mdl3.Groups[1].Value);
             var bml = Regex.Match(text, @"boot-mod-loader-(\d+\.\d+\.\d+)");
             if (text.StartsWith("-- Boot Mod Loader", StringComparison.Ordinal) || bml.Success)
