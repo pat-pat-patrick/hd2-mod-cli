@@ -1491,8 +1491,16 @@ namespace QuickDeploy
                 case "nexus_refused": Dialog.Tell(this, Texts.Get("nx_refused")); break;
                 case "nexus_offline": Dialog.Tell(this, Texts.Get("nx_offline")); break;
                 case "nexus_busy": Dialog.Tell(this, Texts.Get("nx_busy")); break;
+                case "download_cut": Dialog.Tell(this, Texts.Get("nx_download_cut")); break;
 #endif
-                case "not_zip": Dialog.Tell(this, Texts.F("nx_not_zip", r.Refused.Arg)); break;
+                case "not_zip":
+                    {
+                        var parts = r.Refused.Arg.Split(new[] { '\n' }, 2);
+                        Dialog.Tell(this, Texts.F("unpack_failed", System.IO.Path.GetFileName(parts[0]), parts.Length > 1 && parts[1].Length > 0 ? parts[1] : Texts.Get("unpack_no_reason")));
+                        break;
+                    }
+                case "archive_damaged": Dialog.Tell(this, Texts.F("unpack_damaged", System.IO.Path.GetFileName(r.Refused.Arg))); break;
+                case "archive_password": Dialog.Tell(this, Texts.F("unpack_password", System.IO.Path.GetFileName(r.Refused.Arg))); break;
                 case "group_exists": Dialog.Tell(this, Texts.F("g_exists", r.Refused.Arg)); break;
                 case "group_depth": Dialog.Tell(this, Texts.Get("g_depth")); break;
                 case "group_inside": Dialog.Tell(this, Texts.Get("g_inside")); break;
@@ -2718,8 +2726,11 @@ namespace QuickDeploy
                 case "nexus_offline": return Texts.Get("nx_offline");
                 case "nexus_busy": return Texts.Get("nx_busy");
                 case "nexus_missing": return Texts.Get("dl_missing");
+                case "download_cut": return Texts.Get("dl_cut");
 #endif
                 case "not_zip": return Texts.Get("dl_not_zip");
+                case "archive_damaged": return Texts.Get("dl_damaged");
+                case "archive_password": return Texts.Get("dl_password");
                 default: return kind ?? "";
             }
         }

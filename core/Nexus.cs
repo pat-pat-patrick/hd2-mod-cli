@@ -172,6 +172,18 @@ namespace Hd2Mod
             var folder = Store.ModsDir();
             Directory.CreateDirectory(folder);
             var dest = Paths.Join(folder, name);
+            Fetch(uri, dest, progress);
+            LastFile = (Json.Str(info, "version"), Json.Long(info, "uploaded_timestamp"));
+            return (dest, Json.Str(modInfo, "name"));
+        }
+
+        /// <summary>A file downloaded whole into dest, or not at all. A connection that ends early
+        /// gives no error on .NET Framework, only the end of the stream: the bytes are counted
+        /// against the length the server gave, and a short file is thrown away (the user,
+        /// 2026-11-01: 7z downloads failed to unpack now and then; a 7z keeps its index at the
+        /// end, so a cut-off one cannot be read at all).</summary>
+        internal static void Fetch(string uri, string dest, Action<long, long> progress = null)
+        {
             var tmp = dest + ".part";
             HttpResponseMessage r;
             try { r = http.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead).GetAwaiter().GetResult(); }
@@ -180,23 +192,39 @@ namespace Hd2Mod
             {
                 if (!r.IsSuccessStatusCode) throw new ModError("the download was refused: " + (int)r.StatusCode, "nexus_error");
                 long total = r.Content.Headers.ContentLength ?? 0, done = 0;
-                using (var src = r.Content.ReadAsStreamAsync().GetAwaiter().GetResult())
-                using (var dst = new FileStream(tmp, FileMode.Create, FileAccess.Write))
+                try
                 {
-                    var buf = new byte[1 << 16];
-                    int n;
-                    while ((n = src.Read(buf, 0, buf.Length)) > 0)
+                    using (var src = r.Content.ReadAsStreamAsync().GetAwaiter().GetResult())
+                    using (var dst = new FileStream(tmp, FileMode.Create, FileAccess.Write))
                     {
-                        dst.Write(buf, 0, n);
-                        done += n;
-                        progress?.Invoke(done, total);
+                        var buf = new byte[1 << 16];
+                        int n;
+                        while ((n = src.Read(buf, 0, buf.Length)) > 0)
+                        {
+                            dst.Write(buf, 0, n);
+                            done += n;
+                            progress?.Invoke(done, total);
+                        }
                     }
+                }
+                catch (Exception e) when (e is IOException || e is HttpRequestException || e is System.Net.WebException)
+                {
+                    TryDelete(tmp);
+                    throw new ModError("the download broke off at " + done + " of " + total + " bytes: " + e.Message, "download_cut");
+                }
+                if (total > 0 && done != total)
+                {
+                    TryDelete(tmp);
+                    throw new ModError("the download broke off at " + done + " of " + total + " bytes", "download_cut");
                 }
             }
             if (File.Exists(dest)) File.Delete(dest);
             File.Move(tmp, dest);
-            LastFile = (Json.Str(info, "version"), Json.Long(info, "uploaded_timestamp"));
-            return (dest, Json.Str(modInfo, "name"));
+        }
+
+        static void TryDelete(string path)
+        {
+            try { File.Delete(path); } catch (IOException) { } catch (UnauthorizedAccessException) { }
         }
 
         /// <summary>The version and upload time of the file Download fetched last.</summary>

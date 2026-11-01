@@ -945,9 +945,17 @@ namespace QuickDeploy
             ["nx_refused"] = ("Nexus Mods refused this download. The link may be too old: click Mod Manager Download on the site again.",
                               "Nexus Mods 拒绝了此次下载，链接可能已过期。请在网站上重新点击 Mod Manager Download。"),
             ["nx_offline"] = ("Nexus Mods cannot be reached. Check the connection and click the button on the site again.", "无法连接 Nexus Mods。请检查网络后，在网站上重新点击下载按钮。"),
+            ["nx_download_cut"] = ("The download broke off before the file was complete, and the partial file was discarded. Click the button on the site again.", "下载在文件完整之前中断，不完整的文件已丢弃。请在网站上重新点击下载按钮。"),
+            ["dl_cut"] = ("The download broke off; try again.", "下载中断，请重试。"),
             ["nx_busy"] = ("Too many requests to Nexus Mods for now: wait a while, then click the button on the site again.", "短时间内向 Nexus Mods 发出的请求过多。请稍后在网站上重新点击下载按钮。"),
 #endif
-            ["nx_not_zip"] = ("The download could not be unpacked:\n{0}", "下载的文件无法解压：\n{0}"),
+            // an archive that cannot be unpacked, added or downloaded (2026-11-01)
+            ["unpack_failed"] = ("{0} could not be unpacked.\nReason: {1}", "无法解压 {0}。\n原因：{1}"),
+            ["unpack_no_reason"] = ("Windows's tar gave no reason.", "Windows 自带的 tar 未给出原因。"),
+            ["unpack_damaged"] = ("{0} is incomplete or damaged; it may not have finished downloading. Download it again.", "{0} 不完整或已损坏，可能没有下载完。请重新下载后再试。"),
+            ["unpack_password"] = ("{0} is protected by a password, which this program cannot open. Unpack it with an archive program first, then add the unpacked folder.", "{0} 设有密码，本程序无法解压。请先用解压软件解开，再添加解出的文件夹。"),
+            ["dl_damaged"] = ("The file is incomplete or damaged.", "文件不完整或已损坏。"),
+            ["dl_password"] = ("The archive is protected by a password.", "压缩包设有密码。"),
             ["loader_tag"] = ("LOADER", "LOADER"),
             ["loader_tip"] = ("This mod replaces one of the game's own scripts, the way a mod loader does. Two mods that replace the same one cannot both have their way: the last in the load order wins.",
                               "该 mod 替换了游戏自带的脚本，与 mod 加载器的做法相同。两个替换同一脚本的 mod 无法同时生效，以加载顺序靠后者为准。"),

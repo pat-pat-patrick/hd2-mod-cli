@@ -1033,6 +1033,59 @@ namespace Hd2Mod.Tests
             Cli("add", archive);
             Assert.Equal(new[] { "seven" }, PlanList());
         }
+
+        /// <summary>A 7z of incompressible bytes, so that cutting it cuts the data and the index.</summary>
+        string SevenZip(string name)
+        {
+            var src = Path.Combine(Root, "seven-" + name);
+            Directory.CreateDirectory(Path.Combine(src, "Thing"));
+            var bytes = new byte[200000];
+            new Random(7).NextBytes(bytes);
+            File.WriteAllBytes(Path.Combine(src, "Thing", A + ".patch_0"), bytes);
+            var archive = Path.Combine(Root, name + ".7z");
+            var tar = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "tar.exe");
+            using (var p = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(tar, "--format 7zip -cf \"" + archive + "\" -C \"" + src + "\" Thing")
+                   { UseShellExecute = false, CreateNoWindow = true }))
+                p.WaitForExit();
+            return archive;
+        }
+
+        /// <summary>Must-fail and must-pass (the user, 2026-11-01: 7z files failed to unpack now
+        /// and then): a 7z cut short is refused as incomplete, before tar ("(null)") is asked;
+        /// the whole one is unpacked.</summary>
+        [Fact]
+        public void A_cut_off_7z_is_refused_as_incomplete()
+        {
+            var whole = SevenZip("Whole");
+            Assert.Null(Ops.Damaged(whole));
+            var cut = Path.Combine(Root, "Cut.7z");
+            var bytes = File.ReadAllBytes(whole);
+            File.WriteAllBytes(cut, bytes.Take(bytes.Length / 2).ToArray());
+            Assert.Contains("cut off", Ops.Damaged(cut));
+            var e = new StringWriter();
+            Assert.Equal(1, Commands.Run(new[] { "add", cut }, new StringWriter(), e));
+            Assert.Contains("cut off", e.ToString());
+            Assert.Empty(Library.Load().Mods);
+            Assert.False(Directory.Exists(Store.ModsDir()) && Directory.GetDirectories(Store.ModsDir()).Length > 0, "nothing is unpacked");
+            Cli("add", whole);
+            Assert.Single(Library.Load().Mods);
+        }
+
+        /// <summary>A zip cut short has no directory: refused as incomplete, never handed to tar,
+        /// which unpacks what it can read and says nothing (bsdtar 3.7.7, 2026-11-01).</summary>
+        [Fact]
+        public void A_cut_off_zip_is_refused_as_incomplete()
+        {
+            var whole = Path.Combine(Root, "Whole.zip");
+            File.WriteAllBytes(whole, Zip((A + ".patch_0", new string('z', 50000)), (A + ".patch_1", "b")));
+            Assert.Null(Ops.Damaged(whole));
+            var cut = Path.Combine(Root, "Cut.zip");
+            var bytes = File.ReadAllBytes(whole);
+            File.WriteAllBytes(cut, bytes.Take(bytes.Length - 30).ToArray());
+            Assert.NotNull(Ops.Damaged(cut));
+            CliCode(1, "add", cut);
+            Assert.Empty(Library.Load().Mods);
+        }
     }
 
     public class LibraryOps : Fixture

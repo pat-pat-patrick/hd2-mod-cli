@@ -96,6 +96,8 @@ namespace Hd2Mod
             var tmp = dest + ".unpacking";
             if (Directory.Exists(tmp)) { try { Directory.Delete(tmp, true); } catch (IOException) { } catch (UnauthorizedAccessException) { } }
             var root = Paths.Norm(tmp);
+            var damaged = Damaged(zipPath);
+            if (damaged != null) throw new ModError(zipPath + ": " + damaged, "archive_damaged", zipPath);
             if (!IsZip(zipPath)) ExtractOther(zipPath, tmp);
             else using (var z = ZipFile.OpenRead(zipPath))
             {
@@ -146,13 +148,42 @@ namespace Hd2Mod
                 if (p.ExitCode != 0)
                 {
                     try { Directory.Delete(into, true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
-                    throw new ModError("cannot unpack " + archive + ": " + err.Result.Trim(), "not_zip", archive);
+                    var why = string.Join("; ", err.Result.Split('\n').Select(x => Regex.Replace(x.Trim(), @"^tar(\.exe)?:\s*", ""))
+                        .Where(x => x.Length > 0 && x != "(null)" && !x.StartsWith("Error exit delayed")));
+                    // tar reads no encrypted 7z or rar (2026-11-01, bsdtar 3.7.7: "The archive header
+                    // is encrypted, but currently not supported")
+                    if (Regex.IsMatch(why, "encrypt|password", RegexOptions.IgnoreCase))
+                        throw new ModError("cannot unpack " + archive + ": it is protected by a password", "archive_password", archive);
+                    throw new ModError("cannot unpack " + archive + ": " + (why.Length > 0 ? why : "tar exit " + p.ExitCode), "not_zip", archive + "\n" + why);
                 }
             }
         }
 
+        /// <summary>Why an archive cannot be whole, before it is unpacked, or null: a zip whose
+        /// directory cannot be read, a 7z shorter than its own start header says (a 7z keeps
+        /// its index at the end, and tar says only "(null)" about a cut-off one, 2026-11-01).</summary>
+        internal static string Damaged(string path)
+        {
+            var head = new byte[32];
+            int n;
+            long length;
+            using (var f = File.OpenRead(path)) { length = f.Length; n = f.Read(head, 0, head.Length); }
+            if (n >= 2 && head[0] == 'P' && head[1] == 'K')
+            {
+                try { using (ZipFile.OpenRead(path)) return null; }
+                catch (InvalidDataException e) { return "the zip cannot be read: " + e.Message; }
+            }
+            if (n == 32 && head[0] == '7' && head[1] == 'z' && head[2] == 0xBC && head[3] == 0xAF && head[4] == 0x27 && head[5] == 0x1C)
+            {
+                long offset = BitConverter.ToInt64(head, 12), size = BitConverter.ToInt64(head, 20);
+                if (offset < 0 || size < 0 || length < 32 + offset + size)
+                    return "the 7z is cut off: " + length + " of " + (32 + offset + size) + " bytes";
+            }
+            return null;
+        }
+
         static bool IsArchive(string path) =>
-            File.Exists(path) && (IsZip(path) || new[] { ".7z", ".rar", ".tar", ".gz", ".xz" }.Contains(System.IO.Path.GetExtension(path).ToLowerInvariant()));
+            File.Exists(path) && (IsZip(path) || new[] { ".zip", ".7z", ".rar", ".tar", ".gz", ".xz" }.Contains(System.IO.Path.GetExtension(path).ToLowerInvariant()));
 
         static bool IsZip(string path)
         {
