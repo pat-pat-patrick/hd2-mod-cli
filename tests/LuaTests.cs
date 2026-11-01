@@ -284,7 +284,7 @@ namespace Hd2Mod.Tests
             Assert.Equal("Chef Shared Loader", Loaders.Helper(lib).Name);
             var mods = Deploy.Plan(lib).Select(w => w.Mod).Distinct().ToList();
             Assert.Equal(new[] { "Lamp", "Narrow", "Chef Shared Loader", "Boot Mod Loader" }, mods.ToArray());
-            Assert.Contains("\"loader_helper\": \"" + lib.Mods.Single(m => m.Name == "Chef Shared Loader").Id + "\"", Cli("state"));
+            Assert.Matches("\"loader_helpers\": \\[\\s*\"" + lib.Mods.Single(m => m.Name == "Chef Shared Loader").Id + "\"\\s*\\]", Cli("state"));
 
             // no mod made for Chef on: Chef stays out
             Cli("disable", "Narrow");
@@ -298,6 +298,69 @@ namespace Hd2Mod.Tests
             Cli("loader", "Boot Mod Loader");
             Assert.Null(Loaders.Helper(Library.Load()));
             Assert.Contains(Now().Issues, i => i.Kind == "needs_chef" && i.Mods.Single().Name == "Narrow");
+        }
+
+        string Mdl3() => Mod("MDL3", new Dictionary<string, byte[]>
+        {
+            [A + ".patch_0"] = LuaArchive((LuaMods.BootId, "-- MDL3 3.0.0-dev.27 game boot (PUC Lua 5.1). Signed native host\nlocal x = 1\n")),
+        });
+
+        /// <summary>The user (2026-11-01, after a player's video of Quick Deploy 0.12.0 running Boot Mod
+        /// Loader, Chef Shared Loader and MDL3 together: "这个是特性，因为可以让依赖不同loader的MOD同时使用"):
+        /// with Boot Mod Loader 0.12.0 or later in effect and a mod on that reads MDL3 or HD2Data, MDL3
+        /// goes to the game too, before the loader, its boot off the start-up slot for Boot Mod Loader to
+        /// run as a guest; no second loader and no boot in the way. Not without such a mod, not with an
+        /// older Boot Mod Loader, and MDL3 in effect keeps its boot.</summary>
+        [Fact]
+        public void Mdl3GoesAlongAsBootModLoadersGuest()
+        {
+            Cli("add", Bml("0.12.0"));
+            Cli("add", Mdl3());
+            Cli("add", Addon("Lamp", "mods/me/lamp"));
+            Cli("add", Addon("Hud", "mods/me/hud", "local m = rawget(_G, 'MDL3')\n", A2));
+            Cli("loader", "Boot Mod Loader");
+            var now = Now();
+            Assert.Equal("bml", now.Running);
+            Assert.Equal("Boot Mod Loader", now.Owner.Mod.Name);
+            Assert.Empty(now.Issues);                                         // no second loader, no boot conflict
+            var lib = Library.Load();
+            Assert.Equal(new[] { "MDL3" }, Loaders.Helpers(lib).Select(m => m.Name).ToArray());
+            var plan = Deploy.Plan(lib);
+            Assert.Equal(new[] { "Lamp", "Hud", "MDL3", "Boot Mod Loader" }, plan.Select(w => w.Mod).Distinct().ToArray());
+            var m3 = plan.Single(w => w.Mod == "MDL3" && Deploy.Patch.IsMatch(w.Name));
+            Assert.Contains("guest_boots", m3.Src);
+            Assert.DoesNotContain(Deploy.Rows(m3.Src), r => r.Id == LuaMods.BootId);
+            Assert.Contains(Deploy.Rows(m3.Src), r => r.Id == GuestBoots.IdOf("MDL3"));
+            Assert.DoesNotContain(plan, w => w.Mod == "Boot Mod Loader" && w.Src.Contains("guest_boots"));
+            Assert.Contains("\"uses_mdl3\": true", Cli("state"));
+            Assert.Contains("uses MDL3 (in the library: MDL3 3.0.0-dev.27 (helping))", Cli("lua"));
+
+            // HD2Data, the Data Hub MDL3 ships, by its global name, counts as well
+            Cli("disable", "Hud");
+            Cli("add", Addon("Board", "mods/me/board", "local p = HD2Data.players()\n", A3));
+            Assert.Equal(new[] { "MDL3" }, Loaders.Helpers(Library.Load()).Select(m => m.Name).ToArray());
+
+            // must fail: a field of something else, or the name in any other string, is no use of MDL3
+            Cli("disable", "Board");
+            Cli("add", Addon("Other", "mods/me/other", "local t = {}\nt.MDL3 = 1\nprint('MDL3')\nlocal s = t.HD2Data\n", A3));
+            Assert.False(Loaders.UsesMdl3(Library.Load().Mods.Single(m => m.Name == "Other")));
+            Assert.Empty(Loaders.Helpers(Library.Load()));
+            Assert.DoesNotContain(Deploy.Plan(Library.Load()), w => w.Mod == "MDL3");
+
+            // a Boot Mod Loader that runs no guests: MDL3 stays out
+            Cli("enable", "Hud");
+            Cli("remove", "Boot Mod Loader");
+            Cli("add", Bml("0.11.0"));
+            Cli("loader", "Boot Mod Loader");
+            Assert.Empty(Loaders.Helpers(Library.Load()));
+            Assert.DoesNotContain(Deploy.Plan(Library.Load()), w => w.Mod == "MDL3");
+
+            // MDL3 in effect: last, its own boot on the slot
+            Cli("loader", "MDL3");
+            Assert.Equal("mdl3", Now().Running);
+            var own = Deploy.Plan(Library.Load());
+            Assert.Equal("MDL3", own.Last().Mod);
+            Assert.All(own, w => Assert.DoesNotContain("guest_boots", w.Src));
         }
 
         /// <summary>Chef Shared Loader 1.2.1 reads no Lua resource whose row is over 4 MB (Super Holo

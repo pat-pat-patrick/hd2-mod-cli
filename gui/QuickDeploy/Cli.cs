@@ -53,6 +53,8 @@ namespace QuickDeploy
         public bool Guest;
         /// <summary>Its boot only starts itself, and Chef Shared Loader, in effect, runs it too.</summary>
         public bool ChefRuns;
+        /// <summary>Its scripts read MDL3 or HD2Data: MDL3 goes along as Boot Mod Loader's guest.</summary>
+        public bool UsesMdl3;
         /// <summary>Its biggest script that would start, in bytes (Chef Shared Loader reads none over 4 MB).</summary>
         public long Biggest;
         /// <summary>Boot Mod Loader's log of the last session: loaded, failed or no_compile.</summary>
@@ -205,8 +207,9 @@ namespace QuickDeploy
         public bool ProfilesOn;
         /// <summary>The loader in effect (a mod's id), chosen for every profile; null: none.</summary>
         public string LoaderChoice;
-        /// <summary>Chef Shared Loader helping the loader in effect with the mods made for it; null: none.</summary>
-        public string LoaderHelper;
+        /// <summary>The loaders going to the game beside the one in effect: MDL3 as Boot Mod Loader's
+        /// guest, Chef Shared Loader helping with the mods made for it.</summary>
+        public List<string> LoaderHelpers = new List<string>();
         public string Profile;
         public List<string> Profiles = new List<string>();
         /// <summary>Every label the library knows, whether or not a mod carries it.</summary>
@@ -301,7 +304,7 @@ namespace QuickDeploy
             var d = (Dictionary<string, object>)Json.Parse(json);
             var s = new State { GameDir = Str(d, "game_dir"), Home = Str(d, "home"), Version = Str(d, "version"), ModsDir = Str(d, "mods_dir"),
                                 SavedBytes = Long(d, "saved_bytes"), Deploys = Int(d, "deploys"),
-                                ProfilesOn = Bool(d, "profiles_on"), Profile = Str(d, "profile"), LoaderChoice = Str(d, "loader_choice"), LoaderHelper = Str(d, "loader_helper") };
+                                ProfilesOn = Bool(d, "profiles_on"), Profile = Str(d, "profile"), LoaderChoice = Str(d, "loader_choice"), LoaderHelpers = List(d, "loader_helpers").OfType<string>().ToList() };
             if (d.TryGetValue("profiles", out var pl) && pl is List<object> names) s.Profiles = names.OfType<string>().ToList();
             if (d.TryGetValue("summary", out var sm) && sm is Dictionary<string, object> sum)
             {
@@ -427,6 +430,7 @@ namespace QuickDeploy
                     lu.NeedsWhy = Str(li, "needs_why");
                     lu.Guest = Bool(li, "guest");
                     lu.ChefRuns = Bool(li, "chef_runs");
+                    lu.UsesMdl3 = Bool(li, "uses_mdl3");
                     lu.Biggest = Long(li, "biggest");
                     if (li.TryGetValue("last", out var lv) && lv is Dictionary<string, object> last)
                     {

@@ -212,7 +212,7 @@ namespace QuickDeploy
         {
             var lua = st.Lua;
             bool on = x == null ? st.LoaderChoice == null : x.Id == st.LoaderChoice;
-            bool helping = x != null && !on && x.Id == st.LoaderHelper;
+            bool helping = x != null && !on && st.LoaderHelpers.Contains(x.Id);
             var box = new StackPanel();
 
             // the name, and its state on the right
@@ -258,12 +258,13 @@ namespace QuickDeploy
                     Say(Texts.F(on ? "lua_side_wont" : "lua_side_wont_if", why, string.Join(sep, o.Mods.Select(id => ById(id)?.Name ?? id))), "Yellow");
                 }
             }
-            // Chef helping Boot Mod Loader: the mods it starts
+            // helping Boot Mod Loader: the mods it starts (Chef), or runs for (MDL3 as its guest)
             if (helping)
             {
-                var helped = st.Mods.Where(y => y.Enabled && !y.Loader && y.Lu?.Needs == "chef").Select(y => y.Name).ToList();
+                bool guest = x.LoaderKind == "mdl3";
+                var helped = st.Mods.Where(y => y.Enabled && !y.Loader && (guest ? y.Lu?.UsesMdl3 == true : y.Lu?.Needs == "chef")).Select(y => y.Name).ToList();
                 var chosen = ById(st.LoaderChoice);
-                Say(Texts.F("lua_info_helping", chosen != null ? LoaderLabel(chosen.LoaderKind, chosen.Lu?.LoaderVersion) ?? chosen.Name : "?",
+                Say(Texts.F(guest ? "lua_info_guest" : "lua_info_helping", chosen != null ? LoaderLabel(chosen.LoaderKind, chosen.Lu?.LoaderVersion) ?? chosen.Name : "?",
                             string.Join(Texts.Zh ? "、" : ", ", helped)), "Blue");
             }
             UpdateInfo u = null;

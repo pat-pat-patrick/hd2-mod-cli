@@ -1084,6 +1084,7 @@ namespace Hd2Mod
                 if (ml.Loader != null) what.Add("loader: " + LoaderName(ml.Loader == "chef" ? "chef" : ml.Loader, ml));
                 if (ml.Needs == "any") what.Add("needs a loader (" + Have("bml", "chef", "bsl", "mdl3") + ")");
                 if (ml.Needs == "chef") what.Add("needs Chef Shared Loader" + (ml.NeedsWhy == "declared" ? ", as the mod declares" : ml.NeedsWhy == "api" ? ": its script calls the chef interface that loader provides" : "") + " (" + Have("chef") + ")");
+                if (ml.UsesMdl3) what.Add("uses MDL3 (" + Have("mdl3") + ")");
                 if (ml.PackOfName != null) what.Add("translation pack of " + (ml.PackOf?.Name ?? ml.PackOfName));
                 foreach (var s in ml.Broken)
                 {

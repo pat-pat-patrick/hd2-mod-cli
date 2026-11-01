@@ -325,6 +325,7 @@ namespace QuickDeploy
             ["lua_side_off"] = ("not used", "未使用"),
             ["lua_side_helping"] = ("helping", "协助中"),
             ["lua_info_helping"] = ("Starts for {0}: {1}", "协助 {0} 启动：{1}"),
+            ["lua_info_guest"] = ("Runs as {0}'s guest, for: {1}", "作为 {0} 的客人运行，供以下 mod 使用：{1}"),
             ["lua_side_nothing"] = ("No loader", "不使用加载器"),
             ["lua_side_pick"] = ("Use this one", "使用此项"),
             ["loader_chosen"] = ("{0} is the loader now; deploy to put it in the game.", "已改用 {0}，部署后生效。"),

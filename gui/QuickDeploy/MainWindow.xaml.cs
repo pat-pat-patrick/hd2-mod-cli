@@ -1672,7 +1672,7 @@ namespace QuickDeploy
         /// <summary>The library's loaders of these kinds, by name and version; one that is off says so.</summary>
         string[] LibraryLoaders(string[] kinds) =>
             st.Mods.Where(x => x.Lu?.Loader != null && kinds.Contains(x.Lu.Loader))
-                   .Select(x => LoaderLabel(x.Lu.Loader, x.Lu.LoaderVersion) + (x.Id == st.LoaderChoice ? "" : x.Id == st.LoaderHelper ? Texts.Get("lua_helping_suffix") : Texts.Get("lua_off_suffix")))
+                   .Select(x => LoaderLabel(x.Lu.Loader, x.Lu.LoaderVersion) + (x.Id == st.LoaderChoice ? "" : st.LoaderHelpers.Contains(x.Id) ? Texts.Get("lua_helping_suffix") : Texts.Get("lua_off_suffix")))
                    .Distinct().ToArray();
 
         /// <summary>The loader running now, by name; null when none.</summary>
@@ -1978,7 +1978,7 @@ namespace QuickDeploy
                 var id = x.Id;
                 name.MouseLeftButtonUp += (s, e) => { selectedId = id; RenderDetail(); RenderNav(); };
                 words.Children.Add(name);
-                bool helping = !on && x.Id == st.LoaderHelper;
+                bool helping = !on && st.LoaderHelpers.Contains(x.Id);
                 words.Children.Add(new TextBlock { Text = Texts.Get(on && loaderSwitching ? "lua_side_switching" : on ? "lua_side_on" : helping ? "lua_side_helping" : "lua_side_off"), FontSize = 12,
                                                    Foreground = B(on || helping ? "Blue" : "Muted"), TextWrapping = TextWrapping.Wrap });
             }
@@ -2054,12 +2054,14 @@ namespace QuickDeploy
                 name.Margin = new Thickness(0, firstOne ? 0 : 10, 0, 1);
                 box.Children.Add(name);
                 firstOne = false;
-                // helping Boot Mod Loader: the mods it starts, by name (the panel says only "helping")
-                if (!on && x.Id == st.LoaderHelper)
+                // helping Boot Mod Loader: the mods it starts (Chef), or runs for (MDL3 as its guest), by
+                // name (the panel says only "helping")
+                if (!on && st.LoaderHelpers.Contains(x.Id))
                 {
-                    var helped = st.Mods.Where(y => y.Enabled && !y.Loader && y.Lu?.Needs == "chef").Select(y => y.Name).ToList();
+                    bool guest = x.LoaderKind == "mdl3";
+                    var helped = st.Mods.Where(y => y.Enabled && !y.Loader && (guest ? y.Lu?.UsesMdl3 == true : y.Lu?.Needs == "chef")).Select(y => y.Name).ToList();
                     var chosen = ById(st.LoaderChoice);
-                    Say(Texts.F("lua_info_helping", chosen != null ? LoaderLabel(chosen.LoaderKind, chosen.Lu?.LoaderVersion) ?? chosen.Name : "?",
+                    Say(Texts.F(guest ? "lua_info_guest" : "lua_info_helping", chosen != null ? LoaderLabel(chosen.LoaderKind, chosen.Lu?.LoaderVersion) ?? chosen.Name : "?",
                                 string.Join(sep, helped)), "Blue");
                 }
                 if (!st.Lua.Outcomes.TryGetValue(x.Id, out var outs)) continue;
@@ -2089,8 +2091,8 @@ namespace QuickDeploy
         {
             if (st == null || busy || loaderSwitching) return;
             st.LoaderChoice = x?.Id;
-            // Chef helps only Boot Mod Loader; whether it still does, the state says
-            if (x?.LoaderKind != "bml") st.LoaderHelper = null;
+            // Chef and MDL3 help only Boot Mod Loader; whether they still do, the state says
+            if (x?.LoaderKind != "bml") st.LoaderHelpers.Clear();
             loaderSwitching = true;
             RenderNav();
             waiting++;

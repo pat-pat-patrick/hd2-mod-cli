@@ -30,12 +30,14 @@ namespace Hd2Mod
             kind == "bml" && Version.TryParse(version ?? "", out var v) && v >= FirstHost;
 
         /// <summary>The boots of the load order, in order (kind as LuaMods names it; a script in
-        /// bytecode cannot be a guest and stays as it is): which of them are run as guests.</summary>
+        /// bytecode cannot be a guest and stays as it is): which of them are run as guests. MDL3's
+        /// too, when a boot comes after it: it reaches the game before another loader only as Boot
+        /// Mod Loader's guest (Loaders.Mdl3GuestFor); as the loader in effect it is last.</summary>
         public static HashSet<int> Guests(IList<(string Kind, string Version, bool Bytecode)> boots)
         {
             var guests = new HashSet<int>();
             for (int i = 0; i < boots.Count; i++)
-                if (boots[i].Kind == "other" && !boots[i].Bytecode) guests.Add(i);
+                if ((boots[i].Kind == "other" || (boots[i].Kind == "mdl3" && i < boots.Count - 1)) && !boots[i].Bytecode) guests.Add(i);
             if (guests.Count == 0) return guests;
             int winner = -1;
             for (int i = 0; i < boots.Count; i++) if (!guests.Contains(i)) winner = i;

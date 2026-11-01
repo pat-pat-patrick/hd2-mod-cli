@@ -160,7 +160,7 @@ namespace Hd2Mod
                         ["line"] = (long)(b.Error?.Line ?? 0), ["message"] = b.Error?.Message, ["error_kind"] = b.ErrorKind,
                         ["jit"] = b.Jit.Cast<object>().ToList(), ["luajit_bytecode"] = b.LuaJitBytecode,
                     }).ToList(),
-                    ["pack_of"] = ml.PackOf?.Id, ["pack_of_name"] = ml.PackOfName, ["guest"] = ml.Guest, ["helper"] = ml.Helper, ["chef_runs"] = ml.ChefRuns,
+                    ["pack_of"] = ml.PackOf?.Id, ["pack_of_name"] = ml.PackOfName, ["guest"] = ml.Guest, ["helper"] = ml.Helper, ["chef_runs"] = ml.ChefRuns, ["uses_mdl3"] = ml.UsesMdl3,
                     // its biggest script that would start (Chef Shared Loader reads none over 4 MB)
                     ["biggest"] = ml.Scripts.Where(s => s.Header == "Addon" || s.Header == "Boot").Select(s => s.Size).DefaultIfEmpty(0).Max(),
                     ["last"] = last == null ? null : new Dictionary<string, object> { ["state"] = last.State, ["ms"] = (long)last.Ms, ["why"] = last.Why },
@@ -214,7 +214,8 @@ namespace Hd2Mod
         {
             try
             {
-                var mod = lib.Mods.FirstOrDefault(m => m.Enabled && Profiles.InProfile(lib, m) && Mdl3Native.Find(m.Path) != null);
+                var mod = Loaders.DeployOrder(lib).Concat(lib.Mods.Where(m => m.Enabled && Profiles.InProfile(lib, m)))
+                                 .FirstOrDefault(m => Mdl3Native.Find(m.Path) != null);
                 if (mod == null) return null;
                 var p = Mdl3Native.Find(mod.Path);
                 return new Dictionary<string, object>
@@ -463,8 +464,9 @@ namespace Hd2Mod
                 ["profiles_on"] = lib.ProfilesOn, ["profile"] = lib.ProfilesOn ? lib.Active : null,
                 // the loader in effect, chosen for every profile alike (Loaders); null: none
                 ["loader_choice"] = Loaders.Chosen(lib)?.Id,
-                // Chef Shared Loader helping it with the mods made for Chef only; null: not
-                ["loader_helper"] = Loaders.Helper(lib)?.Id,
+                // the loaders going to the game beside it: MDL3 as its guest, Chef Shared Loader
+                // helping with the mods made for Chef only
+                ["loader_helpers"] = Loaders.Helpers(lib).Select(m => (object)m.Id).ToList(),
                 ["profiles"] = lib.Profiles.Select(p => (object)p.Name).ToList(),
                 ["deploying"] = Deploying(),
                 ["check"] = CheckBlock(lib, game, d),

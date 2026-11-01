@@ -37,6 +37,9 @@ namespace Hd2Mod
         /// (NarrowHUD 1.0.5 under Boot Mod Loader, 2026-10-26: "attempt to index local 'chef' (a
         /// nil value)").</summary>
         public bool ChefApi;
+        /// <summary>Reads the global MDL3 or HD2Data (HD2 Data Hub, which ships with MDL3 and runs on
+        /// it): MDL3's audio and data, which no other loader gives (SHH, 2026-11-01).</summary>
+        public bool Mdl3Api;
         /// <summary>The resource's size in its archive's row (the text and 8 bytes before it).</summary>
         public long Size;
 
@@ -67,6 +70,8 @@ namespace Hd2Mod
         /// <summary>The loader's version, from its boot or Chef's core.</summary>
         public string LoaderVersion => Scripts.Select(s => s.BootVersion).FirstOrDefault(v => v != null);
         public IEnumerable<string> Addons => Scripts.Where(s => s.Name != null && (s.Header == "Addon" || s.Header == "Boot")).Select(s => s.Name).Distinct();
+        /// <summary>A mod, not a loader, that reads MDL3 or HD2Data (LuaScript.Mdl3Api).</summary>
+        public bool UsesMdl3 => Loader == null && Scripts.Any(s => s.Mdl3Api);
         /// <summary>Its scripts Chef Shared Loader would start that are too big for it (ChefMaxLua).</summary>
         public IEnumerable<LuaScript> TooBigForChef => Scripts.Where(s => s.Size > LuaMods.ChefMaxLua && (s.Header == "Addon" || s.Header == "Boot"));
         /// <summary>The scripts the game's Lua cannot run.</summary>
@@ -77,7 +82,7 @@ namespace Hd2Mod
         /// <summary>Its boot only starts itself, and Boot Mod Loader runs it as a guest: a deploy
         /// takes it off the start-up slot (GuestBoots). Set by Check.</summary>
         public bool Guest;
-        /// <summary>Chef Shared Loader helping Boot Mod Loader (Loaders.Helper): no second loader, no
+        /// <summary>Chef Shared Loader or MDL3 helping Boot Mod Loader (Loaders.Helpers): no second loader, no
         /// boot in the way. Set by Check.</summary>
         public bool Helper;
         /// <summary>Its boot only starts itself, and Chef Shared Loader, in effect, runs it too (its
@@ -127,7 +132,7 @@ namespace Hd2Mod
 
         // what was found in each archive, kept between runs in lua_scan.json by the archive's
         // size and time; a new version of the checks reads every archive again
-        const int ScanVersion = 7;      // 5: UsesChefApi reads scopes (HUDdle, 2026-10-27); 6: HD2FM1 data rows, guarded jit.off(); 7: MDL3, libraries in functions that take them
+        const int ScanVersion = 8;      // 5: UsesChefApi reads scopes (HUDdle, 2026-10-27); 6: HD2FM1 data rows, guarded jit.off(); 7: MDL3, libraries in functions that take them; 8: Mdl3Api
 
         /// <summary>Chef Shared Loader 1.2.1 reads no Lua resource whose row size is over this
         /// (`MAX_LUA = 4 * 1024 * 1024`, `if size > MAX_LUA` in its core; its log: "Lua resource(s)
@@ -232,7 +237,8 @@ namespace Hd2Mod
                         Id = ulong.Parse(Json.Str(x, "id") ?? "0", NumberStyles.HexNumber), Header = Json.Str(x, "header"), Name = Json.Str(x, "name"),
                         BmlName = Json.Bool(x, "bml"), ChefOnly = Json.Bool(x, "chef_only"), Bytecode = Json.Bool(x, "bytecode"),
                         LuaJitBytecode = Json.Bool(x, "luajit_bytecode"), BootKind = Json.Str(x, "boot_kind"), BootVersion = Json.Str(x, "version"),
-                        WrapsMenus = Json.Bool(x, "wraps_menus"), ChefApi = Json.Bool(x, "chef_api"), Size = Json.Long(x, "size"), Jit = Json.List(x, "jit").OfType<string>().ToList(),
+                        WrapsMenus = Json.Bool(x, "wraps_menus"), ChefApi = Json.Bool(x, "chef_api"), Mdl3Api = Json.Bool(x, "mdl3_api"), Size = Json.Long(x, "size"),
+                        Jit = Json.List(x, "jit").OfType<string>().ToList(),
                     };
                     if (Json.Str(x, "error") != null) { s.Error = ((int)Json.Long(x, "line"), Json.Str(x, "error")); s.ErrorKind = Json.Str(x, "error_kind"); }
                     return s;
@@ -257,7 +263,7 @@ namespace Hd2Mod
                         {
                             ["id"] = s.Id.ToString("x16"), ["header"] = s.Header, ["name"] = s.Name, ["bml"] = s.BmlName, ["chef_only"] = s.ChefOnly,
                             ["bytecode"] = s.Bytecode, ["luajit_bytecode"] = s.LuaJitBytecode, ["boot_kind"] = s.BootKind, ["version"] = s.BootVersion,
-                            ["wraps_menus"] = s.WrapsMenus, ["chef_api"] = s.ChefApi, ["size"] = s.Size, ["jit"] = s.Jit.Cast<object>().ToList(),
+                            ["wraps_menus"] = s.WrapsMenus, ["chef_api"] = s.ChefApi, ["mdl3_api"] = s.Mdl3Api, ["size"] = s.Size, ["jit"] = s.Jit.Cast<object>().ToList(),
                             ["line"] = (long)(s.Error?.Line ?? 0), ["error"] = s.Error?.Message, ["error_kind"] = s.ErrorKind,
                         }).ToList(),
                     };
@@ -304,6 +310,7 @@ namespace Hd2Mod
                 {
                     s.Jit = JitUses(tokens);
                     s.ChefApi = UsesChefApi(tokens);
+                    s.Mdl3Api = UsesMdl3(tokens);
                     // the menus by name or as rawget(_G, "ModOptionsMenu"), as ActionCam简体中文 reads them
                     s.WrapsMenus = tokens.Any(t => t.Kind == LuaSyntax.T.Name && (t.Text == "register_option" || t.Text == "register_binding"))
                                 && tokens.Any(t => (t.Kind == LuaSyntax.T.Name || t.Kind == LuaSyntax.T.String) && (t.Text == "ModOptionsMenu" || t.Text == "ModBindingsMenu"));
@@ -528,6 +535,26 @@ namespace Hd2Mod
             return used && !tested;
         }
 
+        /// <summary>Whether a script reads the global MDL3 or HD2Data: by name (MDL3.audio, _G.MDL3), or
+        /// by a string in rawget(_G, "MDL3") or _G["MDL3"]; a field of something else (x.MDL3) and
+        /// any other string are not.</summary>
+        public static bool UsesMdl3(List<LuaSyntax.Token> t)
+        {
+            bool Global(string s) => s == "MDL3" || s == "HD2Data";
+            for (int i = 0; i < t.Count; i++)
+            {
+                if (!Global(t[i].Text)) continue;
+                int prev = i > 0 ? t[i - 1].Kind : -1;
+                if (t[i].Kind == LuaSyntax.T.Name)
+                {
+                    if (prev != '.' && prev != ':') return true;
+                    if (prev == '.' && i > 1 && t[i - 2].Kind == LuaSyntax.T.Name && t[i - 2].Text == "_G") return true;
+                }
+                else if (t[i].Kind == LuaSyntax.T.String && (prev == ',' || prev == '[')) return true;
+            }
+            return false;
+        }
+
         /// <summary>Whether the name at i stands in a local list or a parameter list.</summary>
         static bool IsDeclared(List<LuaSyntax.Token> t, int i)
         {
@@ -633,9 +660,11 @@ namespace Hd2Mod
             var order = Loaders.DeployOrderFor(lib, chosen).Select((m, i) => (m.Id, i)).ToDictionary(x => x.Id, x => x.i);
             var on = all.Where(x => order.ContainsKey(x.Mod.Id)).OrderBy(x => order[x.Mod.Id]).ToList();
             var issues = new List<LuaIssue>();
-            // Chef helping Boot Mod Loader: its boot comes before the loader's and is its own stub
+            // Chef helping Boot Mod Loader: its boot comes before the loader's and is its own stub;
+            // MDL3 as Boot Mod Loader's guest: its boot is off the slot (Loaders.HelpersFor)
             var helper = Loaders.HelperFor(lib, chosen);
-            bool IsHelper(ModLua x) => helper != null && x.Mod.Id == helper.Id;
+            var helpers = Loaders.HelpersFor(lib, chosen).Select(m => m.Id).ToList();
+            bool IsHelper(ModLua x) => helpers.Contains(x.Mod.Id);
             var bootMods = on.Where(x => x.Boot != null && !IsHelper(x)).ToList();
             // a boot that only starts its own mod is run by Boot Mod Loader as a guest, off the
             // slot: it takes nothing from the loader and is in no conflict (the user, 2026-10-26)

@@ -106,7 +106,16 @@ namespace Hd2Mod
         // the answers, by the mod's archives' sizes and times; only complete ones (every archive read)
         static readonly Dictionary<string, (string Sig, bool Needs)> needs = new Dictionary<string, (string, bool)>(StringComparer.OrdinalIgnoreCase);
 
-        public static bool NeedsChef(Mod mod)
+        public static bool NeedsChef(Mod mod) =>
+            AnyScript(mod, needs, s => s.ChefOnly || s.ChefApi || s.Header == "Boot" || (s.Header == "Addon" && !s.BmlName));
+
+        /// <summary>Whether a mod's scripts read MDL3 or HD2Data (LuaScript.Mdl3Api).</summary>
+        static readonly Dictionary<string, (string Sig, bool Needs)> usesMdl3 = new Dictionary<string, (string, bool)>(StringComparer.OrdinalIgnoreCase);
+
+        public static bool UsesMdl3(Mod mod) => AnyScript(mod, usesMdl3, s => s.Mdl3Api);
+
+        /// <summary>Whether any of a mod's scripts is so, kept in answers.</summary>
+        static bool AnyScript(Mod mod, Dictionary<string, (string Sig, bool Needs)> answers, Func<LuaScript, bool> so)
         {
             if (mod == null || !Directory.Exists(mod.Path)) return false;
             try
@@ -119,16 +128,16 @@ namespace Hd2Mod
                     var fi = new FileInfo(p);
                     return p + ":" + fi.Length + ":" + fi.LastWriteTimeUtc.Ticks;
                 }));
-                lock (needs) if (needs.TryGetValue(mod.Path, out var k) && k.Sig == sig) return k.Needs;
+                lock (answers) if (answers.TryGetValue(mod.Path, out var k) && k.Sig == sig) return k.Needs;
                 bool complete = true, found = false;
                 foreach (var p in files)
                 {
                     if (!Deploy.Types(p).Contains(Deploy.LuaType)) continue;
                     var scripts = LuaMods.Read(p, LuaMods.Lazy && !ReadAll);
                     if (scripts == null) { complete = false; continue; }
-                    if (scripts.Any(s => s.ChefOnly || s.ChefApi || s.Header == "Boot" || (s.Header == "Addon" && !s.BmlName))) { found = true; break; }
+                    if (scripts.Any(so)) { found = true; break; }
                 }
-                if (found || complete) lock (needs) needs[mod.Path] = (sig, found);
+                if (found || complete) lock (answers) answers[mod.Path] = (sig, found);
                 return found;
             }
             catch (Exception e) when (e is IOException || e is UnauthorizedAccessException || e is ModError) { }
@@ -151,17 +160,43 @@ namespace Hd2Mod
             return lib.Mods.Any(m => m.Enabled && KindOf(m) == null && NeedsChef(m)) ? chef : null;
         }
 
+        /// <summary>MDL3 as Boot Mod Loader's guest (the user, 2026-11-01: mods made for different loaders
+        /// used together): with Boot Mod Loader 0.12.0 or later in effect (the first that runs guests),
+        /// the library holding MDL3, and an enabled mod reading MDL3 or HD2Data, MDL3 goes to the game
+        /// too, before Boot Mod Loader, its boot off the start-up slot for Boot Mod Loader to run
+        /// (GuestBoots). MDL3 then starts no mod of its own: its coordinator starts none when another
+        /// loader holds CowboyBingusModLoader (read in 3.0.0-dev.21's boot; dev.25 and later are
+        /// obfuscated, so assumed for them), and gives its MDL3 global, audio and native part. Mods
+        /// that use them look for them each frame (SHH, HD2 Data Hub 0.3.0), not at load, which is
+        /// before a guest runs. Seen working in a player's video with Quick Deploy 0.12.0, where MDL3
+        /// dev.25 became a guest by accident; not yet tried in game here. Null otherwise.</summary>
+        public static Mod Mdl3GuestFor(Library lib, Mod chosen)
+        {
+            if (chosen == null || KindOf(chosen) != "bml") return null;
+            if (!Version.TryParse(VersionOf(chosen) ?? "", out var v) || v < GuestBoots.FirstHost) return null;
+            var mdl3 = Of(lib).LastOrDefault(m => KindOf(m) == "mdl3");
+            if (mdl3 == null) return null;
+            return lib.Mods.Any(m => m.Enabled && KindOf(m) == null && UsesMdl3(m)) ? mdl3 : null;
+        }
+
+        /// <summary>The loaders that go to the game beside the one in effect, in deploy order: MDL3 as a
+        /// guest, Chef Shared Loader as a helper.</summary>
+        public static List<Mod> Helpers(Library lib) => HelpersFor(lib, Chosen(lib));
+
+        /// <summary>Helpers, had this loader been chosen (null: none).</summary>
+        public static List<Mod> HelpersFor(Library lib, Mod chosen) =>
+            new[] { Mdl3GuestFor(lib, chosen), HelperFor(lib, chosen) }.Where(m => m != null).ToList();
+
         /// <summary>The mods a deploy takes, in the order it numbers them: every enabled mod that
-        /// is no loader, in the library's order, then Chef Shared Loader when it helps, then the
-        /// loader in effect.</summary>
+        /// is no loader, in the library's order, then MDL3 as a guest and Chef Shared Loader when
+        /// they help, then the loader in effect.</summary>
         public static List<Mod> DeployOrder(Library lib) => DeployOrderFor(lib, Chosen(lib));
 
         /// <summary>DeployOrder, had this loader been chosen (null: none).</summary>
         public static List<Mod> DeployOrderFor(Library lib, Mod chosen)
         {
             var out_ = lib.Mods.Where(m => m.Enabled && KindOf(m) == null).ToList();
-            var helper = HelperFor(lib, chosen);
-            if (helper != null) out_.Add(helper);
+            out_.AddRange(HelpersFor(lib, chosen));
             if (chosen != null) out_.Add(chosen);
             return out_;
         }

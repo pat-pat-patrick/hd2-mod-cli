@@ -135,10 +135,11 @@ namespace Hd2Mod
             return null;
         }
 
-        /// <summary>The package the deploy uses: the first enabled mod that is one.</summary>
+        /// <summary>The package the deploy uses: the first mod going to the game that is one (MDL3 as
+        /// Boot Mod Loader's guest too, whatever its switch), else the first enabled one.</summary>
         public static Package Wanted(Library lib)
         {
-            foreach (var m in lib.Mods.Where(m => m.Enabled && Profiles.InProfile(lib, m)))
+            foreach (var m in Loaders.DeployOrder(lib).Concat(lib.Mods.Where(m => m.Enabled && Profiles.InProfile(lib, m))))
             {
                 var p = Find(m.Path);
                 if (p != null) return p;
