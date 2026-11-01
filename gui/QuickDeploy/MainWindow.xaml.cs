@@ -32,7 +32,12 @@ namespace QuickDeploy
         // the details show is selectedId, which is also where a Shift range starts
         readonly HashSet<string> picked = new HashSet<string>();
         bool busy, overMax, acrylic, descOpen, checking;
-        string lastDone;
+        // what was just done, for the bottom line: said by every state read in the next 10 s, so
+        // the read the folder watcher starts after our own write does not put "pending" over it
+        // at once (the MDL3 drop picture, 2026-11-01)
+        string lastDone { get => doneLine; set { doneLine = value; doneAt = DateTime.Now; } }
+        string doneLine;
+        DateTime doneAt;
         // what the download under way is doing, while one is (NexusInstall)
         string fetchLine;
         /// <summary>The loader panel's i button: it opens the details (LoaderInfo).</summary>
@@ -194,6 +199,7 @@ namespace QuickDeploy
             GroupTest();
             PreviewTest();
             DragTest();
+            DropTest();
             Listen();
             SelfUpdateAtStart();
 #if HAS_NEXUS
@@ -1400,7 +1406,9 @@ namespace QuickDeploy
             {
                 mdl3Note = m3;
                 if (bad) Dialog.Tell(this, m3);
-                else Foot(m3, "Blue");
+                // said after the state read, which would otherwise put "pending" over it at once
+                // (the MDL3 drop picture, 2026-11-01)
+                else lastDone = lastDone != null ? lastDone + " · " + m3 : m3;
             }
             return r.Ok;
         }
@@ -1568,7 +1576,7 @@ namespace QuickDeploy
             else if (lastDone != null) Foot(Texts.F("done", lastDone), "Blue");
             else if (st.Pending == 0) Foot(Texts.Get("synced"), "Blue");
             else Foot(Texts.F("pending", st.Written, st.Moved, st.Deleted, Texts.Size(st.CopiedBytes)), "Yellow");
-            lastDone = null;
+            if (DateTime.Now - doneAt > TimeSpan.FromSeconds(10)) doneLine = null;
         }
 
         // after a launch, the bottom line says the game runs while it does and goes back to the
@@ -1711,6 +1719,17 @@ namespace QuickDeploy
 
         /// <summary>The details' card about a mod's Lua: what starts it, whether it will run,
         /// and why not; null for a mod without scripts.</summary>
+        /// <summary>A loader deployed beside the one in effect: whose guest it runs as (MDL3) or whom it
+        /// helps (Chef), and for which mods.</summary>
+        string HelperSaid(ModRow x)
+        {
+            bool guest = x.LoaderKind == "mdl3";
+            var helped = st.Mods.Where(y => y.Enabled && !y.Loader && (guest ? y.Lu?.UsesMdl3 == true : y.Lu?.Needs == "chef")).Select(y => y.Name);
+            var chosen = ById(st.LoaderChoice);
+            return Texts.F(guest ? "lua_info_guest" : "lua_info_helping", chosen != null ? LoaderLabel(chosen.LoaderKind, chosen.Lu?.LoaderVersion) ?? chosen.Name : "?",
+                           string.Join(Texts.Zh ? "、" : ", ", helped));
+        }
+
         UIElement LuaCard(ModRow m)
         {
             var lu = m.Lu;
@@ -1742,6 +1761,9 @@ namespace QuickDeploy
                 Line(Texts.F("lua_guest", host != null ? LoaderLabel("bml", host.Lu?.LoaderVersion) : "Boot Mod Loader"), "Muted");
             }
             else if (lu.ChefRuns) Line(Texts.Get("lua_chef_runs"), "Muted");
+            // a loader deployed beside the one in effect (MDL3 as its guest, Chef handed to): its boot
+            // runs too, so never "does not run" (the MDL3 drop picture, 2026-11-01)
+            else if (m.Loader && m.Id != st.LoaderChoice && st.LoaderHelpers.Contains(m.Id)) Line(HelperSaid(m), "Blue");
             else if (lu.Boot != null)
             {
                 if (lu.Loader == null) Line(Texts.Get("lua_own_boot"), "Ink", true);
@@ -1775,6 +1797,14 @@ namespace QuickDeploy
                     // the loader in effect is not repeated here: the card on the left says it (the user, 2026-10-26);
                     // a script name another mod declares too is its own card below, where it is chosen
                 }
+            }
+            // a mod on MDL3's interface: where that comes from, or that nothing provides it (the MDL3
+            // drop picture, 2026-11-01: without MDL3 the details said nothing)
+            if (lu.UsesMdl3 && m.Enabled)
+            {
+                var mdl3 = st.Mods.FirstOrDefault(x => x.Loader && x.LoaderKind == "mdl3" && (x.Id == st.LoaderChoice || st.LoaderHelpers.Contains(x.Id)));
+                if (mdl3 != null) Line(Texts.F("lua_mdl3_from", LoaderLabel(mdl3.LoaderKind, mdl3.Lu?.LoaderVersion) ?? mdl3.Name), "Muted");
+                else Line(Texts.Get(st.Mods.Any(x => x.Loader && x.LoaderKind == "mdl3") ? "lua_mdl3_off" : "lua_mdl3_missing"), "Yellow");
             }
             // its scripts by the names the loader's log and Mod Lag Watchdog print (mods/author/name),
             // whole, so a name from a log can be matched to the mod (the user, 2026-10-26). Each name
@@ -2058,14 +2088,7 @@ namespace QuickDeploy
                 firstOne = false;
                 // helping Boot Mod Loader: the mods it starts (Chef), or runs for (MDL3 as its guest), by
                 // name (the panel says only "helping")
-                if (!on && st.LoaderHelpers.Contains(x.Id))
-                {
-                    bool guest = x.LoaderKind == "mdl3";
-                    var helped = st.Mods.Where(y => y.Enabled && !y.Loader && (guest ? y.Lu?.UsesMdl3 == true : y.Lu?.Needs == "chef")).Select(y => y.Name).ToList();
-                    var chosen = ById(st.LoaderChoice);
-                    Say(Texts.F(guest ? "lua_info_guest" : "lua_info_helping", chosen != null ? LoaderLabel(chosen.LoaderKind, chosen.Lu?.LoaderVersion) ?? chosen.Name : "?",
-                                string.Join(sep, helped)), "Blue");
-                }
+                if (!on && st.LoaderHelpers.Contains(x.Id)) Say(HelperSaid(x), "Blue");
                 if (!st.Lua.Outcomes.TryGetValue(x.Id, out var outs)) continue;
                 if (outs.Count == 0 && lua) Say(Texts.Get(on ? "lua_side_all_start" : "lua_side_all_start_if"), "Muted");
                 foreach (var o in outs)
@@ -7157,6 +7180,25 @@ namespace QuickDeploy
             DropHint.Visibility = Visibility.Collapsed;
             var many = Dropped(e.Data);
             if (many.Count == 0) { Dialog.Tell(this, Texts.Get("drop_none")); return; }
+            await DropPaths(many);
+        }
+
+        /// <summary>HD2QD_DROP_TEST=PATH (pictures only): 3 s after the start, that file or folder
+        /// dropped on the list, the way a drop does it (MDL3's one-click install for the video, the
+        /// user 2026-11-01).</summary>
+        void DropTest()
+        {
+            var path = Environment.GetEnvironmentVariable("HD2QD_DROP_TEST");
+            if (string.IsNullOrEmpty(path)) return;
+            var t = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+            t.Tick += async (s, e) => { t.Stop(); await DropPaths(new List<string> { path }); };
+            t.Start();
+        }
+
+        /// <summary>Files and folders dropped on the list: each added, the first new one shown, what
+        /// happened (MDL3's native part too) at the bottom.</summary>
+        async Task DropPaths(List<string> many)
+        {
             if (busy) return;
             var before = new HashSet<string>(Library.Load().Mods.Select(m => m.Id));
             int added = 0;
@@ -7164,13 +7206,10 @@ namespace QuickDeploy
             foreach (var p in many) if (await Act(() => Cli.Run("add", p), false)) added++;
             var fresh = Library.Load().Mods.Where(m => !before.Contains(m.Id)).ToList();
             var foot = Texts.F("drop_processed", Texts.N(added)) + (mdl3Note != null ? " · " + mdl3Note : "");
-            if (fresh.Count == 0)
-            {
-                if (added > 0) Foot(foot, "Blue");
-                return;
-            }
+            // now, and again after the state read the adds started
+            if (added > 0) { Foot(foot, "Blue"); lastDone = foot; }
+            if (fresh.Count == 0) return;
             Current(fresh[0].Id);
-            Foot(foot, "Blue");
             AdviseDrive(fresh);
         }
 

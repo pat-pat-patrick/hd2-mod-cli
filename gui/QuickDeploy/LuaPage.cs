@@ -268,14 +268,7 @@ namespace QuickDeploy
                 }
             }
             // helping Boot Mod Loader: the mods it starts (Chef), or runs for (MDL3 as its guest)
-            if (helping)
-            {
-                bool guest = x.LoaderKind == "mdl3";
-                var helped = st.Mods.Where(y => y.Enabled && !y.Loader && (guest ? y.Lu?.UsesMdl3 == true : y.Lu?.Needs == "chef")).Select(y => y.Name).ToList();
-                var chosen = ById(st.LoaderChoice);
-                Say(Texts.F(guest ? "lua_info_guest" : "lua_info_helping", chosen != null ? LoaderLabel(chosen.LoaderKind, chosen.Lu?.LoaderVersion) ?? chosen.Name : "?",
-                            string.Join(Texts.Zh ? "、" : ", ", helped)), "Blue");
-            }
+            if (helping) Say(HelperSaid(x), "Blue");
             UpdateInfo u = null;
             if (x != null)
             {
