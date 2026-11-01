@@ -179,6 +179,20 @@ namespace Hd2Mod
             return lib.Mods.Any(m => m.Enabled && KindOf(m) == null && UsesMdl3(m)) ? mdl3 : null;
         }
 
+        /// <summary>Whether this MDL3 runs the mods made for Chef Shared Loader in its place, and the
+        /// start-up scripts deployed before it, as 3.0.0-dev.22 and later do. Their notes (README_zh.md,
+        /// "dev.22：Chef Shared Loader 的 mod", read 2026-11-01): Chef itself need not be deployed, what
+        /// those mods draw on the screen does not show yet, other mods' boots run too when deployed
+        /// before MDL3. Assumed until tried in game: the boot is obfuscated.</summary>
+        public static bool Mdl3TakesChef(string version)
+        {
+            var m = System.Text.RegularExpressions.Regex.Match(version ?? "", @"^(\d+\.\d+\.\d+)(?:-dev\.(\d+))?");
+            if (!m.Success || !Version.TryParse(m.Groups[1].Value, out var v)) return false;
+            var first = new Version(3, 0, 0);
+            if (v != first) return v > first;
+            return !m.Groups[2].Success || int.Parse(m.Groups[2].Value) >= 22;
+        }
+
         /// <summary>The loaders that go to the game beside the one in effect, in deploy order: MDL3 as a
         /// guest, Chef Shared Loader as a helper.</summary>
         public static List<Mod> Helpers(Library lib) => HelpersFor(lib, Chosen(lib));

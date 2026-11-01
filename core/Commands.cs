@@ -1071,9 +1071,11 @@ namespace Hd2Mod
             }
             // the loaders the library has, never every loader there is (the user, 2026-10-26)
             var chosenId = Loaders.Chosen(lib)?.Id;
+            // MDL3 3.0.0-dev.22 or later counts for the mods made for Chef (kind "mdl3_chef")
             string Have(params string[] kinds)
             {
-                var have = all.Where(x => x.Loader != null && kinds.Contains(x.Loader))
+                var have = all.Where(x => x.Loader != null && (kinds.Contains(x.Loader) ||
+                                          (kinds.Contains("mdl3_chef") && x.Loader == "mdl3" && Loaders.Mdl3TakesChef(x.LoaderVersion))))
                               .Select(x => LoaderName(x.Loader, x) + (x.Mod.Id == chosenId ? "" : x.Helper ? " (helping)" : " (not used)")).Distinct().ToList();
                 return have.Count > 0 ? "in the library: " + string.Join(", ", have) : "none in the library";
             }
@@ -1083,7 +1085,9 @@ namespace Hd2Mod
                 var what = new List<string>();
                 if (ml.Loader != null) what.Add("loader: " + LoaderName(ml.Loader == "chef" ? "chef" : ml.Loader, ml));
                 if (ml.Needs == "any") what.Add("needs a loader (" + Have("bml", "chef", "bsl", "mdl3") + ")");
-                if (ml.Needs == "chef") what.Add("needs Chef Shared Loader" + (ml.NeedsWhy == "declared" ? ", as the mod declares" : ml.NeedsWhy == "api" ? ": its script calls the chef interface that loader provides" : "") + " (" + Have("chef") + ")");
+                if (ml.Needs == "chef") what.Add("made for Chef Shared Loader" + (ml.NeedsWhy == "declared" ? ", as the mod declares" : ml.NeedsWhy == "api" ? ": its script calls the chef interface that loader provides" : "") + " (" + (ml.NeedsWhy == "name" ? Have("chef") : Have("chef", "mdl3_chef")) + ")");
+                if (ml.Mdl3Chef) what.Add("run by MDL3 in Chef Shared Loader's place: what it draws on the screen does not show yet");
+                if (ml.Mdl3Runs) what.Add("its start-up script is run by MDL3 too");
                 if (ml.UsesMdl3) what.Add("uses MDL3 (" + Have("mdl3") + ")");
                 if (ml.PackOfName != null) what.Add("translation pack of " + (ml.PackOf?.Name ?? ml.PackOfName));
                 foreach (var s in ml.Broken)

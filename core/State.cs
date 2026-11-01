@@ -160,7 +160,7 @@ namespace Hd2Mod
                         ["line"] = (long)(b.Error?.Line ?? 0), ["message"] = b.Error?.Message, ["error_kind"] = b.ErrorKind,
                         ["jit"] = b.Jit.Cast<object>().ToList(), ["luajit_bytecode"] = b.LuaJitBytecode,
                     }).ToList(),
-                    ["pack_of"] = ml.PackOf?.Id, ["pack_of_name"] = ml.PackOfName, ["guest"] = ml.Guest, ["helper"] = ml.Helper, ["chef_runs"] = ml.ChefRuns, ["uses_mdl3"] = ml.UsesMdl3,
+                    ["pack_of"] = ml.PackOf?.Id, ["pack_of_name"] = ml.PackOfName, ["guest"] = ml.Guest, ["helper"] = ml.Helper, ["chef_runs"] = ml.ChefRuns, ["uses_mdl3"] = ml.UsesMdl3, ["mdl3_runs"] = ml.Mdl3Runs, ["mdl3_chef"] = ml.Mdl3Chef,
                     // its biggest script that would start (Chef Shared Loader reads none over 4 MB)
                     ["biggest"] = ml.Scripts.Where(s => s.Header == "Addon" || s.Header == "Boot").Select(s => s.Size).DefaultIfEmpty(0).Max(),
                     ["last"] = last == null ? null : new Dictionary<string, object> { ["state"] = last.State, ["ms"] = (long)last.Ms, ["why"] = last.Why },

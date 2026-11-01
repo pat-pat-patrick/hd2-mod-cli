@@ -53,6 +53,10 @@ namespace QuickDeploy
         public bool Guest;
         /// <summary>Its boot only starts itself, and Chef Shared Loader, in effect, runs it too.</summary>
         public bool ChefRuns;
+        /// <summary>Its boot only starts itself, and MDL3, in effect, runs it too.</summary>
+        public bool Mdl3Runs;
+        /// <summary>Made for Chef Shared Loader, and MDL3, in effect, runs it in Chef's place.</summary>
+        public bool Mdl3Chef;
         /// <summary>Its scripts read MDL3 or HD2Data: MDL3 goes along as Boot Mod Loader's guest.</summary>
         public bool UsesMdl3;
         /// <summary>Its biggest script that would start, in bytes (Chef Shared Loader reads none over 4 MB).</summary>
@@ -430,6 +434,8 @@ namespace QuickDeploy
                     lu.NeedsWhy = Str(li, "needs_why");
                     lu.Guest = Bool(li, "guest");
                     lu.ChefRuns = Bool(li, "chef_runs");
+                    lu.Mdl3Runs = Bool(li, "mdl3_runs");
+                    lu.Mdl3Chef = Bool(li, "mdl3_chef");
                     lu.UsesMdl3 = Bool(li, "uses_mdl3");
                     lu.Biggest = Long(li, "biggest");
                     if (li.TryGetValue("last", out var lv) && lv is Dictionary<string, object> last)

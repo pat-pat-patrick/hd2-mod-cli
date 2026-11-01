@@ -88,6 +88,12 @@ namespace Hd2Mod
         /// <summary>Its boot only starts itself, and Chef Shared Loader, in effect, runs it too (its
         /// log, 2026-10-26: "running another mod's boot script too"). Set by Check.</summary>
         public bool ChefRuns;
+        /// <summary>Its boot only starts itself, and MDL3 3.0.0-dev.22 or later, in effect, runs it too
+        /// (Loaders.Mdl3TakesChef). Set by Check.</summary>
+        public bool Mdl3Runs;
+        /// <summary>Made for Chef Shared Loader, and MDL3 3.0.0-dev.22 or later, in effect, runs it in
+        /// Chef's place, without what it draws on the screen for now. Set by Check.</summary>
+        public bool Mdl3Chef;
     }
 
     /// <summary>A problem the load order gives the mods' scripts, in codes; the window and
@@ -678,12 +684,20 @@ namespace Hd2Mod
             if (bootMods.LastOrDefault()?.Boot.BootKind == "chef_stub")
                 chefRuns = bootMods.Where(x => x.Boot.BootKind == "other" && !x.Boot.Bytecode).ToList();
             bootMods = bootMods.Where(x => !chefRuns.Contains(x)).ToList();
+            // MDL3 3.0.0-dev.22 or later in effect does the same, and runs the mods made for Chef
+            // in its place (Loaders.Mdl3TakesChef)
+            var last = bootMods.LastOrDefault()?.Boot;
+            bool mdl3Chef = last?.BootKind == "mdl3" && Loaders.Mdl3TakesChef(last.BootVersion);
+            var mdl3Runs = mdl3Chef ? bootMods.Where(x => x.Boot.BootKind == "other" && !x.Boot.Bytecode).ToList() : new List<ModLua>();
+            bootMods = bootMods.Where(x => !mdl3Runs.Contains(x)).ToList();
             if (mark)
                 foreach (var x in all)
                 {
                     x.Helper = IsHelper(x);
                     x.Guest = guests.Contains(x);
                     x.ChefRuns = chefRuns.Contains(x);
+                    x.Mdl3Runs = mdl3Runs.Contains(x);
+                    x.Mdl3Chef = mdl3Chef && on.Contains(x) && x.Needs == "chef" && x.NeedsWhy != "name";
                 }
             var owner = bootMods.LastOrDefault();
             string running;
@@ -706,7 +720,8 @@ namespace Hd2Mod
                                           Detail = owner != null ? "other" : null });
             else if (running != "chef" && helper == null)
             {
-                var chefOnly = wanting.Where(x => x.Needs == "chef").ToList();
+                // under MDL3 that takes them, only those whose name only Chef takes
+                var chefOnly = wanting.Where(x => x.Needs == "chef" && !(mdl3Chef && x.NeedsWhy != "name")).ToList();
                 if (chefOnly.Count > 0) issues.Add(new LuaIssue { Kind = "needs_chef", Mods = chefOnly.Select(x => x.Mod).ToList(), Detail = running });
             }
             // two mods with the same name: the later one (a higher patch) runs

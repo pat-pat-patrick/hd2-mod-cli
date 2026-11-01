@@ -300,10 +300,47 @@ namespace Hd2Mod.Tests
             Assert.Contains(Now().Issues, i => i.Kind == "needs_chef" && i.Mods.Single().Name == "Narrow");
         }
 
-        string Mdl3() => Mod("MDL3", new Dictionary<string, byte[]>
+        string Mdl3(string version = "3.0.0-dev.27") => Mod("MDL3", new Dictionary<string, byte[]>
         {
-            [A + ".patch_0"] = LuaArchive((LuaMods.BootId, "-- MDL3 3.0.0-dev.27 game boot (PUC Lua 5.1). Signed native host\nlocal x = 1\n")),
+            [A + ".patch_0"] = LuaArchive((LuaMods.BootId, "-- MDL3 " + version + " game boot (PUC Lua 5.1). Signed native host\nlocal x = 1\n")),
         });
+
+        /// <summary>MDL3 3.0.0-dev.22 and later run the mods made for Chef Shared Loader themselves,
+        /// without what they draw for now, and the start-up scripts deployed before them (their notes,
+        /// read 2026-11-01; the user: "MDL dev27作者说已经做了CSL的兼容"): under such an MDL3 a mod made
+        /// for Chef starts and a boot of its own is in no conflict. Under dev.21 neither.</summary>
+        [Fact]
+        public void Mdl3From22RunsTheModsMadeForChef()
+        {
+            Assert.False(Loaders.Mdl3TakesChef("3.0.0-dev.21"));
+            Assert.True(Loaders.Mdl3TakesChef("3.0.0-dev.22"));
+            Assert.True(Loaders.Mdl3TakesChef("3.0.0-dev.27"));
+            Assert.True(Loaders.Mdl3TakesChef("3.0.0"));
+            Assert.True(Loaders.Mdl3TakesChef("3.1.0-dev.1"));
+            Assert.False(Loaders.Mdl3TakesChef("2.2.1"));
+            Assert.False(Loaders.Mdl3TakesChef(null));
+
+            Cli("add", Addon("Narrow", "mods/x/narrow", "local chef = ...\nchef.log('x')\n", A2));
+            Cli("add", Mod("Installer", new Dictionary<string, byte[]> { [A + ".patch_0"] = LuaArchive((LuaMods.BootId, "-- swaps files\nlocal y = 2\n")) }));
+            Cli("add", Mdl3("3.0.0-dev.27"));
+            Cli("loader", "MDL3");
+            var now = Now();
+            Assert.Equal("mdl3", now.Running);
+            Assert.Empty(now.Issues);                                         // no needs_chef, no boot conflict
+            var all = LuaMods.Of(Library.Load(), false, out _);
+            LuaMods.Check(Library.Load(), all);
+            Assert.True(all.Single(x => x.Mod.Name == "Narrow").Mdl3Chef);
+            Assert.True(all.Single(x => x.Mod.Name == "Installer").Mdl3Runs);
+            Assert.Contains("run by MDL3 in Chef Shared Loader's place", Cli("lua"));
+
+            // must fail: an MDL3 before dev.22 runs neither
+            Cli("remove", "MDL3");
+            Cli("add", Mdl3("3.0.0-dev.21"));
+            Cli("loader", "MDL3");
+            now = Now();
+            Assert.Contains(now.Issues, i => i.Kind == "needs_chef" && i.Mods.Single().Name == "Narrow");
+            Assert.Contains(now.Issues, i => i.Kind == "boot_conflict");
+        }
 
         /// <summary>The user (2026-11-01, after a player's video of Quick Deploy 0.12.0 running Boot Mod
         /// Loader, Chef Shared Loader and MDL3 together: "这个是特性，因为可以让依赖不同loader的MOD同时使用"):

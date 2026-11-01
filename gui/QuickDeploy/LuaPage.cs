@@ -388,8 +388,12 @@ namespace QuickDeploy
             // a mod that uses MDL3's audio or data: whether MDL3 runs beside the loader in effect
             if (lu.UsesMdl3 && st.Lua.Running != "mdl3")
                 return (Texts.Get(st.Mods.Any(x => x.LoaderKind == "mdl3" && st.LoaderHelpers.Contains(x.Id)) ? "lp_now_mdl3_guest" : "lp_now_no_mdl3"), "Blue");
-            return (Texts.Get(lu.Guest ? "lp_now_guest" : lu.ChefRuns ? "lp_now_chef_runs" : "lp_now_starts"), "Blue");
+            if (lu.Mdl3Chef) return (Texts.Get("lp_now_mdl3_chef"), "Blue");
+            return (Texts.Get(lu.Guest ? "lp_now_guest" : lu.ChefRuns ? "lp_now_chef_runs" : lu.Mdl3Runs ? "lp_now_mdl3_runs" : "lp_now_starts"), "Blue");
         }
+
+        /// <summary>Whether an MDL3 of the library runs the mods made for Chef Shared Loader (Loaders.Mdl3TakesChef).</summary>
+        bool Mdl3TakesChef() => st.Mods.Any(x => x.LoaderKind == "mdl3" && Loaders.Mdl3TakesChef(x.Lu?.LoaderVersion));
 
         // the loaders in the order the compatibility table pairs them
         static readonly string[] CompatKinds = { "bml", "chef", "mdl3", "bsl" };
@@ -430,6 +434,8 @@ namespace QuickDeploy
                 {
                     ModRow a = byKind[i], b = byKind[j];
                     var pair = a.LoaderKind + "_" + b.LoaderKind;
+                    // MDL3 3.0.0-dev.22 or later runs the mods made for Chef in its place
+                    if (pair == "chef_mdl3" && Loaders.Mdl3TakesChef(b.Lu?.LoaderVersion)) pair = "chef_mdl3_takes";
                     bool together = pair == "bml_chef" || pair == "bml_mdl3";
                     bool now = together && a.Id == st.LoaderChoice && st.LoaderHelpers.Contains(b.Id);
                     var state = now ? "lp_compat_now" : together ? "lp_compat_together" : pair == "chef_mdl3" ? "lp_compat_one" : "lp_compat_covered";
@@ -488,7 +494,7 @@ namespace QuickDeploy
             Cell(sw, 0);
             Cell(ModLink(m, double.NaN), 1);
             var lu = m.Lu;
-            Cell(Text(lu?.Needs == "chef" ? Texts.Get("lp_needs_chef") : lu?.Needs == "any" ? Texts.Get("lp_needs_any")
+            Cell(Text(lu?.Needs == "chef" ? Texts.Get(lu.NeedsWhy != "name" && Mdl3TakesChef() ? "lp_needs_chef_mdl3" : "lp_needs_chef") : lu?.Needs == "any" ? Texts.Get("lp_needs_any")
                     : lu?.Boot != null ? Texts.Get("lp_needs_boot") : "—", "Muted"), 2);
             var (now, colour) = NowOf(m);
             var nowText = Selectable.Text(now, 13, colour);

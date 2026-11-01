@@ -1756,6 +1756,10 @@ namespace QuickDeploy
             if (lu.Needs != null)
             {
                 var able = LibraryLoaders(lu.Needs == "chef" ? new[] { "chef" } : new[] { "bml", "chef", "bsl", "mdl3" });
+                // MDL3 3.0.0-dev.22 or later runs the mods made for Chef too (not those only Chef's name rule takes)
+                if (lu.Needs == "chef" && lu.NeedsWhy != "name")
+                    able = able.Concat(st.Mods.Where(x => x.LoaderKind == "mdl3" && Loaders.Mdl3TakesChef(x.Lu?.LoaderVersion))
+                                              .Select(x => LoaderLabel(x.LoaderKind, x.Lu?.LoaderVersion) + (x.Id == st.LoaderChoice ? "" : Texts.Get("lua_off_suffix")))).Distinct().ToArray();
                 if (lu.Needs == "chef")
                     Line(Texts.F((lu.NeedsWhy == "declared" ? "lua_needs_chef_declared" : lu.NeedsWhy == "api" ? "lua_needs_chef_api" : able.Length > 0 ? "lua_needs_chef_have" : "lua_needs_chef")
                                  + (able.Length > 0 ? "" : "_none"),
@@ -1768,6 +1772,8 @@ namespace QuickDeploy
                         Line(st.Lua.Running == "other" && owner != null ? Texts.F("lua_other_boot", owner.Name) : Texts.Get("lua_no_loader"), "Yellow");
                     else if (issues.Any(i => i.Kind == "needs_chef"))
                         Line(Texts.F("lua_wrong_loader", running ?? "-"), "Yellow");
+                    // run by MDL3 in Chef's place: what it draws does not show yet
+                    if (lu.Mdl3Chef) Line(Texts.Get("lua_mdl3_chef"), "Yellow");
                     // started by Chef Shared Loader, which reads no script over 4 MB (2026-10-26)
                     if (issues.Any(i => i.Kind == "too_big_for_chef")) Line(Texts.F("lua_too_big", Texts.Size(lu.Biggest)), "Yellow");
                     // the loader in effect is not repeated here: the card on the left says it (the user, 2026-10-26);
