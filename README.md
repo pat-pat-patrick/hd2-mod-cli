@@ -408,7 +408,9 @@ A change made on the command line shows in an open window half a second later.
 
 ## Files
 
-Everything is kept in `%USERPROFILE%\.hd2-mod-cli` (`HD2MOD_HOME` overrides it):
+Everything is kept in `%USERPROFILE%\.hd2-mod-cli` (`HD2MOD_HOME` overrides it). Builds
+0.5.0 and earlier kept it in `%APPDATA%\hd2-mod-cli`; to bring a library over from
+there, see [Moving your settings from an old build](docs/MIGRATING-SETTINGS.md).
 
 | File | What it holds |
 |---|---|
@@ -653,6 +655,6 @@ mod 库与游戏不在同一分区时无法使用硬链接，有变化的文件�
     hd2qd report             # 导出诊断包（zip，默认在桌面），反馈问题时附上
     hd2qd deploy
 
-完整命令列表见英文部分的表格。设置与记录保存在 `%USERPROFILE%\.hd2-mod-cli`。每个文件保存时会把上一版留为同名的 `.bak`：mod 可以重新下载，而你的选择（哪些 mod、顺序、可选内容、标签）不能，且只有几十 KB。需要回退时，把 `.bak` 改名覆盖原文件即可。
+完整命令列表见英文部分的表格。设置与记录保存在 `%USERPROFILE%\.hd2-mod-cli`。0.5.0 及更早的版本保存在 `%APPDATA%\hd2-mod-cli`，迁移方法见[从旧版本迁移设置](docs/MIGRATING-SETTINGS.md#从旧版本迁移设置)。每个文件保存时会把上一版留为同名的 `.bak`：mod 可以重新下载，而你的选择（哪些 mod、顺序、可选内容、标签）不能，且只有几十 KB。需要回退时，把 `.bak` 改名覆盖原文件即可。
 
 **默认 mod 库文件夹**（添加的 zip 解压为此处的文件夹，不保留压缩包）不位于 AppData：优先使用已设置的文件夹（存储页的“设为默认”，或 `folder-default`）；未设置时使用 HD2 Arsenal 的 mod 文件夹；未安装 HD2 Arsenal 时使用游戏所在分区的 `HD2 Mods`，以便部署时使用硬链接。
