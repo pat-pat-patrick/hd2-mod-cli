@@ -399,7 +399,7 @@ namespace QuickDeploy
         static readonly string[] CompatKinds = { "bml", "chef", "mdl3", "bsl" };
 
         /// <summary>Which of the library's loaders can be used together, a line for each pair: whether,
-        /// how and under what conditions, and on what that rests (tried in game, read in the source).
+        /// how and under what conditions (the user, 2026-11-01: no basis column).
         /// Only the loaders the library has (the user, 2026-10-26); null with fewer than two kinds.</summary>
         FrameworkElement CompatTable(List<ModRow> loaders)
         {
@@ -409,22 +409,21 @@ namespace QuickDeploy
             Grid Row(bool head)
             {
                 var g = new Grid { Margin = new Thickness(12, head ? 6 : 8, 12, head ? 6 : 8) };
-                foreach (var w in new[] { 220.0, 150, 0, 260 })
+                foreach (var w in new[] { 220.0, 150, 0 })
                     g.ColumnDefinitions.Add(new ColumnDefinition { Width = w == 0 ? new GridLength(1, GridUnitType.Star) : new GridLength(w) });
                 return g;
             }
             void Cell(Grid g, UIElement e, int col) { Grid.SetColumn(e, col); g.Children.Add(e); }
-            FrameworkElement Text(string t, string colour, double size = 13)
+            FrameworkElement Text(string t, string colour)
             {
-                var x = Selectable.Text(t, size, colour);
+                var x = Selectable.Text(t, 13, colour);
                 x.TextWrapping = TextWrapping.Wrap;
                 x.VerticalAlignment = VerticalAlignment.Top;
-                // 12 px text one lower: its baseline on the 13 px lines' (measured 2026-11-01)
-                x.Margin = new Thickness(0, size < 13 ? 1 : 0, 12, 0);
+                x.Margin = new Thickness(0, 0, 12, 0);
                 return x;
             }
             var headRow = Row(true);
-            foreach (var (key, col) in new[] { ("lp_compat_col_pair", 0), ("lp_compat_col_state", 1), ("lp_compat_col_how", 2), ("lp_compat_col_basis", 3) })
+            foreach (var (key, col) in new[] { ("lp_compat_col_pair", 0), ("lp_compat_col_state", 1), ("lp_compat_col_how", 2) })
                 Cell(headRow, new TextBlock { Text = Texts.Get(key), Foreground = B("Muted"), FontSize = 12, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 12, 0) }, col);
             table.Children.Add(new Border { BorderBrush = B("Grid"), BorderThickness = new Thickness(0, 0, 0, 1), Background = B("Ground900"), Child = headRow });
 
@@ -453,7 +452,6 @@ namespace QuickDeploy
                     Cell(row, Text(Name(a) + "\n+ " + Name(b), "Ink"), 0);
                     Cell(row, Text(Texts.Get(state), together ? "Blue" : "Muted"), 1);
                     Cell(row, how, 2);
-                    Cell(row, Text(Texts.Get("lp_compat_" + pair + "_basis"), "Muted", 12), 3);
                     table.Children.Add(new Border { BorderBrush = B("Grid"), BorderThickness = new Thickness(0, 0, 0, 1), Child = row });
                 }
             return new Border { BorderBrush = B("Grid"), BorderThickness = new Thickness(1, 1, 1, 0), Background = B("Ground700"), Child = table, Margin = new Thickness(0, 0, 12, 0) };
