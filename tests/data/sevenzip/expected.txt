@@ -1,0 +1,10 @@
+Thing/
+Thing/9ba626afa44a3aa3.patch_0 e6aab2a8bf2ff7326dd7e839f58a4f63e091d076400bcfdb9c2bab1805b7e686
+Thing/code.bin eba3309ec594493bff9c326cd671d2b9a946a6fdd300d20c78ea20f9b85a7b97
+Thing/empty dir/
+Thing/mix.bin e0739aa770f4303da237467207259dffc9212e8c7b88ba69f0a3f7dcd07d381f
+Thing/notes.txt 252166dc6ed85a1b3eca0d287b5f64f1ae50757525bf796007f86e79d3f9d5c9
+Thing/sub dir/
+Thing/sub dir/empty.txt e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+Thing/sub dir/深/
+Thing/sub dir/深/名字.txt 5861a6cf233f93e74b8ff72845de05768bfaa2641c40dc5a10b5f8c5c3a4d1f7

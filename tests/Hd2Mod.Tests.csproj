@@ -26,6 +26,11 @@
     <Compile Include="..\private\tests\*.cs" Link="private\tests\%(Filename)%(Extension)" />
   </ItemGroup>
 
+  <!-- the 7z samples SevenZipTests.cs unpacks -->
+  <ItemGroup>
+    <None Update="data\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <ItemGroup>
     <Reference Include="System.IO.Compression" />
     <Reference Include="System.IO.Compression.FileSystem" />

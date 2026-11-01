@@ -98,7 +98,7 @@ namespace Hd2Mod
             var root = Paths.Norm(tmp);
             var damaged = Damaged(zipPath);
             if (damaged != null) throw new ModError(zipPath + ": " + damaged, "archive_damaged", zipPath);
-            if (!IsZip(zipPath)) ExtractOther(zipPath, tmp);
+            if (!IsZip(zipPath)) { if (SevenZip.Is(zipPath)) Extract7z(zipPath, tmp); else ExtractOther(zipPath, tmp); }
             else using (var z = ZipFile.OpenRead(zipPath))
             {
                 var targets = new List<(ZipArchiveEntry Entry, string Target)>();
@@ -128,12 +128,48 @@ namespace Hd2Mod
             return dest;
         }
 
+        /// <summary>A 7z unpacked by tar, else by our own reader: Windows 10's tar reads no LZMA
+        /// ("LZMA codec is unsupported", the user, 2026-11-02), and nearly every 7z is LZMA or
+        /// LZMA2. tar goes first because it is faster (16 s against 24 s for a 258 MB 7z).</summary>
+        static void Extract7z(string archive, string into)
+        {
+            ModError tar;
+            try { ExtractOther(archive, into); return; }
+            catch (ModError e) when (e.Kind == "not_zip") { tar = e; }
+            Remove(into);
+            try { SevenZip.Extract(archive, into); }
+            catch (NotSupportedException e) when (e.Message.Contains("password"))
+            {
+                Remove(into);
+                throw new ModError("cannot unpack " + archive + ": it is protected by a password", "archive_password", archive);
+            }
+            catch (InvalidDataException e)
+            {
+                Remove(into);
+                throw new ModError("cannot unpack " + archive + ": " + e.Message, "archive_damaged", archive);
+            }
+            catch (NotSupportedException e)
+            {
+                Remove(into);
+                throw new ModError(tar.Message + "; " + e.Message, "not_zip", tar.Arg + "; " + e.Message);
+            }
+        }
+
+        static void Remove(string folder)
+        {
+            try { if (Directory.Exists(folder)) Directory.Delete(folder, true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+        }
+
+        /// <summary>Tests only: another tar.exe in place of Windows's own (a missing one stands for
+        /// Windows 10's, which reads no LZMA).</summary>
+        internal static string Tar;
+
         /// <summary>A 7z, rar or tar archive (Nexus files often are) unpacked by Windows's own
         /// tar.exe (bsdtar on libarchive: 7z and rar read since Windows 10 1803 / 11). It keeps
         /// every path inside the folder (no "..", no absolute paths without -P).</summary>
         static void ExtractOther(string archive, string into)
         {
-            var tar = Paths.Join(Environment.GetFolderPath(Environment.SpecialFolder.System), "tar.exe");
+            var tar = Tar ?? Paths.Join(Environment.GetFolderPath(Environment.SpecialFolder.System), "tar.exe");
             if (!File.Exists(tar)) throw new ModError("only zips can be unpacked here (Windows's tar.exe is missing): " + archive, "not_zip", archive);
             Directory.CreateDirectory(into);
             var psi = new System.Diagnostics.ProcessStartInfo(tar, "-xf \"" + archive + "\" -C \"" + into + "\"")
