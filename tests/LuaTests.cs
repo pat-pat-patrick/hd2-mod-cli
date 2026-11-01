@@ -300,6 +300,43 @@ namespace Hd2Mod.Tests
             Assert.Contains(Now().Issues, i => i.Kind == "needs_chef" && i.Mods.Single().Name == "Narrow");
         }
 
+        [Theory]
+        [InlineData("3.0.0-dev.18", "")]
+        [InlineData("3.0.0-dev.27", ", protected preview")]
+        public void Mdl3RuntimeAnnotationKeepsLoaderSelectionAndOrdering(string version, string annotation)
+        {
+            Cli("add", Bml());
+            Cli("add", Mod("MDL3", new Dictionary<string, byte[]>
+            {
+                [A + ".patch_0"] = LuaArchive((LuaMods.BootId,
+                    "-- MDL3 " + version + " game boot (PUC Lua 5.1" + annotation + ")\nlocal x = 1\n")),
+            }));
+            var lib = Library.Load();
+            Assert.Equal("mdl3", Loaders.KindOf(lib.Mods.Single(m => m.Name == "MDL3")));
+            Cli("loader", "MDL3");
+            Cli("move", "MDL3", "--top");
+            Cli("add", Addon("Lamp", "mods/me/lamp"));
+            lib = Library.Load();
+            Assert.Equal("MDL3", Loaders.Chosen(lib).Name);
+            Assert.Equal("MDL3", Deploy.Plan(lib).Last().Mod);
+            Assert.DoesNotContain(Deploy.Plan(lib), w => w.Mod == "Boot Mod Loader");
+            Assert.Equal("mdl3", Now().Running);
+            Assert.Contains("MDL3 " + version, Cli("lua"));
+        }
+
+        [Theory]
+        [InlineData("-- unrelated boot\n-- MDL3 3.0.0-dev.27 game boot (PUC Lua 5.1, protected preview)\n")]
+        [InlineData("-- MDL3 3.0.0-dev.27 game boot (PUC Lua 5.10, protected preview)\n")]
+        [InlineData("-- MDL3 3.0.0-dev.27 game boot (PUC Lua 5.1, protected preview\n")]
+        public void Mdl3RuntimeAnnotationDoesNotMatchOtherBoots(string source)
+        {
+            Cli("add", Mod("Other", new Dictionary<string, byte[]>
+            {
+                [A + ".patch_0"] = LuaArchive((LuaMods.BootId, source + "local x = 1\n")),
+            }));
+            Assert.Null(Loaders.KindOf(Library.Load().Mods.Single()));
+        }
+
         string Mdl3(string version = "3.0.0-dev.27") => Mod("MDL3", new Dictionary<string, byte[]>
         {
             [A + ".patch_0"] = LuaArchive((LuaMods.BootId, "-- MDL3 " + version + " game boot (PUC Lua 5.1). Signed native host\nlocal x = 1\n")),
