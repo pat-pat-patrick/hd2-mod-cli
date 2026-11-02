@@ -31,23 +31,69 @@ namespace QuickDeploy
             : state == "expired" ? Texts.F("lic_expired", Until(expires))
             : Texts.Get("lic_" + state);
 
-        /// <summary>The plugins page: a card for each plugin beside the program (the license
-        /// plugin for now), headed by its name and version.</summary>
+        /// <summary>The plugins page: a card for each plugin beside the program (PluginFiles),
+        /// headed by its title, file and version. Two kinds (the user, 2026-11-02): one drawn in
+        /// this window (the license plugin's authors and sign-in), one with a window of its own,
+        /// opened from its card.</summary>
         void RenderPlugins()
         {
             PluginsBox.Children.Clear();
             PluginsBox.Children.Add(new TextBlock { Text = Texts.Get("plugins"), FontSize = 28, FontWeight = FontWeights.Bold });
             PluginsBox.Children.Add(Texts.Hints ? Small(Texts.Get("plugins_intro"), new Thickness(0, 4, 0, 20)) : new Border { Height = 16 });
-            if (!Licenses.Present) return;
-            var card = new StackPanel();
-            var head = new DockPanel();
-            var version = new TextBlock { Text = "HD2QD.License " + Licenses.Version, FontSize = 12, Foreground = B("Muted"), VerticalAlignment = VerticalAlignment.Center };
-            DockPanel.SetDock(version, Dock.Right);
-            head.Children.Add(version);
-            head.Children.Add(Heading(Texts.Get("lic_title")));
-            card.Children.Add(head);
-            card.Children.Add(LicenseSection() ?? Small(Texts.Get("lic_nothing"), new Thickness(0, 8, 0, 0)));
-            PluginsBox.Children.Add(Card(card));
+            bool first = true;
+            foreach (var (file, type, why) in PluginFiles.All())
+            {
+                var card = new StackPanel();
+                var head = new DockPanel();
+                var version = new TextBlock
+                {
+                    Text = System.IO.Path.GetFileNameWithoutExtension(file) + (type != null ? " " + PluginFiles.Version(type) : ""),
+                    FontSize = 12, Foreground = B("Muted"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(16, 0, 0, 0),
+                };
+                DockPanel.SetDock(version, Dock.Right);
+                head.Children.Add(version);
+                head.Children.Add(Heading(type != null ? PluginFiles.Title(type, Texts.Zh) ?? file : file));
+                card.Children.Add(head);
+                if (type == null)
+                    card.Children.Add(Small(Texts.Get(why == "api" ? "plugin_api" : "plugin_broken"), new Thickness(0, 8, 0, 0)));
+                else if (string.Equals(file, "HD2QD.License.dll", StringComparison.OrdinalIgnoreCase))
+                    card.Children.Add(LicenseSection() ?? Small(Texts.Get("lic_nothing"), new Thickness(0, 8, 0, 0)));
+                else
+                {
+                    var summary = PluginFiles.Summary(type, Texts.Zh);
+                    if (summary != null) card.Children.Add(Small(summary, new Thickness(0, 6, 0, 0)));
+                    if (PluginFiles.Kind(type) == "window") card.Children.Add(OpenButton(type));
+                }
+                if (!first) PluginsBox.Children.Add(new Border { Height = 16 });
+                PluginsBox.Children.Add(Card(card));
+                first = false;
+            }
+        }
+
+        /// <summary>A window plugin's Open, with what the manager gives every such plugin: its
+        /// settings folder, the game's data folder, the language, and the enabled mods in load
+        /// order (a Func, read each time the plugin asks).</summary>
+        UIElement OpenButton(Type type)
+        {
+            var game = Store.GameDir(null, false);
+            var open = new Button
+            {
+                Content = Texts.Get("plugin_open"), Style = (Style)FindResource("Primary"), MinHeight = 36, MinWidth = 96,
+                Margin = new Thickness(0, 12, 0, 0), HorizontalAlignment = HorizontalAlignment.Left, IsEnabled = game != null,
+                ToolTip = game == null ? Texts.Get("plugin_no_game") : null,
+            };
+            ToolTipService.SetShowOnDisabled(open, true);
+            open.Click += (s, e) =>
+            {
+                var host = new Dictionary<string, object>
+                {
+                    ["home"] = Store.Home, ["data"] = Paths.Join(game, "data"), ["zh"] = Texts.Zh,
+                    ["mods"] = (Func<List<Dictionary<string, object>>>)(() => Vram.Mods(Library.Load())),
+                };
+                try { type.GetMethod("Open").Invoke(null, new object[] { this, host }); }
+                catch (System.Reflection.TargetInvocationException x) { Dialog.Tell(this, Texts.F("failed", x.InnerException?.Message ?? x.Message)); }
+            };
+            return open;
         }
 
         void Plugins_Click(object sender, RoutedEventArgs e)

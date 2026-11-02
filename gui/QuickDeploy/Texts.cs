@@ -1179,6 +1179,10 @@ namespace QuickDeploy
 
             // the plugins page (LicenseView.cs)
             ["plugins"] = ("Plugins", "插件"),
+            ["plugin_open"] = ("Open", "打开"),
+            ["plugin_broken"] = ("This plugin cannot be loaded: the file is damaged.", "无法加载此插件：文件已损坏。"),
+            ["plugin_api"] = ("This plugin is for another version of this program.", "此插件适用于本程序的其他版本。"),
+            ["plugin_no_game"] = ("Choose the game folder first.", "请先选择游戏文件夹。"),
             ["plugins_intro"] = ("Plugins are DLL files beside this program; each adds a feature of its own.",
                                  "插件是放在本程序旁边的 DLL 文件，每个插件提供一项独立的功能。"),
 
@@ -1221,7 +1225,7 @@ namespace QuickDeploy
             ["lic_err_other"] = ("The sign-in failed: {0}", "登录失败：{0}"),
             ["row_license"] = ("Needs a license", "需要授权"),
             ["row_license_expired"] = ("License expired", "授权已过期"),
-            ["row_license_tip"] = ("For the author's members: sign in on the Plugins page (the plug beside the gear).", "仅供作者的会员使用：请在「插件」页登录（齿轮旁的插头按钮）。"),
+            ["row_license_tip"] = ("For the author's members: sign in on the Plugins page (the jigsaw piece beside the gear).", "仅供作者的会员使用：请在「插件」页登录（齿轮旁的拼图按钮）。"),
             ["expand"] = ("Open", "展开"),
             ["collapse"] = ("Close", "收起"),
         };

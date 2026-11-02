@@ -45,7 +45,8 @@ if not "%OUT%"=="release\no-nexus" (
   copy /y "cli\bin\no-nexus\Release\net48\hd2qd.exe" "%OUT%\hd2qd.exe" >nul || exit /b 1
   copy /y "gui\QuickDeploy\bin\no-nexus\Release\net48\HD2 Mod Quick Deploy.exe" "%OUT%\HD2 Mod Quick Deploy.exe" >nul || exit /b 1
 )
-rem the license plugin: the same file in every build (it has no Nexus Mods part)
+rem the plugins: the same files in every build (they have no Nexus Mods part)
 copy /y "plugins\License\bin\Release\net48\HD2QD.License.dll" "%OUT%\HD2QD.License.dll" >nul || exit /b 1
+copy /y "plugins\Vram\bin\Release\net48\HD2QD.Vram.dll" "%OUT%\HD2QD.Vram.dll" >nul || exit /b 1
 echo.
-echo Built (%NAME%): %OUT%\hd2qd.exe, %OUT%\HD2 Mod Quick Deploy.exe and the license plugin %OUT%\HD2QD.License.dll
+echo Built (%NAME%): %OUT%\hd2qd.exe, %OUT%\HD2 Mod Quick Deploy.exe and the plugins (%OUT%\HD2QD.*.dll)

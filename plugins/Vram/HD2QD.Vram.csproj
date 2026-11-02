@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- HD2QD.Vram.dll: the VRAM estimate plugin, a window of its own (Window.cs). The
+       manager loads it from its own folder when it is there and works as before without it.
+       It shares no types with the manager: its methods take and give strings, numbers,
+       delegates and the Json shapes only. -->
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <AssemblyName>HD2QD.Vram</AssemblyName>
+    <RootNamespace>Hd2Mod.Vram</RootNamespace>
+    <Version>1.0.0</Version>
+    <Product>hd2-mod-cli</Product>
+    <Company>pat-pat-patrick</Company>
+    <Copyright>MIT License</Copyright>
+    <Deterministic>true</Deterministic>
+    <PathMap>$(MSBuildProjectDirectory)\..\..=src</PathMap>
+    <DebugType>none</DebugType>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="*.cs" />
+  </ItemGroup>
+
+</Project>

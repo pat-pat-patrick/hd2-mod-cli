@@ -7,6 +7,117 @@ using System.Threading;
 
 namespace Hd2Mod
 {
+    /// <summary>Plugins: HD2QD.*.dll beside the program, each with a class Plugin that says its
+    /// Api, its Kind ("panel": drawn in the manager's window; "window": a window of its own,
+    /// opened by Open(owner, host)), its Title(zh) and its Summary(zh). They share no types with
+    /// the manager (the core is compiled into each program), so they are called by name, with
+    /// strings, numbers, delegates and Json shapes. Each file is read once a process.</summary>
+    public static class PluginFiles
+    {
+        /// <summary>Set by tests; else the running program's folder.</summary>
+        public static string Folder;
+
+        public static string PathOf(string file) => Path.Combine(Folder ?? AppDomain.CurrentDomain.BaseDirectory, file);
+
+        static readonly Dictionary<string, (Type Type, string Why)> loaded = new Dictionary<string, (Type, string)>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>The plugin class typeName (null: the one class named Plugin) of the file at
+        /// path, or null with why: "missing", "api" (another version's), "broken". Read as bytes,
+        /// not loaded from the file: a program unpacked from a download carries the internet zone,
+        /// and the .NET Framework refuses LoadFrom on such a file.</summary>
+        public static Type Load(string path, string typeName, int api, out string why)
+        {
+            var key = path + "|" + typeName;
+            if (loaded.TryGetValue(key, out var hit)) { why = hit.Why; return hit.Type; }
+            Type found = null;
+            why = null;
+            if (!File.Exists(path)) why = "missing";
+            else
+                try
+                {
+                    var asm = Assembly.Load(File.ReadAllBytes(path));
+                    var t = typeName != null ? asm.GetType(typeName, true) : asm.GetTypes().Single(x => x.Name == "Plugin" && x.IsPublic);
+                    var a = t.GetField("Api")?.GetValue(null);
+                    if (!(a is int n) || n != api) why = "api";
+                    else found = t;
+                }
+                catch (Exception e) when (e is BadImageFormatException || e is TypeLoadException || e is IOException || e is FileLoadException
+                                          || e is InvalidOperationException || e is ReflectionTypeLoadException)
+                {
+                    why = "broken";
+                }
+            // a missing file is looked for again next time: the player may put it there
+            if (why != "missing") loaded[key] = (found, why);
+            return found;
+        }
+
+        /// <summary>Every HD2QD.*.dll beside the program: its file name, its plugin class (null
+        /// when it cannot be used) and why not.</summary>
+        public static List<(string File, Type Type, string Why)> All()
+        {
+            var found = new List<(string, Type, string)>();
+            var dir = Folder ?? AppDomain.CurrentDomain.BaseDirectory;
+            if (!Directory.Exists(dir)) return found;
+            foreach (var path in Directory.GetFiles(dir, "HD2QD.*.dll").OrderBy(p => p, StringComparer.OrdinalIgnoreCase))
+            {
+                var t = Load(path, null, Api(path), out var why);
+                found.Add((Path.GetFileName(path), t, why));
+            }
+            return found;
+        }
+
+        /// <summary>The Api this manager speaks with each known plugin; 1 for one it does not know.</summary>
+        static int Api(string path) =>
+            string.Equals(Path.GetFileName(path), "HD2QD.License.dll", StringComparison.OrdinalIgnoreCase) ? Licenses.Api
+            : string.Equals(Path.GetFileName(path), "HD2QD.Vram.dll", StringComparison.OrdinalIgnoreCase) ? Vram.Api : 1;
+
+        public static string Kind(Type t) => t?.GetField("Kind")?.GetValue(null) as string;
+        public static string Title(Type t, bool zh) => t?.GetMethod("Title")?.Invoke(null, new object[] { zh }) as string;
+        public static string Summary(Type t, bool zh) => t?.GetMethod("Summary")?.Invoke(null, new object[] { zh }) as string;
+        public static string Version(Type t) => t?.Assembly.GetName().Version?.ToString(3);
+    }
+
+    /// <summary>The VRAM estimate plugin, HD2QD.Vram.dll (plugins\Vram): what each enabled mod's
+    /// textures and models take on the graphics card next to the game's copies they replace. A
+    /// window plugin; the command line's `vram` uses its Estimate.</summary>
+    public static class Vram
+    {
+        public const int Api = 1;
+
+        static string why;
+        static Type Plugin => PluginFiles.Load(PluginFiles.PathOf("HD2QD.Vram.dll"), "Hd2Mod.Vram.Plugin", Api, out why);
+
+        public static bool Present => Plugin != null;
+
+        /// <summary>For tests: the plugin's class (its assembly holds the LZ4 reader).</summary>
+        internal static Type PluginType => Plugin;
+
+        /// <summary>The enabled mods in load order (the last to load wins a resource two ship),
+        /// each {name, archives: [the patch archives it deploys]}, as the plugin takes them.</summary>
+        public static List<Dictionary<string, object>> Mods(Library lib)
+        {
+            var mods = new List<Dictionary<string, object>>();
+            foreach (var w in Deploy.Plan(lib, new Dictionary<string, string>()))
+            {
+                if (!Deploy.Patch.IsMatch(w.Name)) continue;
+                var last = mods.Count > 0 ? mods[mods.Count - 1] : null;
+                if (last == null || (string)last["name"] != w.Mod)
+                    mods.Add(last = new Dictionary<string, object> { ["name"] = w.Mod, ["archives"] = new List<object>() });
+                ((List<object>)last["archives"]).Add(w.Src);
+            }
+            return mods;
+        }
+
+        /// <summary>The estimate for the library's enabled mods (the plugin's Estimate).</summary>
+        public static Dictionary<string, object> Estimate(Library lib, string data)
+        {
+            var t = Plugin ?? throw new ModError("the VRAM estimate plugin (HD2QD.Vram.dll) is " +
+                (why == "missing" ? "not beside this program" : why == "api" ? "for another version" : "damaged"), "vram_plugin");
+            try { return t.GetMethod("Estimate").Invoke(null, new object[] { Store.Home, data, Mods(lib), null }) as Dictionary<string, object>; }
+            catch (TargetInvocationException e) when (e.InnerException != null) { throw e.InnerException; }
+        }
+    }
+
     /// <summary>The license plugin, HD2QD.License.dll beside the program (plugins\License): mods
     /// that ship an hd2_license.json are for their author's members, and the plugin signs the
     /// player in to the author's issuer and keeps the license the mod checks in game. Without
@@ -28,36 +139,9 @@ namespace Hd2Mod
             AppDataOverride ?? (Environment.GetEnvironmentVariable("HD2QD_APPDATA") is string said && said.Length > 0 ? said
             : Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData));
 
-        static Type plugin;
-        static string loadedFrom, why;
+        static string why;
 
-        /// <summary>The plugin's class, or null (Why says why). Read as bytes, not loaded from
-        /// the file: a program unpacked from a download carries the internet zone, and the
-        /// .NET Framework refuses LoadFrom on such a file.</summary>
-        static Type Plugin
-        {
-            get
-            {
-                var path = DllPath ?? Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "HD2QD.License.dll");
-                if (loadedFrom == path) return plugin;
-                loadedFrom = path;
-                plugin = null;
-                why = null;
-                if (!File.Exists(path)) { why = "missing"; return null; }
-                try
-                {
-                    var t = Assembly.Load(File.ReadAllBytes(path)).GetType("Hd2Mod.License.Plugin", true);
-                    var api = t.GetField("Api")?.GetValue(null);
-                    if (!(api is int n) || n != Api) { why = "api"; return null; }
-                    plugin = t;
-                }
-                catch (Exception e) when (e is BadImageFormatException || e is TypeLoadException || e is IOException || e is FileLoadException)
-                {
-                    why = "broken";
-                }
-                return plugin;
-            }
-        }
+        static Type Plugin => PluginFiles.Load(DllPath ?? PluginFiles.PathOf("HD2QD.License.dll"), "Hd2Mod.License.Plugin", Api, out why);
 
         public static bool Present => Plugin != null;
 

@@ -99,6 +99,8 @@ namespace Hd2Mod
                                             Positionals = new[] { "issuer" }, Run = LicenseLoginCmd }),
             Cmd("license-renew", new Spec { Help = "renew the licenses that are half way to their end (--force: every one now)", Flags = new[] { "--force" }, Run = LicenseRenewCmd }),
             Cmd("license-logout", new Spec { Help = "remove an issuer's license and sign-in from this computer", Positionals = new[] { "issuer" }, Run = LicenseLogoutCmd }),
+            Cmd("vram", new Spec { Help = "estimate the video memory each enabled mod's textures and models take, next to the game's copies they replace (the VRAM estimate plugin; from the files, not measured)",
+                                   Run = VramCmd }),
 #if HAS_NEXUS
             Cmd("nexus", new Spec { Help = "download a Nexus Mods link (nxm://...) and put it in the library (a mod from it already there gets the new version)",
                                     Positionals = new[] { "link" }, Run = NexusCmd }),
@@ -1114,6 +1116,23 @@ namespace Hd2Mod
             var decl = IssuerArg(a.Pos["issuer"]);
             Licenses.Forget(Json.Str(decl, "issuer"));
             o.WriteLine("removed " + Json.Str(decl, "issuer") + "'s license and sign-in from this computer");
+        }
+
+        static void VramCmd(Args a, TextWriter o)
+        {
+            var r = Vram.Estimate(Library.Load(), Paths.Join(Store.GameDir(), "data"));
+            string Mb(long n) => (n / 1048576.0).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + " MB";
+            string Extra(long n) => (n >= 0 ? "+" : "-") + Mb(Math.Abs(n));
+            var mods = Json.List(r, "mods").Cast<Dictionary<string, object>>()
+                .Where(m => Json.Long(m, "textures") + Json.Long(m, "models") > 0).OrderByDescending(m => Json.Long(m, "extra")).ToList();
+            if (mods.Count == 0) { o.WriteLine("no enabled mod brings textures or models"); return; }
+            o.WriteLine("an estimate from the files, not a measurement: at most = resident + the finer texture levels the game streams in");
+            foreach (var m in mods)
+                o.WriteLine("  " + Extra(Json.Long(m, "extra")).PadLeft(12) + " than the game  " + Mb(Json.Long(m, "max")).PadLeft(10) + " at most  " +
+                            Json.Long(m, "textures") + " textures, " + Json.Long(m, "models") + " models  " + Json.Str(m, "name") +
+                            (Json.Long(m, "lost") > 0 ? "  (" + Json.Long(m, "lost") + " overridden by a later mod, left out)" : ""));
+            var t = Json.Obj(r, "total");
+            o.WriteLine("total: " + Mb(Json.Long(t, "max")) + " at most, " + Extra(Json.Long(t, "extra")) + " than the game's copies they replace");
         }
 
         static string LoaderName(string kind, ModLua ml) =>
