@@ -99,7 +99,7 @@ namespace Hd2Mod
                                             Positionals = new[] { "issuer" }, Run = LicenseLoginCmd }),
             Cmd("license-renew", new Spec { Help = "renew the licenses that are half way to their end (--force: every one now)", Flags = new[] { "--force" }, Run = LicenseRenewCmd }),
             Cmd("license-logout", new Spec { Help = "remove an issuer's license and sign-in from this computer", Positionals = new[] { "issuer" }, Run = LicenseLogoutCmd }),
-            Cmd("vram", new Spec { Help = "estimate the video memory each enabled mod's textures and models take, next to the game's copies they replace (the VRAM estimate plugin; from the files, not measured)",
+            Cmd("vram", new Spec { Help = "check each enabled mod's models and textures against the game's copies they replace: detail levels, triangles, shadows, culling boxes, lights, mipmaps, compression, video memory (the asset check plugin; from the files, not measured)",
                                    Run = VramCmd }),
 #if HAS_NEXUS
             Cmd("nexus", new Spec { Help = "download a Nexus Mods link (nxm://...) and put it in the library (a mod from it already there gets the new version)",
@@ -1123,16 +1123,25 @@ namespace Hd2Mod
             var r = Vram.Estimate(Library.Load(), Paths.Join(Store.GameDir(), "data"));
             string Mb(long n) => (n / 1048576.0).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + " MB";
             string Extra(long n) => (n >= 0 ? "+" : "-") + Mb(Math.Abs(n));
+            int Rank(string level) => level == "many" ? 0 : level == "waste" ? 1 : 2;
             var mods = Json.List(r, "mods").Cast<Dictionary<string, object>>()
-                .Where(m => Json.Long(m, "textures") + Json.Long(m, "models") > 0).OrderByDescending(m => Json.Long(m, "extra")).ToList();
+                .Where(m => Json.Long(m, "textures") + Json.Long(m, "models") > 0)
+                .OrderBy(m => Rank(Json.Str(m, "level"))).ThenByDescending(m => Json.Long(m, "extra")).ToList();
             if (mods.Count == 0) { o.WriteLine("no enabled mod brings textures or models"); return; }
-            o.WriteLine("an estimate from the files, not a measurement: at most = resident + the finer texture levels the game streams in");
+            o.WriteLine("each enabled mod's models and textures next to the game's copies they replace, from the files (not measured in game)");
+            o.WriteLine("check = a heavier model the game may draw many of (an enemy, a map object); wasteful = some finding below");
             foreach (var m in mods)
-                o.WriteLine("  " + Extra(Json.Long(m, "extra")).PadLeft(12) + " than the game  " + Mb(Json.Long(m, "max")).PadLeft(10) + " at most  " +
-                            Json.Long(m, "textures") + " textures, " + Json.Long(m, "models") + " models  " + Json.Str(m, "name") +
+            {
+                var level = Json.Str(m, "level") == "many" ? "check" : Json.Str(m, "level") == "waste" ? "wasteful" : "fine";
+                o.WriteLine("  " + level.PadRight(9) + Extra(Json.Long(m, "extra")).PadLeft(11) + " video memory  " +
+                            Json.Long(m, "models") + " models, " + Json.Long(m, "textures") + " textures  " + Json.Str(m, "name") +
                             (Json.Long(m, "lost") > 0 ? "  (" + Json.Long(m, "lost") + " overridden by a later mod, left out)" : ""));
+                var flags = Json.Obj(m, "flags");
+                if (flags != null && flags.Count > 0)
+                    o.WriteLine("           " + string.Join(", ", flags.OrderByDescending(kv => (long)kv.Value).Select(kv => kv.Key + " " + kv.Value)));
+            }
             var t = Json.Obj(r, "total");
-            o.WriteLine("total: " + Mb(Json.Long(t, "max")) + " at most, " + Extra(Json.Long(t, "extra")) + " than the game's copies they replace");
+            o.WriteLine("total: " + Mb(Json.Long(t, "max")) + " at most if everything were loaded, " + Extra(Json.Long(t, "extra")) + " than the game's copies they replace");
         }
 
         static string LoaderName(string kind, ModLua ml) =>

@@ -27,12 +27,12 @@ namespace Hd2Mod.Tests
         {
             public ulong Type, Id;
             public uint Res, Str;
-            public int W, H, Fmt, Arr;
+            public int W, H, Fmt, Arr, Mips;
             public bool Cube;
         }
 
-        static G Texture(ulong id, uint res, uint str, int w, int h, int fmt, int arr = 1, bool cube = false) =>
-            new G { Type = Tex, Id = id, Res = res, Str = str, W = w, H = h, Fmt = fmt, Arr = arr, Cube = cube };
+        static G Texture(ulong id, uint res, uint str, int w, int h, int fmt, int arr = 1, bool cube = false, int mips = 10) =>
+            new G { Type = Tex, Id = id, Res = res, Str = str, W = w, H = h, Fmt = fmt, Arr = arr, Cube = cube, Mips = mips };
 
         static G Model(ulong id, uint res) => new G { Type = Unit, Id = id, Res = res };
 
@@ -54,6 +54,7 @@ namespace Hd2Mod.Tests
                 Encoding.ASCII.GetBytes("DDS ").CopyTo(m, 192);
                 BitConverter.GetBytes((uint)r.H).CopyTo(m, 192 + 12);
                 BitConverter.GetBytes((uint)r.W).CopyTo(m, 192 + 16);
+                BitConverter.GetBytes((uint)r.Mips).CopyTo(m, 192 + 28);
                 Encoding.ASCII.GetBytes("DX10").CopyTo(m, 192 + 84);
                 BitConverter.GetBytes((uint)r.Fmt).CopyTo(m, 192 + 128);
                 BitConverter.GetBytes(r.Cube ? 4u : 0u).CopyTo(m, 192 + 136);
@@ -164,8 +165,8 @@ namespace Hd2Mod.Tests
             var all = PluginFiles.All();
             var vram = all.Single(p => p.File == "HD2QD.Vram.dll");
             Assert.Equal("window", PluginFiles.Kind(vram.Type));
-            Assert.Equal("显存估算", PluginFiles.Title(vram.Type, true));
-            Assert.Equal("VRAM estimate", PluginFiles.Title(vram.Type, false));
+            Assert.Equal("资源检查", PluginFiles.Title(vram.Type, true));
+            Assert.Equal("Asset check", PluginFiles.Title(vram.Type, false));
             Assert.NotNull(vram.Type.GetMethod("Open"));
             var lic = all.Single(p => p.File == "HD2QD.License.dll");
             Assert.Equal("panel", PluginFiles.Kind(lic.Type));
@@ -264,6 +265,38 @@ namespace Hd2Mod.Tests
             Assert.Equal(2500L, Json.Long(total, "extra"));
         }
 
+        static List<string> FlagsOf(Dictionary<string, object> mod, ulong id) =>
+            Json.List(mod, "items").Cast<Dictionary<string, object>>().Single(i => Json.Str(i, "id") == id.ToString("x16"))["flags"] is List<object> l
+                ? l.Cast<string>().OrderBy(x => x).ToList() : new List<string>();
+
+        /// <summary>The texture rules of asset_cost_scan.py (models' rules: checked against
+        /// Mod Asset Check's core.js on 8 real mods, 745 resources, 0 differences, 2026-11-02).</summary>
+        [Fact]
+        public void Badly_built_textures_are_found_and_well_built_ones_are_not()
+        {
+            GameData(Vanilla);
+            AddMod("Textures",
+                Texture(T1, 1400000, 0, 1024, 1024, 98),                 // the game streams its copy; this one stays: not streamed, bigger
+                Texture(N1, 4194304, 0, 1024, 1024, 28, mips: 1),        // new, RGBA8, one mip: uncompressed, no mipmaps
+                Texture(0x6666, 22369621, 0, 4096, 4096, 98),             // new, 4096 and not streamed: very large and resident
+                Texture(T2, 600, 0, 128, 128, 28, 1, true));              // as the game's: nothing
+            var m = ModOf(Estimate(), "Textures");
+            Assert.Equal(new[] { "tex_bigger", "tex_not_streamed" }, FlagsOf(m, T1));
+            Assert.Equal(new[] { "tex_no_mips", "tex_uncompressed" }, FlagsOf(m, N1));
+            Assert.Equal(new[] { "tex_big_resident" }, FlagsOf(m, 0x6666));
+            Assert.Empty(FlagsOf(m, T2));
+            Assert.Equal("waste", Json.Str(m, "level"));
+            Assert.Equal(1L, Json.Long(Json.Obj(m, "flags"), "tex_not_streamed"));
+        }
+
+        [Fact]
+        public void A_mod_with_nothing_wrong_is_fine()
+        {
+            GameData(Vanilla);
+            AddMod("Plain", Texture(T1, 1000, 3000, 512, 256, 98));
+            Assert.Equal("fine", Json.Str(ModOf(Estimate(), "Plain"), "level"));
+        }
+
         [Fact]
         public void The_command_lists_the_mods_most_added_first()
         {
@@ -272,7 +305,7 @@ namespace Hd2Mod.Tests
             AddMod("Big", Texture(T1, 30 * 1048576, 0, 4096, 4096, 28));
             var said = Cli("vram");
             Assert.True(said.IndexOf("Big", StringComparison.Ordinal) < said.IndexOf("Small", StringComparison.Ordinal), said);
-            Assert.Contains("not a measurement", said);
+            Assert.Contains("not measured in game", said);
             Assert.Contains("+30.0 MB", said);
         }
     }
