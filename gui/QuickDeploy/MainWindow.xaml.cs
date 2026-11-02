@@ -85,6 +85,25 @@ namespace QuickDeploy
         static Brush B(string key) => (Brush)Application.Current.Resources[key];
         FontFamily Mono => (FontFamily)FindResource("Mono");
 
+        /// <summary>The page tabs in the middle of the window while there is room, else as far
+        /// right as the gear lets them; and the window no narrower than the title, the tabs and
+        /// the gear side by side (the user, 2026-11-02: narrowed, the gear sat on the tabs). Run
+        /// whenever one of them changes size: the language and the file count change their widths.</summary>
+        void FitHeader()
+        {
+            var head = (FrameworkElement)PageBar.Parent;
+            if (head.ActualWidth <= 0) return;
+            const double gap = 24;
+            double left = HeadTitle.TranslatePoint(new Point(HeadTitle.ActualWidth, 0), head).X + gap;
+            double right = HeadRight.TranslatePoint(new Point(0, 0), head).X - gap;
+            double w = PageBar.ActualWidth;
+            double x = Math.Max(left, Math.Min((head.ActualWidth - w) / 2, right - w));
+            if (Math.Abs(PageBar.Margin.Left - x) > 0.5) PageBar.Margin = new Thickness(x, 0, 0, 0);
+            double need = left + w + (head.ActualWidth - right) + (ActualWidth - head.ActualWidth);
+            double min = Math.Max(1200, Math.Ceiling(need));
+            if (Math.Abs(MinWidth - min) > 0.5) MinWidth = min;
+        }
+
         public MainWindow()
         {
             Mark("window made");
@@ -121,6 +140,8 @@ namespace QuickDeploy
             Deactivated += (s, e) => CloseLoaderInfo();
             LocationChanged += (s, e) => CloseLoaderInfo();
             SizeChanged += (s, e) => CloseLoaderInfo();
+            foreach (var part in new FrameworkElement[] { HeadTitle, HeadRight, PageBar, (FrameworkElement)PageBar.Parent })
+                part.SizeChanged += (s, e) => FitHeader();
             edgeScroll.Tick += (s, e) =>
             {
                 if (dragRow == null) { edgeScroll.Stop(); return; }

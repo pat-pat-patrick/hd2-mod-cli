@@ -24,7 +24,7 @@
                another window (the user, 2026-10-24) -->
           <Image DockPanel.Dock="Left" Source="logo.png" Width="44" Height="44" Margin="16,0,10,0" VerticalAlignment="Center"
                  RenderOptions.BitmapScalingMode="HighQuality"/>
-          <StackPanel DockPanel.Dock="Left" VerticalAlignment="Center">
+          <StackPanel x:Name="HeadTitle" DockPanel.Dock="Left" VerticalAlignment="Center">
             <TextBlock x:Name="TitleText" FontSize="22" FontWeight="Bold"/>
             <TextBlock x:Name="SummaryText" Style="{StaticResource MonoText}"/>
           </StackPanel>
@@ -37,7 +37,7 @@
           <Button x:Name="MinBtn" DockPanel.Dock="Right" Style="{StaticResource Caption}" Click="Min_Click">
             <Path Data="M0,0.5 H10" Stroke="{StaticResource Ink}" StrokeThickness="1"/>
           </Button>
-          <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,28,0">
+          <StackPanel x:Name="HeadRight" DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,28,0">
             <!-- the settings page: the language, the explaining lines, where this comes from -->
             <Button x:Name="SettingsBtn" Width="38" Height="38" VerticalAlignment="Center" Margin="0,0,28,0" Cursor="Hand"
                     Style="{StaticResource Ghost}" Padding="0" Click="Settings_Click"
@@ -62,9 +62,10 @@
             </StackPanel>
           </StackPanel>
           </DockPanel>
-          <!-- the three pages, in the middle of the window (the user, 2026-10-24). They are
-               used often, so each is a wide target -->
-          <Border BorderBrush="{StaticResource Grid}" BorderThickness="1" HorizontalAlignment="Center"
+          <!-- the pages, in the middle of the window (the user, 2026-10-24). They are used
+               often, so each is a wide target. FitHeader moves them left of the gear when the
+               middle is too narrow -->
+          <Border x:Name="PageBar" BorderBrush="{StaticResource Grid}" BorderThickness="1" HorizontalAlignment="Left"
                   VerticalAlignment="Center" WindowChrome.IsHitTestVisibleInChrome="True">
             <StackPanel Orientation="Horizontal">
               <RadioButton x:Name="PageDeploy" Style="{StaticResource Segment}" MinWidth="104" GroupName="page" IsChecked="True" Click="Page_Click"/>
