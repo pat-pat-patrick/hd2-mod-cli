@@ -2819,10 +2819,10 @@ namespace QuickDeploy
             // the gear and the plug lit while their page is on show, as the page buttons are
             SettingsBtn.Background = page == "settings" ? B("Yellow") : Brushes.Transparent;
             SettingsBtn.BorderBrush = page == "settings" ? B("Yellow") : B("Grid");
-            GearPath.Fill = page == "settings" ? B("TapeInk") : B("Ink");
+            GearGlyph.Foreground = page == "settings" ? B("TapeInk") : B("Ink");
             PluginsBtn.Background = page == "plugins" ? B("Yellow") : Brushes.Transparent;
             PluginsBtn.BorderBrush = page == "plugins" ? B("Yellow") : B("Grid");
-            PlugPath.Fill = page == "plugins" ? B("TapeInk") : B("Ink");
+            PlugGlyph.Foreground = page == "plugins" ? B("TapeInk") : B("Ink");
 #if HAS_NEXUS
             if (page == "download") RenderDownloads();
 #endif
