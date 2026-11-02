@@ -61,6 +61,9 @@ namespace Hd2Mod
 
         public static bool Present => Plugin != null;
 
+        /// <summary>The plugin's version ("1.0.0"), or null without one.</summary>
+        public static string Version => Plugin?.Assembly.GetName().Version?.ToString(3);
+
         /// <summary>For tests: the plugin's class, to set its Clock.</summary>
         internal static Type PluginType => Plugin;
 

@@ -1177,6 +1177,11 @@ namespace QuickDeploy
             ["ok"] = ("OK", "确定"),
             ["cancel"] = ("Cancel", "取消"),
 
+            // the plugins page (LicenseView.cs)
+            ["plugins"] = ("Plugins", "插件"),
+            ["plugins_intro"] = ("Plugins are DLL files beside this program; each adds a feature of its own.",
+                                 "插件是放在本程序旁边的 DLL 文件，每个插件提供一项独立的功能。"),
+
             // member licenses (LicenseView.cs)
             ["lic_title"] = ("Member licenses", "会员授权"),
             ["lic_intro"] = ("Some mods are for their author's members. Sign in to the author's site once; this program renews the license before it ends.",
@@ -1191,6 +1196,8 @@ namespace QuickDeploy
             ["lic_no_plugin"] = ("The license plugin (HD2QD.License.dll) is missing from this program's folder.", "本程序所在文件夹中缺少授权插件（HD2QD.License.dll）。"),
             ["lic_bad_declaration"] = ("This mod's license declaration (hd2_license.json) cannot be read.", "无法读取此 MOD 的授权声明（hd2_license.json）。"),
             ["lic_mods"] = ("Mods: {0}", "MOD：{0}"),
+            ["lic_nothing"] = ("No mod in the library needs a license, and no author is signed in on this computer.",
+                               "库中目前没有需要授权的 MOD，此电脑上也没有登录过的作者。"),
             ["lic_no_mods"] = ("No mod in the library needs this license now", "库中目前没有需要此授权的 MOD"),
             ["lic_sign_in"] = ("Sign in", "登录"),
             ["lic_sign_in_again"] = ("Sign in again", "重新登录"),
@@ -1214,7 +1221,7 @@ namespace QuickDeploy
             ["lic_err_other"] = ("The sign-in failed: {0}", "登录失败：{0}"),
             ["row_license"] = ("Needs a license", "需要授权"),
             ["row_license_expired"] = ("License expired", "授权已过期"),
-            ["row_license_tip"] = ("For the author's members: sign in under Settings.", "仅供作者的会员使用：请在「设置」中登录。"),
+            ["row_license_tip"] = ("For the author's members: sign in on the Plugins page (the plug beside the gear).", "仅供作者的会员使用：请在「插件」页登录（齿轮旁的插头按钮）。"),
             ["expand"] = ("Open", "展开"),
             ["collapse"] = ("Close", "收起"),
         };

@@ -11,9 +11,9 @@ using Hd2Mod;
 
 namespace QuickDeploy
 {
-    // Mods for their author's members (hd2_license.json, core\Plugins.cs): a section on the
-    // settings page with each author, signing in through the browser, and renewal in the
-    // background.
+    // Mods for their author's members (hd2_license.json, core\Plugins.cs): the license
+    // plugin's card on the plugins page (the plug beside the gear) with each author, signing in
+    // through the browser, and renewal in the background.
     public partial class MainWindow
     {
         CancellationTokenSource licenseWait;
@@ -30,6 +30,31 @@ namespace QuickDeploy
             state == "licensed" ? Texts.F("lic_licensed", Until(expires))
             : state == "expired" ? Texts.F("lic_expired", Until(expires))
             : Texts.Get("lic_" + state);
+
+        /// <summary>The plugins page: a card for each plugin beside the program (the license
+        /// plugin for now), headed by its name and version.</summary>
+        void RenderPlugins()
+        {
+            PluginsBox.Children.Clear();
+            PluginsBox.Children.Add(new TextBlock { Text = Texts.Get("plugins"), FontSize = 28, FontWeight = FontWeights.Bold });
+            PluginsBox.Children.Add(Texts.Hints ? Small(Texts.Get("plugins_intro"), new Thickness(0, 4, 0, 20)) : new Border { Height = 16 });
+            if (!Licenses.Present) return;
+            var card = new StackPanel();
+            var head = new DockPanel();
+            var version = new TextBlock { Text = "HD2QD.License " + Licenses.Version, FontSize = 12, Foreground = B("Muted"), VerticalAlignment = VerticalAlignment.Center };
+            DockPanel.SetDock(version, Dock.Right);
+            head.Children.Add(version);
+            head.Children.Add(Heading(Texts.Get("lic_title")));
+            card.Children.Add(head);
+            card.Children.Add(LicenseSection() ?? Small(Texts.Get("lic_nothing"), new Thickness(0, 8, 0, 0)));
+            PluginsBox.Children.Add(Card(card));
+        }
+
+        void Plugins_Click(object sender, RoutedEventArgs e)
+        {
+            if (PluginsPage.Visibility == Visibility.Visible) { ShowPage(pageBack); return; }
+            ShowPage("plugins");
+        }
 
         /// <summary>Every author whose mods are in the library, and every author signed in here
         /// whose mods are not; null when there is none.</summary>
@@ -85,7 +110,7 @@ namespace QuickDeploy
                             try { Licenses.Forget(issuer); }
                             catch (Exception x) when (x is ModError || x is System.IO.IOException || x is UnauthorizedAccessException) { Dialog.Tell(this, Texts.F("failed", x.Message)); }
                             Refresh();
-                            RenderSettings();
+                            RenderPlugins();
                         };
                         buttons.Children.Add(signOut);
                     }
@@ -129,7 +154,7 @@ namespace QuickDeploy
 
             licenseSigningIn = issuer;
             licenseWait = new CancellationTokenSource();
-            RenderSettings();
+            RenderPlugins();
             Foot(Texts.Get("lic_waiting"), "Blue");
             Dictionary<string, object> r;
             try
@@ -156,7 +181,7 @@ namespace QuickDeploy
                 Dialog.Tell(this, LicenseError(error, Json.Str(r, "detail")));
             }
             Refresh();
-            RenderSettings();
+            RenderPlugins();
         }
 
         static string LicenseError(string error, string detail = null)

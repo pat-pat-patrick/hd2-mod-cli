@@ -130,7 +130,7 @@ namespace QuickDeploy
             // the loader panel's details close like a menu (LoaderInfo)
             PreviewKeyDown += (s, e) => { if (e.Key == Key.Escape && loaderPop != null && loaderPop.IsOpen) { CloseLoaderInfo(); e.Handled = true; } };
             // Esc leaves the settings page for the page it was opened from
-            PreviewKeyDown += (s, e) => { if (e.Key == Key.Escape && !e.Handled && SettingsPage.Visibility == Visibility.Visible) { ShowPage(pageBack); e.Handled = true; } };
+            PreviewKeyDown += (s, e) => { if (e.Key == Key.Escape && !e.Handled && (SettingsPage.Visibility == Visibility.Visible || PluginsPage.Visibility == Visibility.Visible)) { ShowPage(pageBack); e.Handled = true; } };
             PreviewTextInput += TypeToSearch;
             PreviewMouseDown += (s, e) =>
             {
@@ -172,6 +172,8 @@ namespace QuickDeploy
             PageDownload.Visibility = HasNexus ? Visibility.Visible : Visibility.Collapsed;
             SearchHint.Text = Texts.Get("search_hint");
             SettingsBtn.ToolTip = Texts.Get("settings");
+            PluginsBtn.ToolTip = Texts.Get("plugins");
+            PluginsBtn.Visibility = Licenses.Present ? Visibility.Visible : Visibility.Collapsed;
             FilterWords();
             ListHint.Visibility = Texts.Hints ? Visibility.Visible : Visibility.Collapsed;
         }
@@ -191,6 +193,7 @@ namespace QuickDeploy
 #endif
             if (StoragePage.Visibility == Visibility.Visible) RenderStorage();
             if (SettingsPage.Visibility == Visibility.Visible) RenderSettings();
+            if (PluginsPage.Visibility == Visibility.Visible) RenderPlugins();
         }
 
         // ---------------------------------------------------------------- start, state, commands
@@ -1009,6 +1012,14 @@ namespace QuickDeploy
                 return;
             }
             var settingsTest = Environment.GetEnvironmentVariable("HD2QD_CLICK_TEST");
+            if (settingsTest == "plugins")
+            {
+                // the plugins page, so a test outside can take its picture
+                var g = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+                g.Tick += (s, e) => { g.Stop(); ShowPage("plugins"); };
+                g.Start();
+                return;
+            }
             if (settingsTest == "settings" || settingsTest == "settings_end" || settingsTest == "settings_esc")
             {
                 // "settings": the settings page, so a test outside can take its picture;
@@ -2784,14 +2795,14 @@ namespace QuickDeploy
             }
         }
 
-        // the page the settings page was opened from: Esc and the gear go back to it
+        // the page the settings or plugins page was opened from: Esc, the gear and the plug go back to it
         string pageBack = "deploy";
 
         /// <summary>One of the pages: "deploy", "download", "storage", "tags", or "settings" (the
         /// gear; a page of its own since 2026-10-27, the window was taller than the main one).</summary>
         void ShowPage(string page)
         {
-            if (page == "settings" && SettingsPage.Visibility != Visibility.Visible)
+            if ((page == "settings" || page == "plugins") && SettingsPage.Visibility != Visibility.Visible && PluginsPage.Visibility != Visibility.Visible)
                 pageBack = StoragePage.IsVisible ? "storage" : TagsPage.IsVisible ? "tags" : DownloadPage.IsVisible ? "download" : LuaPage.IsVisible ? "lua" : "deploy";
             PageDeploy.IsChecked = page == "deploy";
             PageLua.IsChecked = page == "lua";
@@ -2804,10 +2815,14 @@ namespace QuickDeploy
             StoragePage.Visibility = page == "storage" ? Visibility.Visible : Visibility.Collapsed;
             TagsPage.Visibility = page == "tags" ? Visibility.Visible : Visibility.Collapsed;
             SettingsPage.Visibility = page == "settings" ? Visibility.Visible : Visibility.Collapsed;
-            // the gear lit while its page is on show, as the page buttons are
+            PluginsPage.Visibility = page == "plugins" ? Visibility.Visible : Visibility.Collapsed;
+            // the gear and the plug lit while their page is on show, as the page buttons are
             SettingsBtn.Background = page == "settings" ? B("Yellow") : Brushes.Transparent;
             SettingsBtn.BorderBrush = page == "settings" ? B("Yellow") : B("Grid");
             GearPath.Fill = page == "settings" ? B("TapeInk") : B("Ink");
+            PluginsBtn.Background = page == "plugins" ? B("Yellow") : Brushes.Transparent;
+            PluginsBtn.BorderBrush = page == "plugins" ? B("Yellow") : B("Grid");
+            PlugPath.Fill = page == "plugins" ? B("TapeInk") : B("Ink");
 #if HAS_NEXUS
             if (page == "download") RenderDownloads();
 #endif
@@ -2815,6 +2830,7 @@ namespace QuickDeploy
             if (page == "lua") RenderLua();
             if (page == "tags") RenderTags();
             if (page == "settings") { RenderSettings(); SettingsPage.ScrollToTop(); }
+            if (page == "plugins") { RenderPlugins(); PluginsPage.ScrollToTop(); }
         }
 
         void Page_Click(object sender, RoutedEventArgs e) =>
@@ -5999,6 +6015,7 @@ namespace QuickDeploy
             : TagsPage.Visibility == Visibility.Visible ? TagsPage
             : DownloadPage.Visibility == Visibility.Visible ? DownloadPage
             : SettingsPage.Visibility == Visibility.Visible ? SettingsPage
+            : PluginsPage.Visibility == Visibility.Visible ? PluginsPage
             : ListScroll;
 
         /// <summary>Whether the pointer is inside the menu itself.</summary>
@@ -6827,15 +6844,6 @@ namespace QuickDeploy
             };
             body.Children.Add(kpLine);
             body.Children.Add(Small(Texts.Get("set_keep_note"), new Thickness(0, 8, 0, 0)));
-
-            // mods for their author's members: signing in to each author (LicenseView.cs). Here,
-            // not on the download page, which only builds with Nexus Mods have
-            var licenses = LicenseSection();
-            if (licenses != null)
-            {
-                body.Children.Add(Group("lic_title"));
-                body.Children.Add(licenses);
-            }
 
             // About and diagnostics
             body = about;

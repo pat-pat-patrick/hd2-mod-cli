@@ -38,6 +38,15 @@
             <Path Data="M0,0.5 H10" Stroke="{StaticResource Ink}" StrokeThickness="1"/>
           </Button>
           <StackPanel x:Name="HeadRight" DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,28,0">
+            <!-- the plugins page (the user, 2026-11-02: the license plugin out of the
+                 settings): only when a plugin sits beside the program. A plug: two prongs,
+                 the body, the cord, drawn in the gear's 24-unit box -->
+            <Button x:Name="PluginsBtn" Width="38" Height="38" VerticalAlignment="Center" Margin="0,0,12,0" Cursor="Hand"
+                    Style="{StaticResource Ghost}" Padding="0" Click="Plugins_Click" Visibility="Collapsed"
+                    WindowChrome.IsHitTestVisibleInChrome="True">
+              <Path x:Name="PlugPath" Data="M8,2 H10 V7 H8 Z M14,2 H16 V7 H14 Z M5,7 H19 V11 A7,7 0 0 1 12,18 A7,7 0 0 1 5,11 Z M11,17 H13 V22 H11 Z"
+                    Fill="{StaticResource Ink}" Width="20" Height="20" Stretch="Uniform"/>
+            </Button>
             <!-- the settings page: the language, the explaining lines, where this comes from -->
             <Button x:Name="SettingsBtn" Width="38" Height="38" VerticalAlignment="Center" Margin="0,0,28,0" Cursor="Hand"
                     Style="{StaticResource Ghost}" Padding="0" Click="Settings_Click"
@@ -221,6 +230,10 @@
            scroll bar always there: the column stays put when the other tab is taller -->
       <ScrollViewer x:Name="SettingsPage" Visibility="Collapsed" VerticalScrollBarVisibility="Visible" Focusable="False">
         <StackPanel x:Name="SettingsBox" Margin="32,24,32,32" MaxWidth="720"/>
+      </ScrollViewer>
+      <!-- the plugins page, opened by the plug beside the gear: the same one column -->
+      <ScrollViewer x:Name="PluginsPage" Visibility="Collapsed" VerticalScrollBarVisibility="Visible" Focusable="False">
+        <StackPanel x:Name="PluginsBox" Margin="32,24,32,32" MaxWidth="720"/>
       </ScrollViewer>
       </Grid>
     </DockPanel>
