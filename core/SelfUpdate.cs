@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using System.Text.RegularExpressions;
 
 namespace Hd2Mod
@@ -15,6 +16,9 @@ namespace Hd2Mod
         public bool Newer;
         /// <summary>When it was checked (Unix seconds); 0: never.</summary>
         public long CheckedAt;
+        /// <summary>What each release newer than the one running says, newest first: its tag,
+        /// page and text (GitHub's release body, in both languages: SelfUpdate.NotesIn).</summary>
+        public List<(string Tag, string Page, string Body)> Notes = new List<(string, string, string)>();
     }
 
     /// <summary>This program's own updates, from its GitHub releases (the user, 2026-10-25). The
@@ -53,19 +57,54 @@ namespace Hd2Mod
         public static SelfUpdateInfo Pick(List<Dictionary<string, object>> releases, string running, bool official)
         {
             var now = Numbers(running);
-            var best = releases
+            var counted = releases
                 .Where(r => !Json.Bool(r, "draft", false) && (!official || !Json.Bool(r, "prerelease", false)))
                 .Select(r => (R: r, N: Numbers(Json.Str(r, "tag_name"))))
                 .Where(x => x.N != null)
                 .OrderByDescending(x => x.N[0]).ThenByDescending(x => x.N[1]).ThenByDescending(x => x.N[2])
-                .FirstOrDefault();
-            if (best.R == null) return new SelfUpdateInfo();
+                .ToList();
+            if (counted.Count == 0) return new SelfUpdateInfo();
+            var best = counted[0];
             return new SelfUpdateInfo
             {
                 Latest = Json.Str(best.R, "tag_name"), Page = Json.Str(best.R, "html_url"),
                 Prerelease = Json.Bool(best.R, "prerelease", false),
                 Newer = now != null && Compare(best.N, now) > 0,
+                // every version the player would get by updating, so the window can say all of it
+                Notes = now == null ? new List<(string, string, string)>() : counted.Where(x => Compare(x.N, now) > 0)
+                    .Select(x => (Json.Str(x.R, "tag_name"), Json.Str(x.R, "html_url"), Json.Str(x.R, "body") ?? "")).ToList(),
             };
+        }
+
+        /// <summary>A release text in one language. A text in both carries a line &lt;!-- zh --&gt;
+        /// before its Chinese and &lt;!-- en --&gt; before its English; what comes before the first
+        /// of them is for both. A text without them is the same in both languages (Same: true).</summary>
+        public static (string Text, bool Same) NotesIn(string body, bool zh)
+        {
+            body = (body ?? "").Replace("\r\n", "\n");
+            var parts = Regex.Split(body, @"^[ \t]*<!--\s*(zh|en)\s*-->[ \t]*$", RegexOptions.Multiline);
+            if (parts.Length == 1) return (body.Trim(), true);
+            var sb = new StringBuilder(parts[0]);
+            bool any = false;
+            // each part starts with the marker line's own end
+            string Part(int i) => parts[i + 1].StartsWith("\n") ? parts[i + 1].Substring(1) : parts[i + 1];
+            for (int i = 1; i + 1 < parts.Length; i += 2)
+                if ((parts[i] == "zh") == zh) { sb.Append(Part(i)); any = true; }
+            if (!any)
+                for (int i = 1; i + 1 < parts.Length; i += 2) sb.Append(Part(i));
+            return (sb.ToString().Trim(), !any);
+        }
+
+        /// <summary>Whether the window should show the notes of the newest version by itself: it
+        /// is newer than the one running, and its notes have not been shown yet (once a version,
+        /// the user, 2026-11-02).</summary>
+        public static bool NotesDue(SelfUpdateInfo u) => u.Newer && u.Latest != null && Json.Str(Store.Load(File), "notes_shown") != u.Latest;
+
+        public static void NotesShown(string tag)
+        {
+            var d = Store.Load(File);
+            d["notes_shown"] = tag;
+            Store.Save(File, d);
         }
 
         /// <summary>GitHub asked now; the result kept.</summary>
@@ -79,6 +118,7 @@ namespace Hd2Mod
             d["latest"] = found.Latest;
             d["page"] = found.Page;
             d["prerelease"] = found.Prerelease;
+            d["notes"] = found.Notes.Select(n => (object)new Dictionary<string, object> { ["tag"] = n.Tag, ["page"] = n.Page, ["body"] = n.Body }).ToList();
             Store.Save(File, d);
             return found;
         }
@@ -99,6 +139,11 @@ namespace Hd2Mod
                 Latest = latest, Page = latest == null ? null : Json.Str(d, "page"), Prerelease = latest != null && pre,
                 CheckedAt = Official && pre ? 0 : Json.Long(d, "checked_at"),
                 Newer = n != null && now != null && Compare(n, now) > 0,
+                // the ones still newer than the version running now
+                Notes = latest == null || now == null ? new List<(string, string, string)>()
+                    : (Json.List(d, "notes") ?? new List<object>()).OfType<Dictionary<string, object>>()
+                        .Where(x => Numbers(Json.Str(x, "tag")) is int[] t && Compare(t, now) > 0)
+                        .Select(x => (Json.Str(x, "tag"), Json.Str(x, "page"), Json.Str(x, "body") ?? "")).ToList(),
             };
         }
 

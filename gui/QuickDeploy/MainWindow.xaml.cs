@@ -247,10 +247,12 @@ namespace QuickDeploy
         async void SelfUpdateAtStart()
         {
             ShowUpdateDot();
+            NotesAtStart();
             if (!SelfUpdate.Due()) return;
             try { await Task.Run(() => SelfUpdate.Check()); }
             catch (Exception e) when (e is ModError || e is IOException || e is UnauthorizedAccessException || e is TaskCanceledException) { return; }
             ShowUpdateDot();
+            NotesAtStart();
         }
 
         // the switch of each row on screen, for the click test
@@ -6884,6 +6886,9 @@ namespace QuickDeploy
                     var page = u.Page;
                     open.Click += (s, e2) => Process.Start(new ProcessStartInfo(page) { UseShellExecute = true });
                     btns.Children.Add(open);
+                    var notes = new Button { Content = Texts.Get("self_notes"), Style = (Style)FindResource("Ghost"), MinHeight = 36, Margin = new Thickness(0, 0, 8, 0) };
+                    notes.Click += (s, e2) => ShowUpdateNotes(SelfUpdate.Last());
+                    btns.Children.Add(notes);
                 }
                 var check = new Button { Content = Texts.Get("self_check"), Style = (Style)FindResource("Ghost"), MinHeight = 36, IsEnabled = !checking };
                 check.Click += async (s, e2) =>
