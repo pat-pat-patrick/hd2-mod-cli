@@ -101,6 +101,11 @@ namespace Hd2Mod
             Cmd("license-logout", new Spec { Help = "remove an issuer's license and sign-in from this computer", Positionals = new[] { "issuer" }, Run = LicenseLogoutCmd }),
             Cmd("vram", new Spec { Help = "check each enabled mod's models and textures against the game's copies they replace: detail levels, triangles, shadows, culling boxes, lights, mipmaps, compression, video memory (the asset check plugin; from the files, not measured)",
                                    Run = VramCmd }),
+            Cmd("plugins", new Spec { Help = "the plugins added (HD2QD.*.dll in the settings folder's plugins folder): each one's file, version and title, or why it cannot be used",
+                                      Run = PluginsCmd }),
+            Cmd("plugin-add", new Spec { Help = "add a plugin (HD2QD.<name>.dll) to the settings folder, over one of the same name; a plugin runs as this program does, so add only plugins from a source you trust",
+                                         Positionals = new[] { "path" }, Run = PluginAddCmd }),
+            Cmd("plugin-remove", new Spec { Help = "remove an added plugin (HD2QD.Vram.dll, or Vram)", Positionals = new[] { "plugin" }, Run = PluginRemoveCmd }),
 #if HAS_NEXUS
             Cmd("nexus", new Spec { Help = "download a Nexus Mods link (nxm://...) and put it in the library (a mod from it already there gets the new version)",
                                     Positionals = new[] { "link" }, Run = NexusCmd }),
@@ -1118,6 +1123,27 @@ namespace Hd2Mod
             o.WriteLine("removed " + Json.Str(decl, "issuer") + "'s license and sign-in from this computer");
         }
 
+        static void PluginsCmd(Args a, TextWriter o)
+        {
+            var all = PluginFiles.All();
+            if (all.Count == 0) { o.WriteLine("no plugin has been added (" + PluginFiles.Dir + ")"); return; }
+            foreach (var (file, type, why) in all)
+                o.WriteLine("  " + file + (type != null ? " " + PluginFiles.Version(type) + "  " + PluginFiles.Title(type, false)
+                                           : "  cannot be used: " + (why == "api" ? "for another version of this program" : "damaged")));
+            o.WriteLine("folder: " + PluginFiles.Dir);
+        }
+
+        static void PluginAddCmd(Args a, TextWriter o)
+        {
+            var path = Paths.Abs(a.Pos["path"]);
+            if (!File.Exists(path)) throw new ModError("no such file: " + path);
+            var (file, version, replaced) = PluginFiles.Install(path);
+            o.WriteLine("added " + file + " " + version + (replaced != null ? " (replaces " + replaced + ")" : "") + " to " + PluginFiles.Dir);
+        }
+
+        static void PluginRemoveCmd(Args a, TextWriter o) =>
+            o.WriteLine("removed " + PluginFiles.Remove(a.Pos["plugin"]) + " from " + PluginFiles.Dir);
+
         static void VramCmd(Args a, TextWriter o)
         {
             var r = Vram.Estimate(Library.Load(), Paths.Join(Store.GameDir(), "data"));
@@ -1127,18 +1153,18 @@ namespace Hd2Mod
             var mods = Json.List(r, "mods").Cast<Dictionary<string, object>>()
                 .Where(m => Json.Long(m, "textures") + Json.Long(m, "models") > 0)
                 .OrderBy(m => Rank(Json.Str(m, "level"))).ThenByDescending(m => Json.Long(m, "extra")).ToList();
-            if (mods.Count == 0) { o.WriteLine("no enabled mod brings textures or models"); return; }
+            if (mods.Count == 0) { o.WriteLine("no enabled mod contains textures or models"); return; }
             o.WriteLine("each enabled mod's models and textures next to the game's copies they replace, from the files (not measured in game)");
-            o.WriteLine("check = a heavier model the game may draw many of (an enemy, a map object); wasteful = some finding below");
+            o.WriteLine("review = more triangles on a model the game may draw many of (an enemy, a map object); inefficient = one of the findings below");
             foreach (var m in mods)
             {
-                var level = Json.Str(m, "level") == "many" ? "check" : Json.Str(m, "level") == "waste" ? "wasteful" : "fine";
-                o.WriteLine("  " + level.PadRight(9) + Extra(Json.Long(m, "extra")).PadLeft(11) + " video memory  " +
+                var level = Json.Str(m, "level") == "many" ? "review" : Json.Str(m, "level") == "waste" ? "inefficient" : "normal";
+                o.WriteLine("  " + level.PadRight(11) + Extra(Json.Long(m, "extra")).PadLeft(11) + " video memory  " +
                             Json.Long(m, "models") + " models, " + Json.Long(m, "textures") + " textures  " + Json.Str(m, "name") +
-                            (Json.Long(m, "lost") > 0 ? "  (" + Json.Long(m, "lost") + " overridden by a later mod, left out)" : ""));
+                            (Json.Long(m, "lost") > 0 ? "  (" + Json.Long(m, "lost") + " overridden by a mod loaded later, not counted)" : ""));
                 var flags = Json.Obj(m, "flags");
                 if (flags != null && flags.Count > 0)
-                    o.WriteLine("           " + string.Join(", ", flags.OrderByDescending(kv => (long)kv.Value).Select(kv => kv.Key + " " + kv.Value)));
+                    o.WriteLine("             " + string.Join(", ", flags.OrderByDescending(kv => (long)kv.Value).Select(kv => kv.Key + " " + kv.Value)));
             }
             var t = Json.Obj(r, "total");
             o.WriteLine("total: " + Mb(Json.Long(t, "max")) + " at most if everything were loaded, " + Extra(Json.Long(t, "extra")) + " than the game's copies they replace");

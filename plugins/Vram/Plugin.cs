@@ -27,8 +27,8 @@ namespace Hd2Mod.Vram
         public static string Title(bool zh) => zh ? "资源检查" : "Asset check";
 
         public static string Summary(bool zh) => zh
-            ? "检查每个已启用 MOD 的模型和贴图是否优化得当（细节层级、面数、阴影、剔除盒、灯光、mipmap、压缩），并估算它们占用多少显存，与替换的原版资源对比。"
-            : "Checks whether each enabled mod's models and textures are built as well as the game's (detail levels, triangles, shadows, culling boxes, lights, mipmaps, compression), and estimates the video memory they take next to the game's copies they replace.";
+            ? "检查各已启用 MOD 的模型与贴图的优化情况（细节层级、三角面数、阴影、剔除盒、灯光、mipmap、压缩），并估算其显存占用，与所替换的原版资源对比。"
+            : "Checks how well each enabled mod's models and textures are optimized (detail levels, triangle counts, shadows, culling boxes, lights, mipmaps, compression) and estimates their video memory use against the game resources they replace.";
 
         public const ulong Unit = 0xE0A48D0BE9A7453F, Texture = 0xCD4238C6A0C69E32, Physics = 0x5F7203C8F280DAB8;
         const string CacheName = "vram_game_table.bin";

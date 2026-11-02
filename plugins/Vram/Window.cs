@@ -74,7 +74,7 @@ namespace Hd2Mod.Vram
             {
                 if (reading) return;
                 reading = true;
-                Head(T("Reading the mods and the game's own textures and models…", "正在读取 MOD 和游戏原版的贴图、模型…"));
+                Head(T("Reading the textures and models of the mods and the game…", "正在读取 MOD 及原版游戏的贴图与模型…"));
                 var bar = new ProgressBar { Height = 6, Maximum = 1, Margin = new Thickness(0, 12, 0, 0), Foreground = B("Yellow"), Background = B("Grid"), BorderThickness = new Thickness(0) };
                 head.Children.Add(bar);
                 list.Children.Clear();
@@ -87,7 +87,7 @@ namespace Hd2Mod.Vram
                 }
                 catch (Exception e)
                 {
-                    Head(T("The check failed: ", "检查失败：") + e.Message);
+                    Head(T("Check failed: ", "检查失败：") + e.Message);
                     reading = false;
                     return;
                 }
@@ -101,13 +101,13 @@ namespace Hd2Mod.Vram
                 // the caption carries the title; the Read-again button (right), the intro and the
                 // status line open the body
                 var top = new DockPanel();
-                var again = new Button { Content = T("Read again", "重新读取"), Style = S("Ghost"), MinHeight = 36, Padding = new Thickness(16, 0, 16, 0), VerticalAlignment = VerticalAlignment.Top };
+                var again = new Button { Content = T("Check again", "重新检查"), Style = S("Ghost"), MinHeight = 36, Padding = new Thickness(16, 0, 16, 0), VerticalAlignment = VerticalAlignment.Top };
                 again.Click += (s, e) => Read();
                 DockPanel.SetDock(again, Dock.Right);
                 top.Children.Add(again);
                 top.Children.Add(Small(T(
-                    "Each enabled mod's models and textures next to the game's copies they replace: detail levels, triangles, shadows, culling boxes, lights, mipmaps, compression, and the video memory they take. From the files, not measured in game.",
-                    "对比每个已启用 MOD 的模型和贴图与它替换的原版资源：细节层级、面数、阴影、剔除盒、灯光、mipmap、压缩，以及占用的显存。按文件判断，不是游戏内实测。"), new Thickness(0, 4, 16, 0)));
+                    "Compares each enabled mod's models and textures with the game resources they replace: detail levels, triangle counts, shadows, culling boxes, lights, mipmaps, compression and video memory use. Based on file analysis, not measured in game.",
+                    "将各已启用 MOD 的模型与贴图与其所替换的原版资源对比：细节层级、三角面数、阴影、剔除盒、灯光、mipmap、压缩及显存占用。结果基于文件分析，并非游戏内实测。"), new Thickness(0, 4, 16, 0)));
                 head.Children.Add(top);
                 head.Children.Add(new TextBlock { Text = line, FontSize = 15, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 14, 0, 0), TextWrapping = TextWrapping.Wrap });
             }
@@ -126,7 +126,7 @@ namespace Hd2Mod.Vram
             static string N(long n) => n.ToString("N0", System.Globalization.CultureInfo.InvariantCulture);
 
             string Extra(long bytes) => bytes == 0 ? T("same", "相同")
-                : bytes > 0 ? T("+" + Mb(bytes), "多 " + Mb(bytes)) : T("−" + Mb(-bytes), "少 " + Mb(-bytes));
+                : bytes > 0 ? "+" + Mb(bytes) : "−" + Mb(-bytes);
 
             static long L(Dictionary<string, object> d, string k) => d != null && d.TryGetValue(k, out var v) && v is long n ? n : 0;
             static string Str(Dictionary<string, object> d, string k) => d != null && d.TryGetValue(k, out var v) ? v as string : null;
@@ -145,9 +145,9 @@ namespace Hd2Mod.Vram
                     .OrderBy(m => Rank(Str(m, "level"))).ThenByDescending(m => L(m, "extra")).ThenBy(m => Str(m, "name")).ToList();
                 int check = shown.Count(m => Str(m, "level") == "many"), waste = shown.Count(m => Str(m, "level") == "waste");
                 Head(shown.Count == 0
-                    ? T("No enabled mod brings textures or models.", "已启用的 MOD 都没有贴图或模型。")
-                    : T(shown.Count + " mods with models or textures: " + check + " to check, " + waste + " wasteful, " + (shown.Count - check - waste) + " fine.",
-                        shown.Count + " 个 MOD 带有模型或贴图：" + check + " 个需要检查，" + waste + " 个有浪费，" + (shown.Count - check - waste) + " 个正常。"));
+                    ? T("No enabled mod contains textures or models.", "已启用的 MOD 均不包含贴图或模型。")
+                    : T(shown.Count + " mods contain models or textures: " + check + " to review, " + waste + " inefficient, " + (shown.Count - check - waste) + " normal.",
+                        shown.Count + " 个 MOD 包含模型或贴图：" + check + " 个需检查，" + waste + " 个可优化，" + (shown.Count - check - waste) + " 个正常。"));
                 list.Children.Clear();
                 if (shown.Count == 0) return;
                 // pictures from outside: the first mod's details open
@@ -159,14 +159,14 @@ namespace Hd2Mod.Vram
                     if (opened.Contains(Str(m, "name"))) list.Children.Add(Details(m));
                 }
                 int none = rows.Count - shown.Count;
-                if (none > 0) list.Children.Add(Small(T(none + " other enabled mods bring no model or texture.", "另有 " + none + " 个已启用的 MOD 没有模型或贴图。"), new Thickness(0, 12, 0, 0)));
+                if (none > 0) list.Children.Add(Small(T(none + " other enabled mods contain no models or textures.", "另有 " + none + " 个已启用的 MOD 不包含模型或贴图。"), new Thickness(0, 12, 0, 0)));
             }
 
             static readonly GridLength[] Columns =
                 { new GridLength(1.1, GridUnitType.Star), new GridLength(110), new GridLength(1, GridUnitType.Star), new GridLength(130), new GridLength(120) };
 
             (string Text, string Colour) Badge(string level) =>
-                level == "many" ? (T("Check this", "需要检查"), "Red") : level == "waste" ? (T("Wasteful", "有浪费"), "Yellow") : (T("Fine", "正常"), "Blue");
+                level == "many" ? (T("Needs review", "需检查"), "Red") : level == "waste" ? (T("Inefficient", "可优化"), "Yellow") : (T("Normal", "正常"), "Blue");
 
             FrameworkElement Row(Dictionary<string, object> m, bool header)
             {
@@ -181,14 +181,14 @@ namespace Hd2Mod.Vram
                 };
                 if (header)
                 {
-                    Cell(0, Text("MOD", 0)); Cell(1, Text(T("State", "状态"), 1)); Cell(2, Text(T("Main finding", "主要问题"), 2));
-                    Cell(3, Text(T("Video memory vs game", "显存比原版"), 3, true)); Cell(4, Text(T("Models · textures", "模型 · 贴图"), 4, true));
+                    Cell(0, Text("MOD", 0)); Cell(1, Text(T("Status", "状态"), 1)); Cell(2, Text(T("Main finding", "主要问题"), 2));
+                    Cell(3, Text(T("VRAM vs. game", "显存（较原版）"), 3, true)); Cell(4, Text(T("Models · textures", "模型 · 贴图"), 4, true));
                 }
                 else
                 {
                     var name = Text(Str(m, "name"), 0);
-                    if (L(m, "lost") > 0) name.ToolTip = T(L(m, "lost") + " of its resources are overridden by a mod that loads later and are left out.",
-                                                         "其中 " + L(m, "lost") + " 个资源被后加载的 MOD 覆盖，不计入。");
+                    if (L(m, "lost") > 0) name.ToolTip = T(L(m, "lost") + " of its resources are overridden by a mod loaded later and are not counted.",
+                                                         "其中 " + L(m, "lost") + " 个资源被后加载的 MOD 覆盖，未计入。");
                     Cell(0, name);
                     var (bt, bc) = Badge(Str(m, "level"));
                     Cell(1, new Border
@@ -199,8 +199,8 @@ namespace Hd2Mod.Vram
                     var f = Findings(m);
                     Cell(2, Text(f.Count > 0 ? f[0].Title : T("No problems found", "未发现问题"), 2));
                     var ex = Text(Extra(L(m, "extra")), 3, true);
-                    ex.ToolTip = T(Mb(L(m, "max")) + " at most; the game's copies it replaces: " + Mb(L(m, "game_max")),
-                                   "最多 " + Mb(L(m, "max")) + "；它替换的原版资源：" + Mb(L(m, "game_max")));
+                    ex.ToolTip = T("Up to " + Mb(L(m, "max")) + "; game resources replaced: " + Mb(L(m, "game_max")),
+                                   "最大占用 " + Mb(L(m, "max")) + "；所替换的原版资源：" + Mb(L(m, "game_max")));
                     Cell(3, ex);
                     Cell(4, Text(L(m, "models") + " · " + L(m, "textures"), 4, true));
                 }
@@ -241,15 +241,15 @@ namespace Hd2Mod.Vram
                 {
                     List<long> g = Tris(it, "game", "mod"), gg = Tris(it, "game", "game"), s = Tris(it, "shadow", "mod"), sg = Tris(it, "shadow", "game");
                     bool enemy = Str(it, "many") == "enemy";
-                    red.Add(("red", T(enemy ? "Heavier model on an enemy" : "Heavier model on a map object", enemy ? "敌人的模型更重了" : "地图物件的模型更重了"),
-                        Name(it) + T(": " + N(g[0]) + " triangles up close" + (gg.Count > 0 ? " (game: " + N(gg[0]) + ")" : "") +
-                                     (g.Count > 1 ? ", " + N(g.Last()) + " far away" + (gg.Count > 0 ? " (game: " + N(gg.Last()) + ")" : "") : "") +
+                    red.Add(("red", T(enemy ? "More triangles on an enemy model" : "More triangles on a map object model", enemy ? "敌人模型三角面数增加" : "地图物件模型三角面数增加"),
+                        Name(it) + T(": " + N(g[0]) + " triangles at close range" + (gg.Count > 0 ? " (game: " + N(gg[0]) + ")" : "") +
+                                     (g.Count > 1 ? ", " + N(g.Last()) + " at long range" + (gg.Count > 0 ? " (game: " + N(gg.Last()) + ")" : "") : "") +
                                      (s.Count > 0 ? ", shadow " + N(s[0]) + (sg.Count > 0 ? " (game: " + N(sg[0]) + ")" : "") : "") +
-                                     ". Every copy on screen pays this, so big fights with it are where frames drop.",
-                                     "：近处 " + N(g[0]) + " 个三角面" + (gg.Count > 0 ? "（原版 " + N(gg[0]) + "）" : "") +
-                                     (g.Count > 1 ? "，远处 " + N(g.Last()) + (gg.Count > 0 ? "（原版 " + N(gg.Last()) + "）" : "") : "") +
+                                     ". Each instance on screen adds this cost; frame drops are most likely in large battles.",
+                                     "：近距离 " + N(g[0]) + " 个三角面" + (gg.Count > 0 ? "（原版 " + N(gg[0]) + "）" : "") +
+                                     (g.Count > 1 ? "，远距离 " + N(g.Last()) + (gg.Count > 0 ? "（原版 " + N(gg.Last()) + "）" : "") : "") +
                                      (s.Count > 0 ? "，阴影 " + N(s[0]) + (sg.Count > 0 ? "（原版 " + N(sg[0]) + "）" : "") : "") +
-                                     "。画面上每多一个就多一份开销，大规模战斗时最容易掉帧。")));
+                                     "。画面中每个实例均产生此开销，大规模战斗时最易造成掉帧。")));
                 }
                 void Group(string flag, string level, string title, string cn, Func<List<Dictionary<string, object>>, string> text)
                 {
@@ -259,57 +259,57 @@ namespace Hd2Mod.Vram
                     (level == "red" ? red : level == "amber" ? amber : minor).Add(f);
                 }
                 Dictionary<string, object> Worst(List<Dictionary<string, object>> its, Func<Dictionary<string, object>, double> f) => its.OrderByDescending(f).First();
-                Group("lod_flat", "amber", "Full detail at every distance", "远处也是全细节", its =>
+                Group("lod_flat", "amber", "Full detail at every distance", "远距离仍为完整细节", its =>
                 {
                     var w = Worst(its, it => Tris(it, "game", "mod").DefaultIfEmpty(0).Last());
                     List<long> g = Tris(w, "game", "mod"), gg = Tris(w, "game", "game");
-                    return T("Worst: " + Name(w) + " still draws " + N(g.Last()) + " triangles far away" + (gg.Count > 0 ? " where the game draws " + N(gg.Last()) : "") + ".",
-                             "最严重：" + Name(w) + " 在远处仍然画 " + N(g.Last()) + " 个三角面" + (gg.Count > 0 ? "（原版 " + N(gg.Last()) + "）" : "") + "。");
+                    return T("Worst case: " + Name(w) + " still draws " + N(g.Last()) + " triangles at long range" + (gg.Count > 0 ? " (game: " + N(gg.Last()) + ")" : "") + ".",
+                             "最严重：" + Name(w) + " 在远距离仍绘制 " + N(g.Last()) + " 个三角面" + (gg.Count > 0 ? "（原版 " + N(gg.Last()) + "）" : "") + "。");
                 });
-                Group("shadow_heavy", "amber", "Shadows drawn from the full model", "阴影直接用完整模型", its =>
+                Group("shadow_heavy", "amber", "Shadows use the full model", "阴影使用完整模型", its =>
                 {
                     var w = Worst(its, it => Tris(it, "shadow", "mod").DefaultIfEmpty(0).First());
                     List<long> s = Tris(w, "shadow", "mod"), sg = Tris(w, "shadow", "game");
-                    return T("Worst: " + Name(w) + ", " + N(s[0]) + " triangles per shadow" + (sg.Count > 0 ? " (game: " + N(sg[0]) + ")" : "") + ". Drawn again for every light that casts shadows.",
-                             "最严重：" + Name(w) + "，每个阴影 " + N(s[0]) + " 个三角面" + (sg.Count > 0 ? "（原版 " + N(sg[0]) + "）" : "") + "。每个投射阴影的光源都要再画一遍。");
+                    return T("Worst case: " + Name(w) + ", " + N(s[0]) + " triangles per shadow" + (sg.Count > 0 ? " (game: " + N(sg[0]) + ")" : "") + ". Redrawn for every shadow-casting light.",
+                             "最严重：" + Name(w) + "，每个阴影 " + N(s[0]) + " 个三角面" + (sg.Count > 0 ? "（原版 " + N(sg[0]) + "）" : "") + "。每个投射阴影的光源均需重新绘制一次。");
                 });
-                Group("tris_heavy", "amber", "Much more detailed than the game's model", "比原版模型精细得多", its =>
+                Group("tris_heavy", "amber", "Far more triangles than the game's model", "三角面数远超原版模型", its =>
                 {
                     var w = Worst(its, it => Tris(it, "game", "mod").DefaultIfEmpty(0).First());
                     List<long> g = Tris(w, "game", "mod"), gg = Tris(w, "game", "game");
-                    return T("Worst: " + Name(w) + ", " + N(g[0]) + " triangles up close (game: " + N(gg.DefaultIfEmpty(0).First()) + ").",
-                             "最严重：" + Name(w) + "，近处 " + N(g[0]) + " 个三角面（原版 " + N(gg.DefaultIfEmpty(0).First()) + "）。");
+                    return T("Worst case: " + Name(w) + ", " + N(g[0]) + " triangles at close range (game: " + N(gg.DefaultIfEmpty(0).First()) + ").",
+                             "最严重：" + Name(w) + "，近距离 " + N(g[0]) + " 个三角面（原版 " + N(gg.DefaultIfEmpty(0).First()) + "）。");
                 });
-                Group("lod_missing", "amber", "Fewer detail levels than the game's model", "细节层级比原版少", its =>
-                    T("Some distance levels were dropped, so the model switches to simpler versions less often.", "少了部分远距离层级，模型切换到简化版本的机会变少。"));
-                Group("aabb_inflated", "amber", "Culling box bigger than the model", "剔除盒比模型大", its =>
+                Group("lod_missing", "amber", "Fewer detail levels than the game's model", "细节层级少于原版模型", its =>
+                    T("Some long-range detail levels are missing, so the model switches to simpler versions less often.", "缺少部分远距离细节层级，模型较少切换至简化版本。"));
+                Group("aabb_inflated", "amber", "Culling box larger than the model", "剔除盒大于模型", its =>
                 {
                     double over = its.Max(it => it.TryGetValue("facts", out var f) && f is Dictionary<string, object> d && d.TryGetValue("aabb_over", out var o) && o is double x ? x : 0);
-                    return T("Up to " + over.ToString("0.0") + " m too big: drawn and shadowed while it is off screen.", "最多大 " + over.ToString("0.0") + " 米：模型在画面外时仍会被绘制和投射阴影。");
+                    return T("Up to " + over.ToString("0.0") + " m too large: the model is drawn and casts shadows while off screen.", "最多超出 " + over.ToString("0.0") + " 米：模型位于画面外时仍会被绘制并投射阴影。");
                 });
-                Group("light_shadow", "amber", "Adds lights that cast shadows", "新增会投射阴影的灯光", its => T("Each one renders its own shadow map while it is on.", "每个灯光开着时都要单独渲染一张阴影贴图。"));
-                Group("light_volumetric", "amber", "Adds lights that light up fog", "新增照亮雾气的灯光", its => T("An extra pass for each one while it is on.", "每个灯光开着时都要多一遍渲染。"));
-                Group("tex_no_mips", "amber", "Textures without mipmaps", "贴图没有 mipmap", its =>
-                    T(its.Count + " texture(s). Far away they shimmer and read the full image for a few pixels.", its.Count + " 张。远处会闪烁，而且为几个像素读取整张图。"));
+                Group("light_shadow", "amber", "Adds shadow-casting lights", "新增投射阴影的灯光", its => T("Each one renders its own shadow map while active.", "每个灯光开启期间均需单独渲染一张阴影贴图。"));
+                Group("light_volumetric", "amber", "Adds volumetric lights", "新增体积光", its => T("Each one adds a rendering pass while active.", "每个灯光开启期间均需额外进行一次渲染。"));
+                Group("tex_no_mips", "amber", "Textures without mipmaps", "贴图缺少 mipmap", its =>
+                    T(its.Count + " texture(s). They shimmer at a distance, and the full image is read even when it covers only a few pixels.", "共 " + its.Count + " 张。远距离显示时会闪烁，且仅占数个像素时仍读取整张贴图。"));
                 Group("tex_uncompressed", "amber", "Uncompressed textures", "未压缩的贴图", its =>
-                    T(Mb(its.Sum(it => L(it, "max"))) + " in total, 4-8 times what the game's compressed formats would take.", "共 " + Mb(its.Sum(it => L(it, "max"))) + "，是游戏压缩格式的 4 到 8 倍。"));
-                Group("tex_not_streamed", "amber", "Textures that stay loaded", "贴图一直留在显存里", its =>
-                    T(Mb(its.Sum(it => L(it, "max"))) + " kept in video memory the whole time; the game loads the large versions of its own copies only when needed.",
-                      "共 " + Mb(its.Sum(it => L(it, "max"))) + " 整局占着显存；原版同一张贴图只在需要时才加载大尺寸。"));
-                Group("tex_big_resident", "amber", "Very large new textures", "很大的新增贴图", its =>
+                    T(Mb(its.Sum(it => L(it, "max"))) + " in total, 4 to 8 times the size of the game's compressed formats.", "共 " + Mb(its.Sum(it => L(it, "max"))) + "，为游戏压缩格式的 4 至 8 倍。"));
+                Group("tex_not_streamed", "amber", "Textures always resident", "贴图常驻显存", its =>
+                    T(Mb(its.Sum(it => L(it, "max"))) + " resident in video memory throughout the mission; the game loads the high-resolution versions of its own copies only when needed.",
+                      "共 " + Mb(its.Sum(it => L(it, "max"))) + "，整局常驻显存；原版同一贴图仅在需要时加载高分辨率版本。"));
+                Group("tex_big_resident", "amber", "Large added textures", "新增大尺寸贴图", its =>
                 {
                     var w = Worst(its, it => L(it, "w") * L(it, "h"));
-                    return T(its.Count + " at up to " + L(w, "w") + "×" + L(w, "h") + ", " + Mb(its.Sum(it => L(it, "max"))) + " kept in video memory the whole time.",
-                             its.Count + " 张，最大 " + L(w, "w") + "×" + L(w, "h") + "，共 " + Mb(its.Sum(it => L(it, "max"))) + " 整局占着显存。");
+                    return T(its.Count + " texture(s), up to " + L(w, "w") + "×" + L(w, "h") + "; " + Mb(its.Sum(it => L(it, "max"))) + " resident in video memory throughout the mission.",
+                             "共 " + its.Count + " 张，最大 " + L(w, "w") + "×" + L(w, "h") + "，合计 " + Mb(its.Sum(it => L(it, "max"))) + "，整局常驻显存。");
                 });
                 long mem = L(m, "max");
                 if (mem >= 300L * 1000 * 1000)
-                    amber.Add(("amber", T("Uses a lot of video memory", "占用较多显存"),
-                        T(Mb(mem) + " of textures and models" + (L(m, "game_max") > 0 ? " (the game's copies: " + Mb(L(m, "game_max")) + ")" : "") + ". On cards with 8 GB or less this can cause stutter and blurry textures.",
-                          Mb(mem) + " 的贴图和模型" + (L(m, "game_max") > 0 ? "（原版 " + Mb(L(m, "game_max")) + "）" : "") + "。显存 8 GB 及以下的显卡可能因此卡顿、贴图模糊。")));
-                Group("tex_bigger", "minor", "Higher-resolution textures than the game's", "贴图分辨率比原版高", its => T(its.Count + " texture(s).", its.Count + " 张。"));
-                Group("sections_added", "minor", "Extra draw calls", "绘制批次增加", its => T(its.Count + " model(s) draw in more pieces than the game's.", its.Count + " 个模型比原版分成更多块绘制。"));
-                Group("stride_wider", "minor", "Bigger vertex format", "顶点格式更大", its => T(its.Count + " model(s) store more bytes per vertex than the game's. Small memory cost.", its.Count + " 个模型每个顶点比原版占更多字节，显存开销很小。"));
+                    amber.Add(("amber", T("High video memory use", "显存占用较高"),
+                        T(Mb(mem) + " of textures and models" + (L(m, "game_max") > 0 ? " (game: " + Mb(L(m, "game_max")) + ")" : "") + ". Graphics cards with 8 GB or less may stutter or show blurry textures.",
+                          "贴图与模型共 " + Mb(mem) + (L(m, "game_max") > 0 ? "（原版 " + Mb(L(m, "game_max")) + "）" : "") + "。显存为 8 GB 及以下的显卡可能出现卡顿或贴图模糊。")));
+                Group("tex_bigger", "minor", "Higher-resolution textures than the game's", "贴图分辨率高于原版", its => T(its.Count + " texture(s).", "共 " + its.Count + " 张。"));
+                Group("sections_added", "minor", "More draw calls", "绘制批次增加", its => T(its.Count + " model(s) use more draw calls than the game's.", its.Count + " 个模型的绘制批次多于原版。"));
+                Group("stride_wider", "minor", "Larger vertex format", "顶点格式增大", its => T(its.Count + " model(s) store more bytes per vertex than the game's; the memory cost is small.", its.Count + " 个模型的单顶点字节数高于原版，显存开销较小。"));
                 return red.Concat(amber).Concat(minor).ToList();
             }
 
@@ -319,7 +319,7 @@ namespace Hd2Mod.Vram
                 var box = new StackPanel { Margin = new Thickness(28, 8, 12, 16) };
                 var findings = Findings(m);
                 if (findings.Count == 0)
-                    box.Children.Add(Small(T("Its models and textures are in line with the game's.", "它的模型和贴图与原版相当。"), new Thickness(0, 0, 0, 8)));
+                    box.Children.Add(Small(T("Its models and textures are comparable to the game's.", "该 MOD 的模型与贴图与原版相当。"), new Thickness(0, 0, 0, 8)));
                 foreach (var (level, title, text) in findings.Where(f => f.Level != "minor"))
                 {
                     var line = new DockPanel { Margin = new Thickness(0, 0, 0, 10) };
@@ -336,7 +336,7 @@ namespace Hd2Mod.Vram
                 if (minor.Count > 0) box.Children.Add(Small(T("Minor: ", "次要：") + string.Join(" · ", minor), new Thickness(0, 0, 0, 10)));
 
                 var items = Items(m);
-                box.Children.Add(new TextBlock { Text = T("Biggest resources", "最占显存的资源"), FontSize = 12, Foreground = B("Muted"), Margin = new Thickness(0, 6, 0, 4) });
+                box.Children.Add(new TextBlock { Text = T("Largest resources", "显存占用最高的资源"), FontSize = 12, Foreground = B("Muted"), Margin = new Thickness(0, 6, 0, 4) });
                 foreach (var it in items.Take(20))
                 {
                     bool tex = Str(it, "type") == "texture";
@@ -363,7 +363,7 @@ namespace Hd2Mod.Vram
                     });
                     box.Children.Add(line);
                 }
-                if (items.Count > 20) box.Children.Add(Small(T("and " + (items.Count - 20) + " more", "以及另外 " + (items.Count - 20) + " 个"), new Thickness(0, 4, 0, 0)));
+                if (items.Count > 20) box.Children.Add(Small(T((items.Count - 20) + " more not shown", "另有 " + (items.Count - 20) + " 个未列出"), new Thickness(0, 4, 0, 0)));
                 return box;
             }
 

@@ -173,7 +173,6 @@ namespace QuickDeploy
             SearchHint.Text = Texts.Get("search_hint");
             SettingsBtn.ToolTip = Texts.Get("settings");
             PluginsBtn.ToolTip = Texts.Get("plugins");
-            PluginsBtn.Visibility = PluginFiles.All().Count > 0 ? Visibility.Visible : Visibility.Collapsed;
             FilterWords();
             ListHint.Visibility = Texts.Hints ? Visibility.Visible : Visibility.Collapsed;
         }

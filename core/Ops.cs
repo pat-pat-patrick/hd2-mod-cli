@@ -29,7 +29,40 @@ namespace Hd2Mod
                 }
                 catch (Exception e) when (e is IOException || e is UnauthorizedAccessException || e is FormatException) { }
             }
-            var roots = new List<string>();
+            return FindInSteam();
+        }
+
+        /// <summary>Steam's key, under the user (SteamPath) and the machine (InstallPath); a test
+        /// points it at a key of its own.</summary>
+        public static string SteamKey = @"Software\Valve\Steam";
+
+        /// <summary>Where Steam is, as Steam wrote it: SteamPath, which Steam rewrites every time it
+        /// starts, then the installer's InstallPath. Both are gone after Windows is reinstalled until
+        /// Steam has run once, so the guesses after them stay.</summary>
+        static IEnumerable<string> SteamFromRegistry()
+        {
+            var found = new List<string>();
+            void Read(Microsoft.Win32.RegistryKey root, string value)
+            {
+                try
+                {
+                    using (var k = root.OpenSubKey(SteamKey))
+                        if (k?.GetValue(value) is string s && s.Trim().Length > 0) found.Add(Paths.Norm(s.Trim()));
+                }
+                catch (Exception e) when (e is System.Security.SecurityException || e is IOException || e is UnauthorizedAccessException) { }
+            }
+            Read(Microsoft.Win32.Registry.CurrentUser, "SteamPath");
+            foreach (var view in new[] { Microsoft.Win32.RegistryView.Registry32, Microsoft.Win32.RegistryView.Registry64 })
+                using (var hklm = Microsoft.Win32.RegistryKey.OpenBaseKey(Microsoft.Win32.RegistryHive.LocalMachine, view))
+                    Read(hklm, "InstallPath");
+            return found;
+        }
+
+        /// <summary>The game folder in a Steam library: Steam's own folder from the registry first,
+        /// then the usual places on drives C to J; every library its libraryfolders.vdf lists.</summary>
+        public static string FindInSteam()
+        {
+            var roots = new List<string>(SteamFromRegistry());
             foreach (var env in new[] { "ProgramFiles(x86)", "ProgramFiles" })
             {
                 var v = Environment.GetEnvironmentVariable(env);

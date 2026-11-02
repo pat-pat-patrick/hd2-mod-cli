@@ -19,8 +19,6 @@ namespace Hd2Mod.Tests
         const ulong Tex = 0xCD4238C6A0C69E32, Unit = 0xE0A48D0BE9A7453F, Material = 0xEAC0B497876ADEDF;
         const ulong T1 = 0x1111, T2 = 0x2222, U1 = 0x3333, N1 = 0x4444, M1 = 0x5555;
 
-        public VramPlugin() => PluginFiles.Folder = null;
-
         /// <summary>One resource of a GPU archive: its type and id, its resident and streamed GPU
         /// bytes, and for a texture its size, DXGI format, array size and whether it is a cube.</summary>
         struct G
@@ -171,6 +169,51 @@ namespace Hd2Mod.Tests
             var lic = all.Single(p => p.File == "HD2QD.License.dll");
             Assert.Equal("panel", PluginFiles.Kind(lic.Type));
             Assert.Equal("会员授权", PluginFiles.Title(lic.Type, true));
+        }
+
+        /// <summary>No plugin ships with the program: they are added to the settings folder's
+        /// plugins\, replaced there by a file of the same name, and removed from there.</summary>
+        [Fact]
+        public void A_plugin_is_added_to_the_settings_folder_replaced_and_removed()
+        {
+            var shipped = AppDomain.CurrentDomain.BaseDirectory;
+            PluginFiles.Folder = null;
+            Assert.Equal(Path.Combine(Store.Home, "plugins"), PluginFiles.Dir);
+            Assert.Empty(PluginFiles.All());
+            Assert.False(Vram.Present);
+            Assert.Contains("no plugin has been added", Cli("plugins"));
+
+            Assert.Contains("added HD2QD.Vram.dll 1.0.0 to", Cli("plugin-add", Path.Combine(shipped, "HD2QD.Vram.dll")));
+            Assert.True(File.Exists(Path.Combine(Store.Home, "plugins", "HD2QD.Vram.dll")));
+            Assert.True(Vram.Present);                                            // read again after it was added
+            Assert.Equal("Asset check", PluginFiles.Title(PluginFiles.All().Single().Type, false));
+            Assert.Contains("HD2QD.Vram.dll 1.0.0  Asset check", Cli("plugins"));
+            Assert.Equal(("HD2QD.Vram.dll", "1.0.0", "1.0.0"), PluginFiles.Install(Path.Combine(shipped, "HD2QD.Vram.dll")));
+
+            Assert.Contains("removed HD2QD.Vram.dll", Cli("plugin-remove", "Vram"));
+            Assert.Empty(PluginFiles.All());
+            Assert.False(Vram.Present);                                           // and forgotten once removed
+            Assert.Equal("plugin_missing", Assert.Throws<ModError>(() => PluginFiles.Remove("Vram")).Kind);
+        }
+
+        /// <summary>What is not a plugin is refused before anything of it runs or is copied.</summary>
+        [Fact]
+        public void A_file_that_is_not_a_plugin_is_refused()
+        {
+            PluginFiles.Folder = null;
+            var shipped = AppDomain.CurrentDomain.BaseDirectory;
+            var renamed = Path.Combine(Root, "Vram.dll");                         // the plugin, but not named HD2QD.*.dll
+            File.Copy(Path.Combine(shipped, "HD2QD.Vram.dll"), renamed);
+            Assert.Equal("name", PluginFiles.Inspect(renamed).Why);
+            var other = Path.Combine(Root, "HD2QD.Other.dll");                    // an assembly with no class Plugin
+            File.Copy(Path.Combine(shipped, "xunit.assert.dll"), other);
+            Assert.Equal("broken", PluginFiles.Inspect(other).Why);
+            var text = Path.Combine(Root, "HD2QD.Text.dll");
+            File.WriteAllText(text, "not an assembly");
+            Assert.Equal("broken", PluginFiles.Inspect(text).Why);
+            Assert.Equal("plugin_broken", Assert.Throws<ModError>(() => PluginFiles.Install(other)).Kind);
+            CliCode(1, "plugin-add", renamed);
+            Assert.False(Directory.Exists(PluginFiles.Dir) && Directory.GetFiles(PluginFiles.Dir).Length > 0);
         }
 
         [Fact]

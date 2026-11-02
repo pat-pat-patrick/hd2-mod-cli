@@ -45,7 +45,7 @@
             <!-- the plugins page (the user, 2026-11-02: the license plugin out of the
                  settings): only when a plugin sits beside the program -->
             <Button x:Name="PluginsBtn" Width="38" Height="38" VerticalAlignment="Center" Margin="0,0,12,0" Cursor="Hand"
-                    Style="{StaticResource Ghost}" Padding="0" Click="Plugins_Click" Visibility="Collapsed"
+                    Style="{StaticResource Ghost}" Padding="0" Click="Plugins_Click"
                     WindowChrome.IsHitTestVisibleInChrome="True">
               <TextBlock x:Name="PlugGlyph" Text="&#xEA86;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="20"
                          Foreground="{StaticResource Ink}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
@@ -234,7 +234,8 @@
         <StackPanel x:Name="SettingsBox" Margin="32,24,32,32" MaxWidth="720"/>
       </ScrollViewer>
       <!-- the plugins page, opened by the plug beside the gear: the same one column -->
-      <ScrollViewer x:Name="PluginsPage" Visibility="Collapsed" VerticalScrollBarVisibility="Visible" Focusable="False">
+      <ScrollViewer x:Name="PluginsPage" Visibility="Collapsed" VerticalScrollBarVisibility="Visible" Focusable="False"
+                    AllowDrop="True" DragOver="PluginsPage_DragOver" Drop="PluginsPage_Drop">
         <StackPanel x:Name="PluginsBox" Margin="32,24,32,32" MaxWidth="720"/>
       </ScrollViewer>
       </Grid>

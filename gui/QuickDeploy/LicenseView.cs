@@ -31,28 +31,43 @@ namespace QuickDeploy
             : state == "expired" ? Texts.F("lic_expired", Until(expires))
             : Texts.Get("lic_" + state);
 
-        /// <summary>The plugins page: a card for each plugin beside the program (PluginFiles),
-        /// headed by its title, file and version. Two kinds (the user, 2026-11-02): one drawn in
-        /// this window (the license plugin's authors and sign-in), one with a window of its own,
-        /// opened from its card.</summary>
+        /// <summary>The plugins page: Add plugin… beside the title, and a card for each plugin
+        /// added (PluginFiles), headed by its title, file, version and Remove. None ships with the
+        /// program (the user, 2026-11-02): they are added here, or dropped on the page. Two kinds:
+        /// one drawn in this window (the license plugin's authors and sign-in), one with a window
+        /// of its own, opened from its card.</summary>
         void RenderPlugins()
         {
             PluginsBox.Children.Clear();
-            PluginsBox.Children.Add(new TextBlock { Text = Texts.Get("plugins"), FontSize = 28, FontWeight = FontWeights.Bold });
+            var top = new DockPanel();
+            var add = new Button { Content = Texts.Get("plugin_add"), Style = (Style)FindResource("Ghost"), MinHeight = 36, Padding = new Thickness(16, 0, 16, 0), VerticalAlignment = VerticalAlignment.Center };
+            add.Click += (s, e) => PickPlugin();
+            DockPanel.SetDock(add, Dock.Right);
+            top.Children.Add(add);
+            top.Children.Add(new TextBlock { Text = Texts.Get("plugins"), FontSize = 28, FontWeight = FontWeights.Bold });
+            PluginsBox.Children.Add(top);
             PluginsBox.Children.Add(Texts.Hints ? Small(Texts.Get("plugins_intro"), new Thickness(0, 4, 0, 20)) : new Border { Height = 16 });
+            var all = PluginFiles.All();
+            if (all.Count == 0) PluginsBox.Children.Add(Small(Texts.Get("plugins_none"), new Thickness(0, 0, 0, 0)));
             bool first = true;
-            foreach (var (file, type, why) in PluginFiles.All())
+            foreach (var (file, type, why) in all)
             {
                 var card = new StackPanel();
                 var head = new DockPanel();
-                var version = new TextBlock
+                var right = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Top };
+                right.Children.Add(new TextBlock
                 {
                     Text = System.IO.Path.GetFileNameWithoutExtension(file) + (type != null ? " " + PluginFiles.Version(type) : ""),
                     FontSize = 12, Foreground = B("Muted"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(16, 0, 0, 0),
-                };
-                DockPanel.SetDock(version, Dock.Right);
-                head.Children.Add(version);
-                head.Children.Add(Heading(type != null ? PluginFiles.Title(type, Texts.Zh) ?? file : file));
+                });
+                var remove = new Button { Content = Texts.Get("plugin_remove"), Style = (Style)FindResource("Ghost"), MinHeight = 32, Padding = new Thickness(12, 0, 12, 0), Margin = new Thickness(12, 0, 0, 0) };
+                remove.Click += (s, e) => RemovePlugin(file, type != null ? PluginFiles.Title(type, Texts.Zh) ?? file : file);
+                right.Children.Add(remove);
+                DockPanel.SetDock(right, Dock.Right);
+                head.Children.Add(right);
+                var title = Heading(type != null ? PluginFiles.Title(type, Texts.Zh) ?? file : file);
+                title.VerticalAlignment = VerticalAlignment.Center;          // level with the version and Remove
+                head.Children.Add(title);
                 card.Children.Add(head);
                 if (type == null)
                     card.Children.Add(Small(Texts.Get(why == "api" ? "plugin_api" : "plugin_broken"), new Thickness(0, 8, 0, 0)));
@@ -67,6 +82,16 @@ namespace QuickDeploy
                 if (!first) PluginsBox.Children.Add(new Border { Height = 16 });
                 PluginsBox.Children.Add(Card(card));
                 first = false;
+            }
+            // mods for an author's members, and no license plugin to sign in with: said here, where
+            // their rows point
+            if (!all.Any(p => string.Equals(p.File, "HD2QD.License.dll", StringComparison.OrdinalIgnoreCase)) && LicenseSection() is UIElement need)
+            {
+                var card = new StackPanel();
+                card.Children.Add(Heading(Texts.Get("lic_title")));
+                card.Children.Add(need);
+                PluginsBox.Children.Add(new Border { Height = 16 });
+                PluginsBox.Children.Add(Card(card));
             }
         }
 
@@ -96,6 +121,71 @@ namespace QuickDeploy
                 catch (System.Reflection.TargetInvocationException x) { Dialog.Tell(this, Texts.F("failed", x.InnerException?.Message ?? x.Message)); }
             };
             return open;
+        }
+
+        void PickPlugin()
+        {
+            var pick = new Microsoft.Win32.OpenFileDialog
+            {
+                Title = Texts.Get("plugin_add_title"), Filter = Texts.Get("plugin_filter") + "|HD2QD.*.dll", CheckFileExists = true, Multiselect = true,
+            };
+            if (pick.ShowDialog(this) == true) AddPlugins(pick.FileNames);
+        }
+
+        /// <summary>Plugin files chosen or dropped: each one read without running it, then added
+        /// once the player agrees (a plugin runs as this program does), over one of the same name.</summary>
+        void AddPlugins(IEnumerable<string> paths)
+        {
+            var added = new List<string>();
+            foreach (var path in paths)
+            {
+                var (file, version, why) = PluginFiles.Inspect(path);
+                if (why != null)
+                {
+                    Dialog.Tell(this, Texts.F(why == "name" ? "plugin_add_name" : why == "api" ? "plugin_add_api" : "plugin_add_broken", file));
+                    continue;
+                }
+                var old = PluginFiles.All().FirstOrDefault(p => string.Equals(p.File, file, StringComparison.OrdinalIgnoreCase));
+                bool replace = old.File != null;
+                var ask = replace ? Texts.F("plugin_replace_ask", file, version, old.Type != null ? PluginFiles.Version(old.Type) : "?")
+                                  : Texts.F("plugin_add_ask", file, version);
+                if (!Dialog.Ask(this, ask, Texts.Get(replace ? "plugin_replace_go" : "plugin_add_go"))) continue;
+                try { PluginFiles.Install(path); added.Add(file + " " + version); }
+                catch (Exception e) when (e is ModError || e is System.IO.IOException || e is UnauthorizedAccessException)
+                { Dialog.Tell(this, Texts.F("failed", e.Message)); }
+            }
+            if (added.Count == 0) return;
+            Foot(Texts.F("plugin_added", string.Join("、", added)), "Blue");
+            RenderPlugins();
+            Refresh();                      // the license plugin changes what the mod rows say
+        }
+
+        void RemovePlugin(string file, string title)
+        {
+            if (!Dialog.AskDanger(this, Texts.F("plugin_remove_ask", title, file), Texts.Get("plugin_remove"))) return;
+            try { PluginFiles.Remove(file); }
+            catch (Exception e) when (e is ModError || e is System.IO.IOException || e is UnauthorizedAccessException)
+            { Dialog.Tell(this, Texts.F("failed", e.Message)); return; }
+            Foot(Texts.F("plugin_removed", title), "Blue");
+            RenderPlugins();
+            Refresh();
+        }
+
+        static List<string> DroppedPlugins(IDataObject data) =>
+            (data != null && data.GetDataPresent(DataFormats.FileDrop) ? data.GetData(DataFormats.FileDrop) as string[] : null)?
+                .Where(p => System.IO.File.Exists(p) && p.EndsWith(".dll", StringComparison.OrdinalIgnoreCase)).ToList() ?? new List<string>();
+
+        void PluginsPage_DragOver(object sender, DragEventArgs e)
+        {
+            e.Effects = DroppedPlugins(e.Data).Count > 0 ? DragDropEffects.Copy : DragDropEffects.None;
+            e.Handled = true;
+        }
+
+        void PluginsPage_Drop(object sender, DragEventArgs e)
+        {
+            e.Handled = true;
+            var paths = DroppedPlugins(e.Data);
+            if (paths.Count > 0) AddPlugins(paths);
         }
 
         void Plugins_Click(object sender, RoutedEventArgs e)

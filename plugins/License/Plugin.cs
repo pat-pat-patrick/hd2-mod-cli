@@ -30,8 +30,8 @@ namespace Hd2Mod.License
         public static string Title(bool zh) => zh ? "会员授权" : "Member licenses";
 
         public static string Summary(bool zh) => zh
-            ? "部分 MOD 仅供作者的会员使用。在作者的网站登录一次即可，授权到期前自动续期。"
-            : "Some mods are for their author's members. Sign in to the author's site once; the license is renewed before it ends.";
+            ? "部分 MOD 仅供作者的会员使用。首次使用需在作者的网站登录，授权到期前将自动续期。"
+            : "Some mods are available only to their author's members. Sign in to the author's site once; the license is renewed automatically before it expires.";
 
         const string FileName = "hd2_license.json", Header = "HD2 MOD LICENSE 1\n", StoreName = "licenses.json";
         static readonly Regex Issuer = new Regex(@"^(?:[a-z0-9][a-z0-9.-]*|(?:localhost|127\.0\.0\.1):\d{1,5})$");

@@ -7,17 +7,24 @@ using System.Threading;
 
 namespace Hd2Mod
 {
-    /// <summary>Plugins: HD2QD.*.dll beside the program, each with a class Plugin that says its
-    /// Api, its Kind ("panel": drawn in the manager's window; "window": a window of its own,
-    /// opened by Open(owner, host)), its Title(zh) and its Summary(zh). They share no types with
-    /// the manager (the core is compiled into each program), so they are called by name, with
-    /// strings, numbers, delegates and Json shapes. Each file is read once a process.</summary>
+    /// <summary>Plugins: HD2QD.*.dll in the settings folder's plugins\, each with a class Plugin
+    /// that says its Api, its Kind ("panel": drawn in the manager's window; "window": a window of
+    /// its own, opened by Open(owner, host)), its Title(zh) and its Summary(zh). None ships with
+    /// the program: the player adds them (the user, 2026-11-02), so they outlast a new copy of the
+    /// program. They share no types with the manager (the core is compiled into each program), so
+    /// they are called by name, with strings, numbers, delegates and Json shapes. Each file is
+    /// read once a process, and again after it is added or removed.</summary>
     public static class PluginFiles
     {
-        /// <summary>Set by tests; else the running program's folder.</summary>
+        /// <summary>Set by tests; else Dir.</summary>
         public static string Folder;
 
-        public static string PathOf(string file) => Path.Combine(Folder ?? AppDomain.CurrentDomain.BaseDirectory, file);
+        public static string Dir => Folder ?? Path.Combine(Store.Home, "plugins");
+
+        public static string PathOf(string file) => Path.Combine(Dir, file);
+
+        static readonly System.Text.RegularExpressions.Regex Name =
+            new System.Text.RegularExpressions.Regex(@"^HD2QD\.[A-Za-z0-9_-]+\.dll$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
         static readonly Dictionary<string, (Type Type, string Why)> loaded = new Dictionary<string, (Type, string)>(StringComparer.OrdinalIgnoreCase);
 
@@ -51,12 +58,78 @@ namespace Hd2Mod
             return found;
         }
 
-        /// <summary>Every HD2QD.*.dll beside the program: its file name, its plugin class (null
-        /// when it cannot be used) and why not.</summary>
+        /// <summary>The file read again next time (it was added, replaced or removed).</summary>
+        static void Forget(string path)
+        {
+            foreach (var key in loaded.Keys.Where(k => k.StartsWith(path + "|", StringComparison.OrdinalIgnoreCase)).ToList())
+                loaded.Remove(key);
+        }
+
+        /// <summary>What a file offered as a plugin is: its file name and version, and why it
+        /// cannot be added: "name" (not HD2QD.*.dll), "broken" (no plugin in it), "api" (for
+        /// another version of this program); null when it can. Only its metadata is read
+        /// (the Api is a constant), so nothing of it runs before the player agrees.</summary>
+        public static (string File, string Version, string Why) Inspect(string path)
+        {
+            var file = Path.GetFileName(path);
+            if (!Name.IsMatch(file)) return (file, null, "name");
+            try
+            {
+                var asm = Assembly.Load(File.ReadAllBytes(path));
+                var version = asm.GetName().Version?.ToString(3);
+                var t = asm.GetTypes().Where(x => x.Name == "Plugin" && x.IsPublic).ToList();
+                if (t.Count != 1) return (file, version, "broken");
+                var a = t[0].GetField("Api");
+                return (file, version, a != null && a.IsLiteral && a.GetRawConstantValue() is int n && n == Api(path) ? null : "api");
+            }
+            catch (Exception e) when (e is BadImageFormatException || e is TypeLoadException || e is IOException || e is FileLoadException
+                                      || e is ReflectionTypeLoadException || e is UnauthorizedAccessException)
+            {
+                return (file, null, "broken");
+            }
+        }
+
+        /// <summary>A plugin copied into Dir, over one of the same name: its file name, its version
+        /// and the version it replaced (null when it is new).</summary>
+        public static (string File, string Version, string Replaced) Install(string path)
+        {
+            var (file, version, why) = Inspect(path);
+            if (why != null)
+                throw new ModError(why == "name" ? file + " is not a plugin: a plugin is a file named HD2QD.<name>.dll"
+                                   : why == "api" ? file + " is for another version of this program"
+                                   : file + " is not a plugin of this program, or it is damaged", "plugin_" + why, file);
+            var to = PathOf(file);
+            string replaced = File.Exists(to) ? Inspect(to).Version ?? "?" : null;
+            if (!string.Equals(Path.GetFullPath(path), Path.GetFullPath(to), StringComparison.OrdinalIgnoreCase))
+            {
+                Directory.CreateDirectory(Dir);
+                File.Copy(path, to + ".tmp", true);
+                if (File.Exists(to)) File.Delete(to);
+                File.Move(to + ".tmp", to);
+            }
+            Forget(to);
+            return (file, version, replaced);
+        }
+
+        /// <summary>An added plugin, by its file name (HD2QD.Vram.dll, or Vram), deleted from Dir.
+        /// What it already loaded stays in this process until the program is closed.</summary>
+        public static string Remove(string name)
+        {
+            var file = All().Select(p => p.File).FirstOrDefault(f =>
+                string.Equals(f, name, StringComparison.OrdinalIgnoreCase) || string.Equals(f, "HD2QD." + name + ".dll", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(f, name + ".dll", StringComparison.OrdinalIgnoreCase))
+                ?? throw new ModError("no plugin " + name + " has been added (plugins lists them)", "plugin_missing", name);
+            File.Delete(PathOf(file));
+            Forget(PathOf(file));
+            return file;
+        }
+
+        /// <summary>Every HD2QD.*.dll added: its file name, its plugin class (null when it cannot
+        /// be used) and why not.</summary>
         public static List<(string File, Type Type, string Why)> All()
         {
             var found = new List<(string, Type, string)>();
-            var dir = Folder ?? AppDomain.CurrentDomain.BaseDirectory;
+            var dir = Dir;
             if (!Directory.Exists(dir)) return found;
             foreach (var path in Directory.GetFiles(dir, "HD2QD.*.dll").OrderBy(p => p, StringComparer.OrdinalIgnoreCase))
             {
@@ -111,14 +184,14 @@ namespace Hd2Mod
         /// <summary>The estimate for the library's enabled mods (the plugin's Estimate).</summary>
         public static Dictionary<string, object> Estimate(Library lib, string data)
         {
-            var t = Plugin ?? throw new ModError("the VRAM estimate plugin (HD2QD.Vram.dll) is " +
-                (why == "missing" ? "not beside this program" : why == "api" ? "for another version" : "damaged"), "vram_plugin");
+            var t = Plugin ?? throw new ModError("the asset check plugin (HD2QD.Vram.dll) " +
+                (why == "missing" ? "has not been added (plugin-add, or the window's Plugins page)" : why == "api" ? "is for another version of this program" : "is damaged"), "vram_plugin");
             try { return t.GetMethod("Estimate").Invoke(null, new object[] { Store.Home, data, Mods(lib), null }) as Dictionary<string, object>; }
             catch (TargetInvocationException e) when (e.InnerException != null) { throw e.InnerException; }
         }
     }
 
-    /// <summary>The license plugin, HD2QD.License.dll beside the program (plugins\License): mods
+    /// <summary>The license plugin, HD2QD.License.dll (plugins\License), once added: mods
     /// that ship an hd2_license.json are for their author's members, and the plugin signs the
     /// player in to the author's issuer and keeps the license the mod checks in game. Without
     /// the file the manager works as before and such a mod is only marked. The plugin shares no
@@ -128,7 +201,7 @@ namespace Hd2Mod
     {
         public const int Api = 1;
 
-        /// <summary>Set by tests; else beside the running program.</summary>
+        /// <summary>Set by tests; else in PluginFiles.Dir.</summary>
         public static string DllPath;
         /// <summary>Set by tests; else HD2QD_APPDATA, for a demo library's pictures, which must
         /// show none of the player's accounts or licenses; else the player's roaming AppData (the
@@ -157,8 +230,8 @@ namespace Hd2Mod
         static object Call(string name, params object[] args)
         {
             var t = Plugin ?? throw new ModError(Why == "missing"
-                ? "the license plugin (HD2QD.License.dll) is not beside this program"
-                : "the license plugin (HD2QD.License.dll) beside this program is " + (Why == "api" ? "for another version" : "damaged"), "license_plugin");
+                ? "the license plugin (HD2QD.License.dll) has not been added (plugin-add, or the window's Plugins page)"
+                : "the license plugin (HD2QD.License.dll) " + (Why == "api" ? "is for another version of this program" : "is damaged"), "license_plugin");
             try { return t.GetMethod(name).Invoke(null, args); }
             catch (TargetInvocationException e) when (e.InnerException != null) { throw e.InnerException; }
         }

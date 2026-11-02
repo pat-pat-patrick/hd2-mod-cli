@@ -32,11 +32,14 @@ namespace Hd2Mod.Tests
             Deploy.GameRunning = () => false;
             Store.Redirected = () => null;             // the test's home is not under AppData anyway
             Deploy.SameDrive = Native.SameDrive;
+            // the plugins the test project copies beside itself, as if the player had added them
+            PluginFiles.Folder = AppDomain.CurrentDomain.BaseDirectory;
         }
 
         public virtual void Dispose()
         {
             Store.HomeOverride = null;
+            PluginFiles.Folder = null;
             try { Directory.Delete(Root, true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
         }
 
@@ -850,6 +853,37 @@ namespace Hd2Mod.Tests
         /// <summary>A mod from Nexus mod 77, file 1 (replaced by file 2 there).</summary>
         static Mod UpdatesMod() => new Mod { Id = "m77", Name = "Cape", Nexus = new NexusRef { Game = "helldivers2", Mod = 77, File = 1 } };
 #endif
+
+        /// <summary>Steam somewhere no guess reaches: found through SteamPath, which Steam writes
+        /// with / and in lower case, and the game in a library only its libraryfolders.vdf names.</summary>
+        [Fact]
+        public void TheGameIsFoundThroughSteamsRegistryKey()
+        {
+            // a key of the test's own: the real Software\Valve\Steam is never touched
+            var real = Ops.SteamKey;
+            var testKey = @"Software\hd2qd-tests\steam-" + Guid.NewGuid().ToString("N").Substring(0, 8);
+            Ops.SteamKey = testKey;
+            try
+            {
+                var steam = Path.Combine(Root, "Odd Place", "Steam");
+                var lib = Path.Combine(Root, "Elsewhere");
+                var game = Path.Combine(lib, "steamapps", "common", "Helldivers 2");
+                Directory.CreateDirectory(Path.Combine(steam, "steamapps"));
+                Directory.CreateDirectory(Path.Combine(game, "data"));
+                File.WriteAllText(Path.Combine(steam, "steamapps", "libraryfolders.vdf"),
+                    "\"libraryfolders\"\n{\n\t\"0\"\n\t{\n\t\t\"path\"\t\t\"" + steam.Replace(@"\", @"\\") + "\"\n\t}\n" +
+                    "\t\"1\"\n\t{\n\t\t\"path\"\t\t\"" + lib.Replace(@"\", @"\\") + "\"\n\t}\n}\n");
+                Assert.NotEqual(game, Ops.FindInSteam());                        // no key yet: not found there
+                using (var k = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(testKey))
+                    k.SetValue("SteamPath", steam.Replace('\\', '/').ToLowerInvariant());
+                Assert.Equal(game, Ops.FindInSteam(), StringComparer.OrdinalIgnoreCase);
+            }
+            finally
+            {
+                Ops.SteamKey = real;
+                Microsoft.Win32.Registry.CurrentUser.DeleteSubKeyTree(testKey.Substring(0, testKey.LastIndexOf('\\')), false);
+            }
+        }
 
 
 

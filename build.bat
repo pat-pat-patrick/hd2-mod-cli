@@ -45,8 +45,13 @@ if not "%OUT%"=="release\no-nexus" (
   copy /y "cli\bin\no-nexus\Release\net48\hd2qd.exe" "%OUT%\hd2qd.exe" >nul || exit /b 1
   copy /y "gui\QuickDeploy\bin\no-nexus\Release\net48\HD2 Mod Quick Deploy.exe" "%OUT%\HD2 Mod Quick Deploy.exe" >nul || exit /b 1
 )
-rem the plugins: the same files in every build (they have no Nexus Mods part)
-copy /y "plugins\License\bin\Release\net48\HD2QD.License.dll" "%OUT%\HD2QD.License.dll" >nul || exit /b 1
-copy /y "plugins\Vram\bin\Release\net48\HD2QD.Vram.dll" "%OUT%\HD2QD.Vram.dll" >nul || exit /b 1
+rem the plugins: the same files in every build (they have no Nexus Mods part). They are not
+rem part of the program: a player adds them (the Plugins page, or hd2qd plugin-add), and they
+rem are kept in the settings folder. %OUT%\plugins\ only holds them to be added from.
+"%DOTNET%" build plugins\License\HD2QD.License.csproj -c Release || exit /b 1
+"%DOTNET%" build plugins\Vram\HD2QD.Vram.csproj -c Release || exit /b 1
+if not exist "%OUT%\plugins" mkdir "%OUT%\plugins"
+copy /y "plugins\License\bin\Release\net48\HD2QD.License.dll" "%OUT%\plugins\HD2QD.License.dll" >nul || exit /b 1
+copy /y "plugins\Vram\bin\Release\net48\HD2QD.Vram.dll" "%OUT%\plugins\HD2QD.Vram.dll" >nul || exit /b 1
 echo.
-echo Built (%NAME%): %OUT%\hd2qd.exe, %OUT%\HD2 Mod Quick Deploy.exe and the plugins (%OUT%\HD2QD.*.dll)
+echo Built (%NAME%): %OUT%\hd2qd.exe and %OUT%\HD2 Mod Quick Deploy.exe; the plugins, to be added, in %OUT%\plugins\
