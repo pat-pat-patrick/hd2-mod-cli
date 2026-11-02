@@ -287,6 +287,70 @@ namespace Hd2Mod.Tests
             Assert.Equal("none", Json.Str(Licenses.StateOf(LicensedMod("Other", key: "b")), "state"));
         }
 
+        int LicensesInFile() =>
+            System.Text.RegularExpressions.Regex.Matches(File.ReadAllText(LicenseFile), "^HD2 MOD LICENSE 1$", System.Text.RegularExpressions.RegexOptions.Multiline).Count;
+
+        [Fact]
+        public void Two_members_sharing_a_computer_each_keep_their_license()
+        {
+            var mod = LicensedMod();
+            Account(A, 10);
+            Assert.Equal("ok", SignIn(mod));                                       // member 1, game account A
+            Account(B);                                                            // member 2 plays on B
+            issuer.Holder = "p:2";
+            issuer.Accounts = new[] { B };
+            issuer.RenewToken = new string('8', 64);
+            Assert.Equal("ok", SignIn(mod));
+            Assert.Equal(2, LicensesInFile());
+            var st = Licenses.StateOf(mod);
+            Assert.Equal("licensed", Json.Str(st, "state"));
+            Assert.Equal(2L, Json.Long(st, "members"));
+
+            File.Delete(Path.Combine(appData, "Arrowhead", "Helldivers2", "saves", B + "_user_settings.config"));
+            Assert.Equal("licensed", Json.Str(Licenses.StateOf(mod), "state"));   // A alone: member 1's still there
+            Assert.Equal(new object[] { A }, Json.List(Licenses.StateOf(mod), "accounts"));
+
+            issuer.Holder = "p:1";                                                 // member 1 signs in again
+            issuer.Accounts = new[] { A };
+            issuer.RenewToken = new string('9', 64);
+            Assert.Equal("ok", SignIn(mod));
+            Assert.Equal(2, LicensesInFile());                                     // theirs replaced, not added
+
+            int before = issuer.RenewCalls;
+            Assert.True(Json.Bool(Licenses.Renew(Decl(mod), true), "renewed"));
+            Assert.Equal(before + 2, issuer.RenewCalls);                           // both members renewed
+            Assert.Contains(new string('9', 64), issuer.Renewed);
+            Assert.Contains(new string('8', 64), issuer.Renewed);
+            Assert.Equal(2, LicensesInFile());
+            var store = File.ReadAllText(Path.Combine(Store.Home, "licenses.json"));
+            Assert.Contains("p:1", store);
+            Assert.Contains("p:2", store);
+        }
+
+        [Fact]
+        public void A_renew_token_kept_before_members_were_told_apart_is_filed_under_its_member()
+        {
+            var mod = LicensedMod();
+            Account(A);
+            Assert.Equal("ok", SignIn(mod));
+            // as a sign-in before 2026-11-02 left it: one token for the whole issuer
+            var path = Path.Combine(Store.Home, "licenses.json");
+            var store = (Dictionary<string, object>)Json.Parse(File.ReadAllText(path));
+            var rec = Json.Obj(Json.Obj(store, "issuers"), issuer.Name);
+            rec["renew"] = Json.Obj(rec, "members")["p:1"];
+            rec.Remove("members");
+            File.WriteAllText(path, Json.Write(store));
+
+            int before = issuer.RenewCalls;
+            Assert.True(Json.Bool(Licenses.Renew(Decl(mod), false), "renewed"));  // not due, but whose it is was unknown
+            Assert.Equal(before + 1, issuer.RenewCalls);
+            rec = Json.Obj(Json.Obj((Dictionary<string, object>)Json.Parse(File.ReadAllText(path)), "issuers"), issuer.Name);
+            Assert.Null(Json.Str(rec, "renew"));
+            Assert.NotNull(Json.Str(Json.Obj(rec, "members"), "p:1"));
+            Assert.False(Json.Bool(Licenses.Renew(Decl(mod), false), "renewed"));  // and now waits for half time
+            Assert.Equal(before + 1, issuer.RenewCalls);
+        }
+
         [Fact]
         public void A_sign_in_stays_known_after_its_mods_leave_the_library()
         {
@@ -340,7 +404,12 @@ namespace Hd2Mod.Tests
             volatile bool stopped;
             public readonly string Name;
             public string Nonce, OpenedPath, ClaimError, RenewError, SignWith = "a", LastRenewToken;
-            public readonly string RenewToken = new string('7', 64);
+            /// <summary>Who signs in next: their holder, accounts and renew token.</summary>
+            public string Holder = "p:1", RenewToken = new string('7', 64);
+            public string[] Accounts = { A };
+            /// <summary>Every member signed in so far, by renew token: what renewal signs for.</summary>
+            public readonly Dictionary<string, (string Holder, string[] Accounts)> Members = new Dictionary<string, (string, string[])>();
+            public readonly List<string> Renewed = new List<string>();
             public int PendingClaims, RenewCalls;
             public readonly int Days = 30;
 
@@ -361,11 +430,11 @@ namespace Hd2Mod.Tests
                 Nonce = u.Query.Split('&')[0].Substring(3);
             }
 
-            public string License(string key, string[] accounts, int days)
+            public string License(string key, string[] accounts, int days, string holder = "p:1")
             {
                 long now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
                 var text = "HD2 MOD LICENSE 1\nissuer=" + Name + "\naccounts=" + string.Join(",", accounts) +
-                           "\nissued=" + now + "\nexpires=" + (now + days * 86400L) + "\nholder=p:1\n";
+                           "\nissued=" + now + "\nexpires=" + (now + days * 86400L) + "\nholder=" + holder + "\n";
                 var pkcs8 = Convert.FromBase64String(Json.Str(Json.Obj(t.keys, key), "pkcs8"));
                 using (var rsa = new RSACng(CngKey.Import(pkcs8, CngKeyBlobFormat.Pkcs8PrivateBlob)))
                 {
@@ -381,14 +450,17 @@ namespace Hd2Mod.Tests
                     if (Json.Str(body, "n") != Nonce) return (400, new Dictionary<string, object> { ["error"] = "bad_request" });
                     if (PendingClaims > 0) { PendingClaims--; return (404, new Dictionary<string, object> { ["pending"] = true }); }
                     if (ClaimError != null) return (403, new Dictionary<string, object> { ["error"] = ClaimError });
-                    return (200, new Dictionary<string, object> { ["license"] = License(SignWith, new[] { A }, Days), ["renew"] = RenewToken });
+                    Members[RenewToken] = (Holder, Accounts);
+                    return (200, new Dictionary<string, object> { ["license"] = License(SignWith, Accounts, Days, Holder), ["renew"] = RenewToken });
                 }
                 if (path == "/renew")
                 {
                     RenewCalls++;
                     LastRenewToken = Json.Str(body, "renew");
+                    Renewed.Add(LastRenewToken);
                     if (RenewError != null) return (403, new Dictionary<string, object> { ["error"] = RenewError });
-                    return (200, new Dictionary<string, object> { ["license"] = License(SignWith, new[] { A }, Days) });
+                    if (!Members.TryGetValue(LastRenewToken, out var m)) return (403, new Dictionary<string, object> { ["error"] = "unknown" });
+                    return (200, new Dictionary<string, object> { ["license"] = License(SignWith, m.Accounts, Days, m.Holder) });
                 }
                 return (404, new Dictionary<string, object> { ["error"] = "not_found" });
             }

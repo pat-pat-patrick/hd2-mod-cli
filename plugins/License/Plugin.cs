@@ -69,11 +69,13 @@ namespace Hd2Mod.License
         // -- state -------------------------------------------------------------------------
 
         /// <summary>Where the issuer's license stands on this computer:
-        /// {state, issuer, name, expires?, accounts?, renew_due?}. state is
-        /// "licensed", "expired", "none" (no license yet), "other_account" (one that names no
-        /// account here), "invalid" (not signed by the declared key), "key_changed" (the
-        /// declared key is not the one signed in with: ask the player), or "no_account" (no game
-        /// account here yet: start the game once).</summary>
+        /// {state, issuer, name, expires?, accounts?, renew_due?, members}. The file holds one
+        /// license per member who signed in here (two players sharing a computer); the one for
+        /// an account here that runs longest speaks. state is "licensed", "expired", "none" (no
+        /// license yet), "other_account" (the licenses name no account here), "invalid" (none is
+        /// signed by the declared key), "key_changed" (the declared key is not the one signed in
+        /// with: ask the player), or "no_account" (no game account here yet: start the game
+        /// once). members: how many members' licenses the file holds.</summary>
         public static Dictionary<string, object> Status(string home, string appData, Dictionary<string, object> decl)
         {
             string issuer = Json.Str(decl, "issuer"), key = Json.Str(decl, "key");
@@ -83,16 +85,18 @@ namespace Hd2Mod.License
             var mine = Accounts(appData);
             var text = ReadLicense(appData, issuer);
             if (text == null) return With(r, mine.Count == 0 ? "no_account" : "none");
-            var f = Verify(text, issuer, key);
-            if (f == null) return With(r, "invalid");
-            long expires = long.Parse(f["expires"]);
-            long issued = f.TryGetValue("issued", out var iv) && long.TryParse(iv, out var i) ? i : expires;
-            var accounts = f["accounts"].Split(',').ToList();
+            var all = Licenses(text, issuer, key);
+            if (all.Count == 0) return With(r, "invalid");
+            r["members"] = (long)all.Count;
+            var ours = all.Where(f => Named(f).Intersect(mine).Any()).OrderByDescending(Expires).ToList();
+            if (ours.Count == 0) return With(r, mine.Count == 0 ? "no_account" : "other_account");
+            var best = ours[0];
+            long expires = Expires(best);
+            long issued = best.TryGetValue("issued", out var iv) && long.TryParse(iv, out var i) ? i : expires;
             r["expires"] = expires;
-            r["accounts"] = accounts.Cast<object>().ToList();
+            r["accounts"] = Named(best).Cast<object>().ToList();
             long now = Now();
             if (now >= expires) return With(r, "expired");
-            if (!accounts.Intersect(mine).Any()) return With(r, mine.Count == 0 ? "no_account" : "other_account");
             r["renew_due"] = now >= issued + (expires - issued) / 2;
             return With(r, "licensed");
         }
@@ -132,11 +136,13 @@ namespace Hd2Mod.License
                     var renew = Json.Str(body, "renew");
                     var f = text == null ? null : Verify(text, issuer, key);
                     if (f == null || renew == null) return Err("bad_license");
-                    WriteLicense(appData, issuer, text);
+                    WriteLicense(appData, issuer, key, text);
                     var rec = IssuerRecord(home, issuer) ?? new Dictionary<string, object>();
                     rec["key"] = key;
                     rec["name"] = Json.Str(decl, "name");
-                    rec["renew"] = Convert.ToBase64String(ProtectedData.Protect(Encoding.UTF8.GetBytes(renew), Salt, DataProtectionScope.CurrentUser));
+                    var members = Json.Obj(rec, "members") ?? new Dictionary<string, object>();
+                    members[Holder(f)] = Convert.ToBase64String(ProtectedData.Protect(Encoding.UTF8.GetBytes(renew), Salt, DataProtectionScope.CurrentUser));
+                    rec["members"] = members;
                     SaveIssuer(home, issuer, rec);
                     return new Dictionary<string, object> { ["ok"] = true, ["expires"] = long.Parse(f["expires"]) };
                 }
@@ -148,28 +154,47 @@ namespace Hd2Mod.License
             }
         }
 
-        /// <summary>Renews the issuer's license when half its time has passed (or always, with
-        /// force). {renewed: false} when not yet due or never signed in here; {renewed: true,
-        /// expires}; or {error}: the issuer's (not_member, sign_in_again, unknown), "network",
-        /// "bad_license", "key_changed".</summary>
+        /// <summary>Renews each member's license here when half its time has passed (or always,
+        /// with force). {renewed: false} when none was due or nobody signed in here; {renewed:
+        /// true, expires} (the latest end) when one or more were; {error} when none could be and
+        /// one failed: the issuer's (not_member, sign_in_again, unknown), "network",
+        /// "bad_license", "key_changed". A member whose renewal fails keeps their license to its
+        /// end; the others are renewed all the same.</summary>
         public static Dictionary<string, object> Renew(string home, string appData, Dictionary<string, object> decl, bool force)
         {
             string issuer = Json.Str(decl, "issuer"), key = Json.Str(decl, "key");
             var rec = IssuerRecord(home, issuer);
-            var token = RenewToken(rec);
-            if (token == null) return new Dictionary<string, object> { ["renewed"] = false };
+            var tokens = RenewTokens(rec);
+            if (tokens.Count == 0) return new Dictionary<string, object> { ["renewed"] = false };
             if (Json.Str(rec, "key") != key) return Err("key_changed");
-            var st = Status(home, appData, decl);
-            if (!force && Json.Str(st, "state") == "licensed" && !Json.Bool(st, "renew_due"))
-                return new Dictionary<string, object> { ["renewed"] = false };
-            var (status, body) = Post(issuer, "/renew", new Dictionary<string, object> { ["renew"] = token });
-            if (status == 403) return Err(Json.Str(body, "error") ?? "network");
-            if (status != 200) return Err("network");
-            var text = Json.Str(body, "license");
-            var f = text == null ? null : Verify(text, issuer, key);
-            if (f == null) return Err("bad_license");
-            WriteLicense(appData, issuer, text);
-            return new Dictionary<string, object> { ["renewed"] = true, ["expires"] = long.Parse(f["expires"]) };
+            var text = ReadLicense(appData, issuer);
+            var held = text == null ? new List<Dictionary<string, string>>() : Licenses(text, issuer, key);
+            long now = Now(), latest = 0;
+            string error = null;
+            foreach (var (holder, token) in tokens)
+            {
+                var mine = held.Where(f => Holder(f) == holder).OrderByDescending(Expires).FirstOrDefault();
+                if (!force && mine != null && !Due(mine, now)) continue;
+                var (status, body) = Post(issuer, "/renew", new Dictionary<string, object> { ["renew"] = token });
+                if (status != 200) { error = error ?? (status == 403 ? Json.Str(body, "error") ?? "network" : "network"); continue; }
+                var got = Json.Str(body, "license");
+                var f = got == null ? null : Verify(got, issuer, key);
+                if (f == null) { error = error ?? "bad_license"; continue; }
+                WriteLicense(appData, issuer, key, got);
+                latest = Math.Max(latest, Expires(f));
+                // a token kept before members were told apart: filed under the member it renewed
+                if (holder == "")
+                {
+                    rec = IssuerRecord(home, issuer);
+                    var members = Json.Obj(rec, "members") ?? new Dictionary<string, object>();
+                    if (!members.ContainsKey(Holder(f))) members[Holder(f)] = rec["renew"];
+                    rec["members"] = members;
+                    rec.Remove("renew");
+                    SaveIssuer(home, issuer, rec);
+                }
+            }
+            if (latest > 0) return new Dictionary<string, object> { ["renewed"] = true, ["expires"] = latest };
+            return error != null ? Err(error) : new Dictionary<string, object> { ["renewed"] = false };
         }
 
         /// <summary>Signs out here: the license file, the renew token and the pinned key go.</summary>
@@ -194,6 +219,45 @@ namespace Hd2Mod.License
         }
 
         // -- the license -------------------------------------------------------------------
+
+        /// <summary>Every license in a file signed by key for issuer: the file holds one per
+        /// member, each starting with the header at the start of a line.</summary>
+        static List<Dictionary<string, string>> Licenses(string text, string issuer, string key)
+        {
+            var found = new List<Dictionary<string, string>>();
+            foreach (var block in Blocks(text))
+            {
+                var f = Verify(block, issuer, key);
+                if (f != null) found.Add(f);
+            }
+            return found;
+        }
+
+        static List<string> Blocks(string text)
+        {
+            text = text.Replace("\r", "");
+            var blocks = new List<string>();
+            int at = text.StartsWith(Header, StringComparison.Ordinal) ? 0 : text.IndexOf("\n" + Header, StringComparison.Ordinal);
+            while (at >= 0)
+            {
+                if (text[at] == '\n') at++;
+                int next = text.IndexOf("\n" + Header, at, StringComparison.Ordinal);
+                blocks.Add(next < 0 ? text.Substring(at) : text.Substring(at, next + 1 - at));
+                at = next;
+            }
+            return blocks;
+        }
+
+        static List<string> Named(Dictionary<string, string> f) => f["accounts"].Split(',').ToList();
+        static long Expires(Dictionary<string, string> f) => long.Parse(f["expires"]);
+        static string Holder(Dictionary<string, string> f) => f.TryGetValue("holder", out var h) ? h : "";
+
+        static bool Due(Dictionary<string, string> f, long now)
+        {
+            long expires = Expires(f);
+            long issued = f.TryGetValue("issued", out var iv) && long.TryParse(iv, out var i) ? i : expires;
+            return now >= issued + (expires - issued) / 2;
+        }
 
         /// <summary>The fields of a license signed by key for issuer, else null. Same rules as
         /// license_check.lua: CR dropped, the signature over every byte before "sig=".</summary>
@@ -231,13 +295,24 @@ namespace Hd2Mod.License
             catch (IOException) { return null; }
         }
 
-        /// <summary>Through a temporary file, so the game never reads half a license.</summary>
-        static void WriteLicense(string appData, string issuer, string text)
+        /// <summary>A member's new license, in place of their old one: the other members'
+        /// licenses that are still good stay (two players sharing a computer). Through a
+        /// temporary file, so the game never reads half a license.</summary>
+        static void WriteLicense(string appData, string issuer, string key, string text)
         {
             var path = LicensePath(appData, issuer);
             Directory.CreateDirectory(Path.GetDirectoryName(path));
+            var holder = Holder(Verify(text, issuer, key));
+            var keep = new StringBuilder(text.Replace("\r", "").TrimEnd('\n') + "\n");
+            var old = ReadLicense(appData, issuer);
+            if (old != null)
+                foreach (var block in Blocks(old))
+                {
+                    var f = Verify(block, issuer, key);
+                    if (f != null && Holder(f) != holder && Expires(f) > Now()) keep.Append(block.TrimEnd('\n') + "\n");
+                }
             var tmp = path + ".tmp";
-            File.WriteAllText(tmp, text.Replace("\r", ""), new UTF8Encoding(false));
+            File.WriteAllText(tmp, keep.ToString(), new UTF8Encoding(false));
             if (File.Exists(path)) File.Replace(tmp, path, null);
             else File.Move(tmp, path);
         }
@@ -267,9 +342,21 @@ namespace Hd2Mod.License
             else File.Move(path + ".tmp", path);
         }
 
-        static string RenewToken(Dictionary<string, object> rec)
+        /// <summary>(holder, token) for each member signed in here; holder "" for the one token
+        /// a sign-in before 2026-11-02 kept for the whole issuer.</summary>
+        static List<(string Holder, string Token)> RenewTokens(Dictionary<string, object> rec)
         {
-            var s = Json.Str(rec, "renew");
+            var list = new List<(string, string)>();
+            var members = Json.Obj(rec, "members");
+            if (members != null)
+                foreach (var kv in members)
+                    if (Unprotect(kv.Value as string) is string t) list.Add((kv.Key, t));
+            if (Unprotect(Json.Str(rec, "renew")) is string legacy) list.Add(("", legacy));
+            return list;
+        }
+
+        static string Unprotect(string s)
+        {
             if (string.IsNullOrEmpty(s)) return null;
             try { return Encoding.UTF8.GetString(ProtectedData.Unprotect(Convert.FromBase64String(s), Salt, DataProtectionScope.CurrentUser)); }
             catch (Exception e) when (e is CryptographicException || e is FormatException) { return null; }
