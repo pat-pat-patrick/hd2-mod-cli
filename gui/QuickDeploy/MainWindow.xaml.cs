@@ -225,7 +225,7 @@ namespace QuickDeploy
             DropTest();
             Listen();
             SelfUpdateAtStart();
-            LicensesAtStart();
+            PluginsAtStart();
 #if HAS_NEXUS
             if (App.StartLink != null) Dispatcher.BeginInvoke(new Action(() => Arrived(App.StartLink)), DispatcherPriority.ApplicationIdle);
 #endif
@@ -4033,7 +4033,7 @@ namespace QuickDeploy
             void Add(object x) => sb.Append(x).Append('\u001f');
             Add(m.Id == selectedId); Add(picked.Contains(m.Id)); Add(open.Contains(m.Id)); Add(filter == "all");
             Add(m.InProfile); Add(viewLibrary); Add(st.Profile);
-            Add(m.Index); Add(m.Name); Add(m.Path); Add(m.Enabled); Add(m.Icon); Add(m.Status); Add(m.Error); Add(m.Lua); Add(m.Loader); Add(m.License); Add(string.Join(",", m.Tags)); Add(HasUpdate(m)); Add(m.ShownVersion); Add(m.VersionFrom);
+            Add(m.Index); Add(m.Name); Add(m.Path); Add(m.Enabled); Add(m.Icon); Add(m.Status); Add(m.Error); Add(m.Lua); Add(m.Loader); Add(string.Join("|", m.Notes.Select(n => n.Text + n.Colour))); Add(string.Join(",", m.Tags)); Add(HasUpdate(m)); Add(m.ShownVersion); Add(m.VersionFrom);
             Add(Checked(m)?.Status); Add(checkingOne.Contains(m.Id)); Add(checking); Add(updated.Contains(m.Id));
             Add(m.Files.Count); Add(m.DeployBytes); Add(m.LibraryBytes); Add(m.Changes); Add(m.Conflicts); Add(m.Shared); Add(m.Chosen); Add(m.Choices);
             Add(NoRun(m)?.Text);
@@ -4218,8 +4218,7 @@ namespace QuickDeploy
                     },
                 });
             if (m.Conflicts > 0) meta.Children.Add(Fact(Texts.F("row_clash", m.Conflicts), "Yellow"));
-            var licenseMark = LicenseMark(m);
-            if (licenseMark != null) meta.Children.Add(Fact(licenseMark, "Yellow", Texts.Get("row_license_tip")));
+            foreach (var (text, tip, colour) in NotesOf(m)) meta.Children.Add(Fact(text, colour, tip));
             // the same bytes in two mods are only worth a mention (the user, 2026-10-24)
             if (m.Shared > 0) meta.Children.Add(Fact(Texts.F("row_same", m.Shared), "Muted", Texts.Get("same_tip")));
             if (m.Error != null) meta.Children.Add(new TextBlock { Text = Texts.Get("broken"), FontSize = 12, Foreground = B("Yellow") });

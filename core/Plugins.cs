@@ -80,7 +80,7 @@ namespace Hd2Mod
                 var t = asm.GetTypes().Where(x => x.Name == "Plugin" && x.IsPublic).ToList();
                 if (t.Count != 1) return (file, version, "broken");
                 var a = t[0].GetField("Api");
-                return (file, version, a != null && a.IsLiteral && a.GetRawConstantValue() is int n && n == Api(path) ? null : "api");
+                return (file, version, a != null && a.IsLiteral && a.GetRawConstantValue() is int n && n == Api ? null : "api");
             }
             catch (Exception e) when (e is BadImageFormatException || e is TypeLoadException || e is IOException || e is FileLoadException
                                       || e is ReflectionTypeLoadException || e is UnauthorizedAccessException)
@@ -111,7 +111,7 @@ namespace Hd2Mod
             return (file, version, replaced);
         }
 
-        /// <summary>An added plugin, by its file name (HD2QD.Vram.dll, or Vram), deleted from Dir.
+        /// <summary>An added plugin, by its file name (HD2QD.AssetCheck.dll, or AssetCheck), deleted from Dir.
         /// What it already loaded stays in this process until the program is closed.</summary>
         public static string Remove(string name)
         {
@@ -133,40 +133,154 @@ namespace Hd2Mod
             if (!Directory.Exists(dir)) return found;
             foreach (var path in Directory.GetFiles(dir, "HD2QD.*.dll").OrderBy(p => p, StringComparer.OrdinalIgnoreCase))
             {
-                var t = Load(path, null, Api(path), out var why);
+                var t = Load(path, null, Api, out var why);
                 found.Add((Path.GetFileName(path), t, why));
             }
             return found;
         }
 
-        /// <summary>The Api this manager speaks with each known plugin; 1 for one it does not know.</summary>
-        static int Api(string path) =>
-            string.Equals(Path.GetFileName(path), "HD2QD.License.dll", StringComparison.OrdinalIgnoreCase) ? Licenses.Api
-            : string.Equals(Path.GetFileName(path), "HD2QD.Vram.dll", StringComparison.OrdinalIgnoreCase) ? Vram.Api : 1;
+        /// <summary>The Api every plugin speaks; a plugin of another one is refused.</summary>
+        public const int Api = 1;
 
         public static string Kind(Type t) => t?.GetField("Kind")?.GetValue(null) as string;
         public static string Title(Type t, bool zh) => t?.GetMethod("Title")?.Invoke(null, new object[] { zh }) as string;
         public static string Summary(Type t, bool zh) => t?.GetMethod("Summary")?.Invoke(null, new object[] { zh }) as string;
         public static string Version(Type t) => t?.Assembly.GetName().Version?.ToString(3);
+
+        /// <summary>A plugin's static method, by name, with what it threw (not the reflection's wrapper).</summary>
+        public static object Call(Type t, string method, params object[] args)
+        {
+            var m = t.GetMethod(method) ?? throw new MissingMethodException(t.FullName, method);
+            try { return m.Invoke(null, args); }
+            catch (TargetInvocationException e) when (e.InnerException != null)
+            {
+                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(e.InnerException).Throw();
+                throw;
+            }
+        }
+
+        static IEnumerable<(string File, Type Type)> Usable() => All().Where(p => p.Type != null).Select(p => (p.File, p.Type));
+
+        // ------------------------------------------------------------ what plugins add to the manager
+
+        /// <summary>Official plugins a mod asks for by a file it ships: while the plugin is not
+        /// added, the mod's row says it needs it (the user, 2026-11-02: a plugin is added when
+        /// it is needed). Until the official list carries this, it is kept here.</summary>
+        static readonly (string File, string Plugin, string En, string Zh)[] Asks =
+        {
+            ("hd2_license.json", "HD2QD.License.dll", "Member licenses", "会员授权"),
+        };
+
+        /// <summary>What is said on a mod's row: each added plugin's ModNote(modFolder, host), and
+        /// for an official plugin the mod asks for that is not added, that it is needed. Each note
+        /// is {plugin, text, text_zh, tip, tip_zh, colour ("Yellow", "Blue", "Muted"), needs?}.
+        /// A plugin that fails says nothing (it is logged): a row never breaks on a plugin.</summary>
+        public static List<Dictionary<string, object>> Notes(string modFolder, Dictionary<string, object> host)
+        {
+            var notes = new List<Dictionary<string, object>>();
+            var added = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var (file, type) in Usable())
+            {
+                added.Add(file);
+                if (type.GetMethod("ModNote") == null) continue;
+                try
+                {
+                    if (Call(type, "ModNote", modFolder, host) is Dictionary<string, object> n && Json.Str(n, "text") != null)
+                    {
+                        n["plugin"] = file;
+                        notes.Add(n);
+                    }
+                }
+                catch (Exception e) { ManagerLog.Warn("plugin " + file + ": ModNote: " + e.Message); }
+            }
+            foreach (var ask in Asks)
+                if (!added.Contains(ask.Plugin) && File.Exists(Path.Combine(modFolder, ask.File)))
+                    notes.Add(new Dictionary<string, object>
+                    {
+                        ["plugin"] = ask.Plugin, ["needs"] = true, ["colour"] = "Yellow",
+                        ["text"] = "Needs the " + ask.En + " plugin", ["text_zh"] = "需要“" + ask.Zh + "”插件",
+                        ["tip"] = "Add " + ask.Plugin + " on the Plugins page (the jigsaw piece beside the gear).",
+                        ["tip_zh"] = "请在“插件”页（齿轮旁的拼图按钮）添加 " + ask.Plugin + "。",
+                    });
+            return notes;
+        }
+
+        /// <summary>The official plugins the library's mods ask for and that are not added: each
+        /// with its titles and the mods that ask.</summary>
+        public static List<(string Plugin, string En, string Zh, List<string> Mods)> Needed(Library lib)
+        {
+            var added = new HashSet<string>(All().Select(p => p.File), StringComparer.OrdinalIgnoreCase);
+            var out_ = new List<(string, string, string, List<string>)>();
+            foreach (var ask in Asks.Where(a => !added.Contains(a.Plugin)))
+            {
+                var mods = lib.Mods.Where(m => Directory.Exists(m.Path) && File.Exists(Path.Combine(m.Path, ask.File))).Select(m => m.Name).ToList();
+                if (mods.Count > 0) out_.Add((ask.Plugin, ask.En, ask.Zh, mods));
+            }
+            return out_;
+        }
+
+        /// <summary>The command-line commands the added plugins offer (their Commands: rows of
+        /// [name, help]); a name the manager has itself is left out.</summary>
+        public static List<(string Name, string Help, string File, Type Type)> Commands(ICollection<string> taken)
+        {
+            var out_ = new List<(string, string, string, Type)>();
+            foreach (var (file, type) in Usable())
+            {
+                string[][] rows = null;
+                try { rows = type.GetField("Commands")?.GetValue(null) as string[][]; }
+                catch (Exception e) { ManagerLog.Warn("plugin " + file + ": Commands: " + e.Message); }
+                foreach (var r in rows ?? new string[0][])
+                    if (r != null && r.Length >= 1 && !taken.Contains(r[0]) && !out_.Any(x => x.Item1 == r[0]))
+                        out_.Add((r[0], r.Length > 1 ? r[1] : "", file, type));
+            }
+            return out_;
+        }
+
+        /// <summary>Each added plugin's Start(host) that has one, in the background at the window's
+        /// start (a renewal, a cache): whether any of them changed something worth reading again.</summary>
+        public static bool Start(Dictionary<string, object> host)
+        {
+            bool changed = false;
+            foreach (var (file, type) in Usable())
+            {
+                if (type.GetMethod("Start") == null) continue;
+                try { changed |= Call(type, "Start", host) is bool b && b; }
+                catch (Exception e) { ManagerLog.Warn("plugin " + file + ": Start: " + e.Message); }
+            }
+            return changed;
+        }
     }
 
-    /// <summary>The VRAM estimate plugin, HD2QD.Vram.dll (plugins\Vram): what each enabled mod's
-    /// textures and models take on the graphics card next to the game's copies they replace. A
-    /// window plugin; the command line's `vram` uses its Estimate.</summary>
-    public static class Vram
+    /// <summary>What the manager hands a plugin (every call takes this host): home, its settings
+    /// folder (a plugin keeps its own files there); appdata, the player's roaming AppData (the
+    /// game's saves\); zh, the language; data, the game's data folder (null without a game
+    /// folder); mods, a Func of the enabled mods in load order, each {name, archives: [patch
+    /// archives]} (the last to load wins a resource two ship); library, a Func of every mod in
+    /// the library, each {name, path, enabled, settings: [the settings window's lists its Lua
+    /// writes]}. The window adds what only it has (PluginsView).</summary>
+    public static class PluginHost
     {
-        public const int Api = 1;
+        /// <summary>Set by tests; else HD2QD_APPDATA, for a demo library's pictures, which must
+        /// show none of the player's accounts; else the player's roaming AppData.</summary>
+        public static string AppDataOverride;
 
-        static string why;
-        static Type Plugin => PluginFiles.Load(PluginFiles.PathOf("HD2QD.Vram.dll"), "Hd2Mod.Vram.Plugin", Api, out why);
+        public static string AppData =>
+            AppDataOverride ?? (Environment.GetEnvironmentVariable("HD2QD_APPDATA") is string said && said.Length > 0 ? said
+            : Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData));
 
-        public static bool Present => Plugin != null;
+        public static Dictionary<string, object> Make(bool zh)
+        {
+            var game = Store.GameDir(null, false);
+            return new Dictionary<string, object>
+            {
+                ["api"] = (long)PluginFiles.Api, ["home"] = Store.Home, ["appdata"] = AppData, ["zh"] = zh,
+                ["data"] = game != null ? Paths.Join(game, "data") : null,
+                ["mods"] = (Func<List<Dictionary<string, object>>>)(() => Mods(Library.Load())),
+                ["library"] = (Func<List<Dictionary<string, object>>>)(() => LibraryMods(Library.Load())),
+            };
+        }
 
-        /// <summary>For tests: the plugin's class (its assembly holds the LZ4 reader).</summary>
-        internal static Type PluginType => Plugin;
-
-        /// <summary>The enabled mods in load order (the last to load wins a resource two ship),
-        /// each {name, archives: [the patch archives it deploys]}, as the plugin takes them.</summary>
+        /// <summary>The enabled mods in load order, each {name, archives}.</summary>
         public static List<Dictionary<string, object>> Mods(Library lib)
         {
             var mods = new List<Dictionary<string, object>>();
@@ -181,126 +295,16 @@ namespace Hd2Mod
             return mods;
         }
 
-        /// <summary>The estimate for the library's enabled mods (the plugin's Estimate).</summary>
-        public static Dictionary<string, object> Estimate(Library lib, string data)
+        /// <summary>Every library mod, each {name, path, enabled, settings}; reading the settings
+        /// lists may read archives not read yet (LuaMods).</summary>
+        public static List<Dictionary<string, object>> LibraryMods(Library lib)
         {
-            var t = Plugin ?? throw new ModError("the asset check plugin (HD2QD.Vram.dll) " +
-                (why == "missing" ? "has not been added (plugin-add, or the window's Plugins page)" : why == "api" ? "is for another version of this program" : "is damaged"), "vram_plugin");
-            try { return t.GetMethod("Estimate").Invoke(null, new object[] { Store.Home, data, Mods(lib), null }) as Dictionary<string, object>; }
-            catch (TargetInvocationException e) when (e.InnerException != null) { throw e.InnerException; }
-        }
-    }
-
-    /// <summary>The license plugin, HD2QD.License.dll (plugins\License), once added: mods
-    /// that ship an hd2_license.json are for their author's members, and the plugin signs the
-    /// player in to the author's issuer and keeps the license the mod checks in game. Without
-    /// the file the manager works as before and such a mod is only marked. The plugin shares no
-    /// types with the manager (the core is compiled into each program), so it is called by
-    /// name, with strings, numbers and Json shapes.</summary>
-    public static class Licenses
-    {
-        public const int Api = 1;
-
-        /// <summary>Set by tests; else in PluginFiles.Dir.</summary>
-        public static string DllPath;
-        /// <summary>Set by tests; else HD2QD_APPDATA, for a demo library's pictures, which must
-        /// show none of the player's accounts or licenses; else the player's roaming AppData (the
-        /// game's saves\, and the licenses\ the mods read).</summary>
-        public static string AppDataOverride;
-
-        static string AppData =>
-            AppDataOverride ?? (Environment.GetEnvironmentVariable("HD2QD_APPDATA") is string said && said.Length > 0 ? said
-            : Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData));
-
-        static string why;
-
-        static Type Plugin => PluginFiles.Load(DllPath ?? PluginFiles.PathOf("HD2QD.License.dll"), "Hd2Mod.License.Plugin", Api, out why);
-
-        public static bool Present => Plugin != null;
-
-        /// <summary>The plugin's version ("1.0.0"), or null without one.</summary>
-        public static string Version => Plugin?.Assembly.GetName().Version?.ToString(3);
-
-        /// <summary>For tests: the plugin's class, to set its Clock.</summary>
-        internal static Type PluginType => Plugin;
-
-        /// <summary>Why there is no plugin: "missing", "api" (another version's), "broken"; null when there is one.</summary>
-        public static string Why => Plugin == null ? why : null;
-
-        static object Call(string name, params object[] args)
-        {
-            var t = Plugin ?? throw new ModError(Why == "missing"
-                ? "the license plugin (HD2QD.License.dll) has not been added (plugin-add, or the window's Plugins page)"
-                : "the license plugin (HD2QD.License.dll) " + (Why == "api" ? "is for another version of this program" : "is damaged"), "license_plugin");
-            try { return t.GetMethod(name).Invoke(null, args); }
-            catch (TargetInvocationException e) when (e.InnerException != null) { throw e.InnerException; }
-        }
-
-        /// <summary>The mod's {issuer, name, key}, {error} for a broken declaration, or null for
-        /// a mod that needs no license (or when there is no plugin to read it).</summary>
-        public static Dictionary<string, object> Declaration(string modFolder) =>
-            Present ? Call("Declaration", modFolder) as Dictionary<string, object> : Declared(modFolder);
-
-        /// <summary>Without the plugin, only whether the mod says it needs one.</summary>
-        static Dictionary<string, object> Declared(string modFolder) =>
-            File.Exists(Path.Combine(modFolder, "hd2_license.json")) ? new Dictionary<string, object> { ["error"] = "no_plugin" } : null;
-
-        /// <summary>What the state says of a mod: null when it needs no license; else {issuer,
-        /// name, state, expires?, accounts?, renew_due?}, state as Plugin.Status, or "no_plugin"
-        /// / "bad_declaration".</summary>
-        public static Dictionary<string, object> StateOf(string modFolder)
-        {
-            var d = Declaration(modFolder);
-            if (d == null) return null;
-            var error = Json.Str(d, "error");
-            if (error != null) return new Dictionary<string, object> { ["state"] = error };
-            return Call("Status", Store.Home, AppData, d) as Dictionary<string, object>;
-        }
-
-        /// <summary>Where an issuer's license stands here, by its declaration.</summary>
-        public static Dictionary<string, object> Status(Dictionary<string, object> decl) =>
-            Call("Status", Store.Home, AppData, decl) as Dictionary<string, object>;
-
-        public static List<string> Accounts() => Call("Accounts", AppData) as List<string>;
-
-        public static Dictionary<string, object> BeginSignIn(Dictionary<string, object> decl) =>
-            Call("BeginSignIn", AppData, decl) as Dictionary<string, object>;
-
-        public static Dictionary<string, object> FinishSignIn(Dictionary<string, object> decl, string nonce, TimeSpan wait, CancellationToken cancel) =>
-            Call("FinishSignIn", Store.Home, AppData, decl, nonce, (int)wait.TotalSeconds, cancel) as Dictionary<string, object>;
-
-        public static Dictionary<string, object> Renew(Dictionary<string, object> decl, bool force) =>
-            Call("Renew", Store.Home, AppData, decl, force) as Dictionary<string, object>;
-
-        public static void Forget(string issuer) => Call("Forget", Store.Home, AppData, issuer);
-
-        /// <summary>Every issuer the library's mods declare, each with its declaration and the
-        /// mods that use it, in the library's order.</summary>
-        public static List<(Dictionary<string, object> Decl, List<Mod> Mods)> Issuers(Library lib)
-        {
-            var found = new List<(Dictionary<string, object>, List<Mod>)>();
-            foreach (var m in lib.Mods)
+            var settings = LuaMods.Of(lib).ToDictionary(ml => ml.Mod.Id, ml => ml.Settings.Cast<object>().ToList());
+            return lib.Mods.Select(m => new Dictionary<string, object>
             {
-                if (!Directory.Exists(m.Path)) continue;
-                var d = Declaration(m.Path);
-                if (d == null || Json.Str(d, "error") != null) continue;
-                var at = found.FindIndex(x => Json.Str(x.Item1, "issuer") == Json.Str(d, "issuer") && Json.Str(x.Item1, "key") == Json.Str(d, "key"));
-                if (at < 0) found.Add((d, new List<Mod> { m }));
-                else found[at].Item2.Add(m);
-            }
-            return found;
-        }
-
-        /// <summary>Issuers(lib), then every issuer signed in here that no mod in the library
-        /// names, with no mods: a sign-in stays in sight (and can be signed out) after its mods
-        /// leave the library (the user, 2026-11-02: removing the probe hid it).</summary>
-        public static List<(Dictionary<string, object> Decl, List<Mod> Mods)> Known(Library lib)
-        {
-            var found = Issuers(lib);
-            foreach (var d in Call("SignedIn", Store.Home) as List<Dictionary<string, object>> ?? new List<Dictionary<string, object>>())
-                if (!found.Any(x => Json.Str(x.Decl, "issuer") == Json.Str(d, "issuer")))
-                    found.Add((d, new List<Mod>()));
-            return found;
+                ["name"] = m.Name, ["path"] = m.Path, ["enabled"] = m.Enabled,
+                ["settings"] = settings.TryGetValue(m.Id, out var s) ? s : new List<object>(),
+            }).ToList();
         }
     }
 }

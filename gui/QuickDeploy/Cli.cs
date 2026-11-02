@@ -93,6 +93,14 @@ namespace QuickDeploy
         public string Mdl3Mod, Mdl3State, Mdl3Native, Mdl3Problem;
     }
 
+    /// <summary>A plugin's word on a mod's row, in both languages (PluginFiles.Notes).</summary>
+    class Note
+    {
+        public string Plugin, Text, TextZh, Tip, TipZh, Colour;
+        /// <summary>An official plugin the mod needs and that is not added.</summary>
+        public bool Needs;
+    }
+
     class ModRow
     {
         public int Index;
@@ -104,8 +112,8 @@ namespace QuickDeploy
         public string LoaderKind;
         /// <summary>For its author's members (hd2_license.json): where its license stands here
         /// ("licensed", "expired", "none", ... as core\Plugins.cs), else null.</summary>
-        public string License;
-        public long LicenseExpires;
+        /// <summary>What the plugins say of it (PluginFiles.Notes).</summary>
+        public List<Note> Notes = new List<Note>();
         /// <summary>Its Lua scripts, when it has any.</summary>
         public LuaInfo Lu;
         /// <summary>In the profile in use (always, with profiles off).</summary>
@@ -404,7 +412,11 @@ namespace QuickDeploy
                     Channel = Str(m, "channel"), Page = Str(m, "page"), Version = Str(m, "version"),
                     SiteAuthor = Str(m, "site_author"), SiteSummary = Str(m, "site_summary"), SiteVersion = Str(m, "site_version"),
                     ShownVersion = Str(m, "shown_version"), VersionFrom = Str(m, "version_from"), DeployBytes = Long(m, "deploy_bytes"),
-                    License = Str(Json.Obj(m, "license"), "state"), LicenseExpires = Long(Json.Obj(m, "license"), "expires"),
+                    Notes = List(m, "notes").OfType<Dictionary<string, object>>().Select(n => new Note
+                    {
+                        Plugin = Str(n, "plugin"), Text = Str(n, "text"), TextZh = Str(n, "text_zh"), Tip = Str(n, "tip"), TipZh = Str(n, "tip_zh"),
+                        Colour = Str(n, "colour"), Needs = n.TryGetValue("needs", out var nd) && nd is bool nb && nb,
+                    }).ToList(),
                     LibraryBytes = Long(m, "library_bytes"),
                 };
                 foreach (var o in List(m, "options").OfType<Dictionary<string, object>>())

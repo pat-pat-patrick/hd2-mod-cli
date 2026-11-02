@@ -93,19 +93,11 @@ namespace Hd2Mod
             Cmd("group-put", new Spec { Help = "put mods --in a group, or back to the --top (no group)",
                                         Positionals = new[] { "mods" }, Many = true, Values = new[] { "--in" }, Flags = new[] { "--top" },
                                         OneOf = new[] { "--in", "--top" }, Run = GroupPut }),
-            Cmd("license", new Spec { Help = "the licenses the library's mods need (a mod with hd2_license.json is for its author's members): each issuer, whether this computer has its license and until when, and the mods that use it",
-                                      Run = LicenseCmd }),
-            Cmd("license-login", new Spec { Help = "sign in to a mod author's issuer (its name, or a mod that uses it): your browser opens the author's members' site, and the license goes where the mods read it",
-                                            Positionals = new[] { "issuer" }, Run = LicenseLoginCmd }),
-            Cmd("license-renew", new Spec { Help = "renew the licenses that are half way to their end (--force: every one now)", Flags = new[] { "--force" }, Run = LicenseRenewCmd }),
-            Cmd("license-logout", new Spec { Help = "remove an issuer's license and sign-in from this computer", Positionals = new[] { "issuer" }, Run = LicenseLogoutCmd }),
-            Cmd("vram", new Spec { Help = "check each enabled mod's models and textures against the game's copies they replace: detail levels, triangles, shadows, culling boxes, lights, mipmaps, compression, video memory (the asset check plugin; from the files, not measured)",
-                                   Run = VramCmd }),
             Cmd("plugins", new Spec { Help = "the plugins added (HD2QD.*.dll in the settings folder's plugins folder): each one's file, version and title, or why it cannot be used",
                                       Run = PluginsCmd }),
             Cmd("plugin-add", new Spec { Help = "add a plugin (HD2QD.<name>.dll) to the settings folder, over one of the same name; a plugin runs as this program does, so add only plugins from a source you trust",
                                          Positionals = new[] { "path" }, Run = PluginAddCmd }),
-            Cmd("plugin-remove", new Spec { Help = "remove an added plugin (HD2QD.Vram.dll, or Vram)", Positionals = new[] { "plugin" }, Run = PluginRemoveCmd }),
+            Cmd("plugin-remove", new Spec { Help = "remove an added plugin (HD2QD.AssetCheck.dll, or AssetCheck)", Positionals = new[] { "plugin" }, Run = PluginRemoveCmd }),
 #if HAS_NEXUS
             Cmd("nexus", new Spec { Help = "download a Nexus Mods link (nxm://...) and put it in the library (a mod from it already there gets the new version)",
                                     Positionals = new[] { "link" }, Run = NexusCmd }),
@@ -199,6 +191,13 @@ namespace Hd2Mod
                 "commands:",
             };
             foreach (var kv in Specs) lines.Add("  " + kv.Key.PadRight(16) + kv.Value.Help);
+            var theirs = PluginFiles.Commands(Specs.Select(x => x.Key).ToList());
+            if (theirs.Count > 0)
+            {
+                lines.Add("");
+                lines.Add("commands of the plugins added:");
+                foreach (var c in theirs) lines.Add("  " + c.Name.PadRight(16) + c.Help + " (" + c.File + ")");
+            }
             return string.Join(Environment.NewLine, lines);
         }
 
@@ -232,6 +231,8 @@ namespace Hd2Mod
             if (argv[0] == "--version") { output.WriteLine("hd2-mod-cli " + StateDoc.Version); return 0; }
             if (argv[0] == "-h" || argv[0] == "--help") { output.WriteLine(Help()); return 0; }
             var spec = Specs.FirstOrDefault(s => s.Key == argv[0]).Value;
+            if (spec == null && PluginFiles.Commands(Specs.Select(x => x.Key).ToList()).FirstOrDefault(c => c.Name == argv[0]) is var mine && mine.Type != null)
+                return PluginCommand(mine.File, mine.Type, argv, output, err, out refused);
             if (spec == null)
             {
                 err.WriteLine(Usage());
@@ -1029,98 +1030,25 @@ namespace Hd2Mod
         }
 #endif
 
-        static void LicenseCmd(Args a, TextWriter o)
+        /// <summary>A plugin's own command: its Run(command, args, output, host) says 0 done, 1
+        /// refused, 2 a wrong command line; what it throws is a refusal. Logged like the
+        /// manager's own commands that change something.</summary>
+        static int PluginCommand(string file, Type type, string[] argv, TextWriter output, TextWriter err, out ModError refused)
         {
-            var issuers = Licenses.Known(Library.Load());
-            if (issuers.Count == 0) { o.WriteLine("no mod in the library needs a license, and no author is signed in here"); return; }
-            foreach (var (decl, mods) in issuers)
+            refused = null;
+            ManagerLog.Info("run: " + ManagerLog.Line(argv) + " (" + file + ")");
+            try
             {
-                var st = mods.Count > 0 ? Licenses.StateOf(mods[0].Path) : Licenses.Status(decl);
-                o.WriteLine(Json.Str(decl, "name") + " (" + Json.Str(decl, "issuer") + "): " + LicenseWords(st));
-                o.WriteLine("  mods: " + (mods.Count > 0 ? string.Join(", ", mods.Select(m => m.Name)) : "none in the library now"));
+                var r = PluginFiles.Call(type, "Run", argv[0], argv.Skip(1).ToArray(), output, PluginHost.Make(false));
+                return r is int n ? n : 0;
             }
-        }
-
-        static string When(long unix) => DateTimeOffset.FromUnixTimeSeconds(unix).ToLocalTime().ToString("yyyy-MM-dd HH:mm");
-
-        static string LicenseWords(Dictionary<string, object> st)
-        {
-            var until = st.ContainsKey("expires") ? When(Json.Long(st, "expires")) : null;
-            switch (Json.Str(st, "state"))
+            catch (Exception e) when (!(e is OutOfMemoryException))
             {
-                case "licensed": return "licensed until " + until + (Json.Bool(st, "renew_due") ? " (due for renewal)" : "");
-                case "expired": return "expired on " + until;
-                case "none": return "not signed in here";
-                case "other_account": return "the license here is for another game account";
-                case "invalid": return "the license here is not signed by this issuer's key";
-                case "key_changed": return "a mod declares another key than the one signed in with: check where it came from";
-                case "no_account": return "no game account here yet: start the game once";
-                default: return Json.Str(st, "state");
+                refused = e as ModError ?? new ModError(e.Message, "plugin_failed", file);
+                err.WriteLine("hd2qd: " + argv[0] + ": " + e.Message);
+                ManagerLog.Warn("refused: " + argv[0] + " (" + file + "): " + e.Message);
+                return 1;
             }
-        }
-
-        /// <summary>An issuer by its name, or the issuer a mod uses.</summary>
-        static Dictionary<string, object> IssuerArg(string reference)
-        {
-            var lib = Library.Load();
-            var byName = Licenses.Known(lib).Where(x => string.Equals(Json.Str(x.Decl, "issuer"), reference, StringComparison.OrdinalIgnoreCase)).ToList();
-            if (byName.Count > 1) throw new ModError("mods declare " + reference + " with different keys: run `license` to see which");
-            if (byName.Count == 1) return byName[0].Decl;
-            var mod = Ops.Pick(lib, reference);
-            var d = Licenses.Declaration(mod.Path);
-            if (d == null) throw new ModError(mod.Name + " needs no license");
-            if (Json.Str(d, "error") != null) throw new ModError(mod.Name + "'s hd2_license.json cannot be read", "license_declaration");
-            return d;
-        }
-
-        static void LicenseLoginCmd(Args a, TextWriter o)
-        {
-            var decl = IssuerArg(a.Pos["issuer"]);
-            var begin = Licenses.BeginSignIn(decl);
-            if (Json.Str(begin, "error") == "no_account") throw new ModError("no game account on this computer yet: start the game once, then sign in", "license_no_account");
-            o.WriteLine("your browser opens " + Json.Str(decl, "issuer") + ", the issuer of " + Json.Str(decl, "name") + "; it learns your game account id (" + Licenses.Accounts()[0] + ")");
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Json.Str(begin, "url")) { UseShellExecute = true });
-            var r = Licenses.FinishSignIn(decl, Json.Str(begin, "nonce"), TimeSpan.FromMinutes(10), System.Threading.CancellationToken.None);
-            var error = Json.Str(r, "error");
-            if (error != null) throw new ModError(LicenseError(error), "license_" + error);
-            o.WriteLine("licensed until " + When(Json.Long(r, "expires")));
-        }
-
-        static string LicenseError(string error)
-        {
-            switch (error)
-            {
-                case "not_member": return "the issuer says this account is not an active member (or its tier is too low)";
-                case "account_limit": return "the membership has as many game accounts as the issuer allows: ask the author to free one";
-                case "denied": return "access was not granted on the members' site";
-                case "sign_in_again": case "unknown": return "the issuer asks to sign in again (license-login)";
-                case "timeout": return "no answer from the sign-in within 10 minutes";
-                case "network": return "the issuer cannot be reached";
-                case "bad_license": return "the issuer's license is not signed by the key the mod declares";
-                case "key_changed": return "a mod declares another key than the one signed in with: check where it came from";
-                default: return "the sign-in failed: " + error;
-            }
-        }
-
-        static void LicenseRenewCmd(Args a, TextWriter o)
-        {
-            var issuers = Licenses.Issuers(Library.Load());
-            if (issuers.Count == 0) { o.WriteLine("no mod in the library needs a license"); return; }
-            foreach (var (decl, _) in issuers)
-            {
-                var r = Licenses.Renew(decl, a.Flag("--force"));
-                var error = Json.Str(r, "error");
-                o.WriteLine(Json.Str(decl, "issuer") + ": " + (error != null ? LicenseError(error)
-                    : Json.Bool(r, "renewed") ? "renewed until " + When(Json.Long(r, "expires"))
-                    : "not due, or not signed in here"));
-            }
-        }
-
-        static void LicenseLogoutCmd(Args a, TextWriter o)
-        {
-            var decl = IssuerArg(a.Pos["issuer"]);
-            Licenses.Forget(Json.Str(decl, "issuer"));
-            o.WriteLine("removed " + Json.Str(decl, "issuer") + "'s license and sign-in from this computer");
         }
 
         static void PluginsCmd(Args a, TextWriter o)
@@ -1143,32 +1071,6 @@ namespace Hd2Mod
 
         static void PluginRemoveCmd(Args a, TextWriter o) =>
             o.WriteLine("removed " + PluginFiles.Remove(a.Pos["plugin"]) + " from " + PluginFiles.Dir);
-
-        static void VramCmd(Args a, TextWriter o)
-        {
-            var r = Vram.Estimate(Library.Load(), Paths.Join(Store.GameDir(), "data"));
-            string Mb(long n) => (n / 1048576.0).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + " MB";
-            string Extra(long n) => (n >= 0 ? "+" : "-") + Mb(Math.Abs(n));
-            int Rank(string level) => level == "many" ? 0 : level == "waste" ? 1 : 2;
-            var mods = Json.List(r, "mods").Cast<Dictionary<string, object>>()
-                .Where(m => Json.Long(m, "textures") + Json.Long(m, "models") > 0)
-                .OrderBy(m => Rank(Json.Str(m, "level"))).ThenByDescending(m => Json.Long(m, "extra")).ToList();
-            if (mods.Count == 0) { o.WriteLine("no enabled mod contains textures or models"); return; }
-            o.WriteLine("each enabled mod's models and textures next to the game's copies they replace, from the files (not measured in game)");
-            o.WriteLine("review = more triangles on a model the game may draw many of (an enemy, a map object); inefficient = one of the findings below");
-            foreach (var m in mods)
-            {
-                var level = Json.Str(m, "level") == "many" ? "review" : Json.Str(m, "level") == "waste" ? "inefficient" : "normal";
-                o.WriteLine("  " + level.PadRight(11) + Extra(Json.Long(m, "extra")).PadLeft(11) + " video memory  " +
-                            Json.Long(m, "models") + " models, " + Json.Long(m, "textures") + " textures  " + Json.Str(m, "name") +
-                            (Json.Long(m, "lost") > 0 ? "  (" + Json.Long(m, "lost") + " overridden by a mod loaded later, not counted)" : ""));
-                var flags = Json.Obj(m, "flags");
-                if (flags != null && flags.Count > 0)
-                    o.WriteLine("             " + string.Join(", ", flags.OrderByDescending(kv => (long)kv.Value).Select(kv => kv.Key + " " + kv.Value)));
-            }
-            var t = Json.Obj(r, "total");
-            o.WriteLine("total: " + Mb(Json.Long(t, "max")) + " at most if everything were loaded, " + Extra(Json.Long(t, "extra")) + " than the game's copies they replace");
-        }
 
         static string LoaderName(string kind, ModLua ml) =>
             kind == "bml" ? "Boot Mod Loader" + (ml?.Boot?.BootVersion != null ? " " + ml.Boot.BootVersion : "")

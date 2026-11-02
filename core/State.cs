@@ -354,6 +354,7 @@ namespace Hd2Mod
             var record = Store.Load("deployed.json");
             var mods = new List<object>();
             int index = 0;
+            var pluginHost = PluginHost.Make(false);        // what the plugins say of each mod (PluginFiles.Notes)
             foreach (var m in lib.Mods)
             {
                 index++;
@@ -413,8 +414,8 @@ namespace Hd2Mod
                     ["shown_version"] = Origins.VersionOf(m).Version, ["version_from"] = Origins.VersionOf(m).From,
                     ["site_author"] = m.Site?.Author, ["site_summary"] = m.Site?.Summary, ["site_version"] = m.Site?.Version,
                     ["tags"] = m.Tags.Cast<object>().ToList(), ["group"] = m.Group,
-                    // for its author's members (hd2_license.json): where its license stands here
-                    ["license"] = exists ? Licenses.StateOf(m.Path) : null,
+                    // what the added plugins say of it, and the official plugins it needs that are not added
+                    ["notes"] = exists ? PluginFiles.Notes(m.Path, pluginHost).Cast<object>().ToList() : new List<object>(),
                     // the version kept for a rollback (Versions), and the newest one skipped
                     ["previous"] = m.Previous == null ? null : new Dictionary<string, object>
                     {

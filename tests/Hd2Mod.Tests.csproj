@@ -17,6 +17,7 @@
   <ItemGroup>
     <Compile Remove="bin\**" />
     <Compile Remove="obj\**" />
+    <Compile Remove="SamplePlugin\**" />
   </ItemGroup>
 
   <ItemGroup>
@@ -31,12 +32,10 @@
     <None Update="data\**" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
-  <!-- the license plugin, built first and put beside the tests as beside the program -->
+  <!-- a plugin made for the tests (PluginTests.cs), built first and put beside them -->
   <ItemGroup>
-    <ProjectReference Include="..\plugins\License\HD2QD.License.csproj" ReferenceOutputAssembly="false" />
-    <None Include="..\plugins\License\bin\$(Configuration)\net48\HD2QD.License.dll" Link="HD2QD.License.dll" CopyToOutputDirectory="PreserveNewest" />
-    <ProjectReference Include="..\plugins\Vram\HD2QD.Vram.csproj" ReferenceOutputAssembly="false" />
-    <None Include="..\plugins\Vram\bin\$(Configuration)\net48\HD2QD.Vram.dll" Link="HD2QD.Vram.dll" CopyToOutputDirectory="PreserveNewest" />
+    <ProjectReference Include="SamplePlugin\HD2QD.Sample.csproj" ReferenceOutputAssembly="false" />
+    <None Include="SamplePlugin\bin\$(Configuration)\net48\HD2QD.Sample.dll" Link="HD2QD.Sample.dll" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

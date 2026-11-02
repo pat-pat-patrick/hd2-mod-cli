@@ -32,8 +32,8 @@ namespace Hd2Mod.Tests
             Deploy.GameRunning = () => false;
             Store.Redirected = () => null;             // the test's home is not under AppData anyway
             Deploy.SameDrive = Native.SameDrive;
-            // the plugins the test project copies beside itself, as if the player had added them
-            PluginFiles.Folder = AppDomain.CurrentDomain.BaseDirectory;
+            // no plugin added: a test that wants one adds it (PluginTests.cs)
+            PluginFiles.Folder = Path.Combine(Root, "no plugins");
         }
 
         public virtual void Dispose()
