@@ -413,6 +413,9 @@ namespace QuickDeploy
                     Child = new TextBlock { Text = "LUA", FontFamily = Mono, FontSize = 10, FontWeight = FontWeights.Bold, Foreground = B("Blue") },
                 });
             if (m.Enabled && m.Conflicts > 0) meta.Children.Add(ClashTag(Texts.F("row_clash", m.Conflicts)));
+            var licenseMark = LicenseMark(m);
+            if (licenseMark != null)
+                meta.Children.Add(new TextBlock { Text = licenseMark, FontSize = 12, Foreground = B("Yellow"), Margin = new Thickness(0, 2, 6, 0), ToolTip = Texts.Get("row_license_tip") });
             if (m.Error != null) meta.Children.Add(new TextBlock { Text = Texts.Get("broken"), FontSize = 12, Foreground = B("Yellow"), Margin = new Thickness(0, 2, 0, 0) });
             if (meta.Children.Count > 0) names.Children.Add(meta);
             line.Children.Add(names);

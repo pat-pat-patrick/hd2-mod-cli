@@ -66,4 +66,10 @@
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
   </ItemGroup>
 
+  <!-- the license plugin (plugins\License), built first and put beside the program -->
+  <ItemGroup>
+    <ProjectReference Include="..\plugins\License\HD2QD.License.csproj" ReferenceOutputAssembly="false" />
+    <None Include="..\plugins\License\bin\$(Configuration)\net48\HD2QD.License.dll" Link="HD2QD.License.dll" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

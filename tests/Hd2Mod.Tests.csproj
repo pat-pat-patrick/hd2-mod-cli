@@ -31,6 +31,12 @@
     <None Update="data\**" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
+  <!-- the license plugin, built first and put beside the tests as beside the program -->
+  <ItemGroup>
+    <ProjectReference Include="..\plugins\License\HD2QD.License.csproj" ReferenceOutputAssembly="false" />
+    <None Include="..\plugins\License\bin\$(Configuration)\net48\HD2QD.License.dll" Link="HD2QD.License.dll" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <ItemGroup>
     <Reference Include="System.IO.Compression" />
     <Reference Include="System.IO.Compression.FileSystem" />

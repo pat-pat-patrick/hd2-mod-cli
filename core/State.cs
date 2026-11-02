@@ -413,6 +413,8 @@ namespace Hd2Mod
                     ["shown_version"] = Origins.VersionOf(m).Version, ["version_from"] = Origins.VersionOf(m).From,
                     ["site_author"] = m.Site?.Author, ["site_summary"] = m.Site?.Summary, ["site_version"] = m.Site?.Version,
                     ["tags"] = m.Tags.Cast<object>().ToList(), ["group"] = m.Group,
+                    // for its author's members (hd2_license.json): where its license stands here
+                    ["license"] = exists ? Licenses.StateOf(m.Path) : null,
                     // the version kept for a rollback (Versions), and the newest one skipped
                     ["previous"] = m.Previous == null ? null : new Dictionary<string, object>
                     {

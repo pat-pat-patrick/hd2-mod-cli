@@ -102,6 +102,10 @@ namespace QuickDeploy
         public bool Enabled, Exists, HasManifest, SameDrive, Lua, Loader;
         /// <summary>"bml", "chef", "bsl", "mdl3" for a loader, else null.</summary>
         public string LoaderKind;
+        /// <summary>For its author's members (hd2_license.json): where its license stands here
+        /// ("licensed", "expired", "none", ... as core\Plugins.cs), else null.</summary>
+        public string License;
+        public long LicenseExpires;
         /// <summary>Its Lua scripts, when it has any.</summary>
         public LuaInfo Lu;
         /// <summary>In the profile in use (always, with profiles off).</summary>
@@ -400,6 +404,7 @@ namespace QuickDeploy
                     Channel = Str(m, "channel"), Page = Str(m, "page"), Version = Str(m, "version"),
                     SiteAuthor = Str(m, "site_author"), SiteSummary = Str(m, "site_summary"), SiteVersion = Str(m, "site_version"),
                     ShownVersion = Str(m, "shown_version"), VersionFrom = Str(m, "version_from"), DeployBytes = Long(m, "deploy_bytes"),
+                    License = Str(Json.Obj(m, "license"), "state"), LicenseExpires = Long(Json.Obj(m, "license"), "expires"),
                     LibraryBytes = Long(m, "library_bytes"),
                 };
                 foreach (var o in List(m, "options").OfType<Dictionary<string, object>>())
