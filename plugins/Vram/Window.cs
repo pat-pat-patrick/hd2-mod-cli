@@ -26,31 +26,23 @@ namespace Hd2Mod.Vram
             bool zh = host.TryGetValue("zh", out var z) && z is bool b && b;
             if (open != null) { open.Activate(); ((View)open.Tag).Read(); return; }
             var v = new View(mods, home, data, zh);
-            var w = new Window
+            // the manager makes the window, so its caption matches the main one; a plain window
+            // (the system's caption) when it did not hand one over (an older manager)
+            Window w;
+            if (host.TryGetValue("window", out var mk) && mk is Func<string, FrameworkElement, Window> make) w = make(Title(zh), v.Root);
+            else w = new Window
             {
-                Title = Title(zh) + " · HD2 Mod Quick Deploy", Width = 1120, Height = 820, MinWidth = 760, MinHeight = 480,
-                Owner = owner, WindowStartupLocation = WindowStartupLocation.CenterOwner, ShowInTaskbar = true,
-                Background = v.B("Ground900"), Foreground = v.B("Ink"), Content = v.Root, Tag = v, Icon = owner?.Icon,
+                Title = Title(zh) + " · HD2 Mod Quick Deploy", Owner = owner, WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                Background = v.B("Ground900"), Foreground = v.B("Ink"), Content = v.Root, Icon = owner?.Icon,
                 FontFamily = owner?.FontFamily ?? SystemFonts.MessageFontFamily,
             };
+            w.Width = 1120; w.Height = 820; w.MinWidth = 760; w.MinHeight = 480;
+            w.Tag = v;
             w.KeyDown += (s, e) => { if (e.Key == Key.Escape) w.Close(); };
-            w.SourceInitialized += (s, e) => DarkTitleBar(w);
             w.Closed += (s, e) => open = null;
             open = w;
             w.Show();
             v.Read();
-        }
-
-        [System.Runtime.InteropServices.DllImport("dwmapi.dll")]
-        static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
-
-        /// <summary>The system's dark title bar (DWMWA_USE_IMMERSIVE_DARK_MODE, 20; 19 before
-        /// Windows 10 20H1), as the manager's own dark window looks. Ignored where Windows has none.</summary>
-        static void DarkTitleBar(Window w)
-        {
-            var h = new System.Windows.Interop.WindowInteropHelper(w).Handle;
-            int on = 1;
-            if (DwmSetWindowAttribute(h, 20, ref on, sizeof(int)) != 0) DwmSetWindowAttribute(h, 19, ref on, sizeof(int));
         }
 
         /// <summary>The window's content: a summary, then one line per mod, the ones to check
@@ -106,16 +98,17 @@ namespace Hd2Mod.Vram
             void Head(string line)
             {
                 head.Children.Clear();
+                // the caption carries the title; the Read-again button (right), the intro and the
+                // status line open the body
                 var top = new DockPanel();
-                var again = new Button { Content = T("Read again", "重新读取"), Style = S("Ghost"), MinHeight = 36, Padding = new Thickness(16, 0, 16, 0), VerticalAlignment = VerticalAlignment.Center };
+                var again = new Button { Content = T("Read again", "重新读取"), Style = S("Ghost"), MinHeight = 36, Padding = new Thickness(16, 0, 16, 0), VerticalAlignment = VerticalAlignment.Top };
                 again.Click += (s, e) => Read();
                 DockPanel.SetDock(again, Dock.Right);
                 top.Children.Add(again);
-                top.Children.Add(new TextBlock { Text = Title(zh), FontSize = 26, FontWeight = FontWeights.Bold, VerticalAlignment = VerticalAlignment.Center });
-                head.Children.Add(top);
-                head.Children.Add(Small(T(
+                top.Children.Add(Small(T(
                     "Each enabled mod's models and textures next to the game's copies they replace: detail levels, triangles, shadows, culling boxes, lights, mipmaps, compression, and the video memory they take. From the files, not measured in game.",
-                    "对比每个已启用 MOD 的模型和贴图与它替换的原版资源：细节层级、面数、阴影、剔除盒、灯光、mipmap、压缩，以及占用的显存。按文件判断，不是游戏内实测。"), new Thickness(0, 6, 0, 0)));
+                    "对比每个已启用 MOD 的模型和贴图与它替换的原版资源：细节层级、面数、阴影、剔除盒、灯光、mipmap、压缩，以及占用的显存。按文件判断，不是游戏内实测。"), new Thickness(0, 4, 16, 0)));
+                head.Children.Add(top);
                 head.Children.Add(new TextBlock { Text = line, FontSize = 15, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 14, 0, 0), TextWrapping = TextWrapping.Wrap });
             }
 

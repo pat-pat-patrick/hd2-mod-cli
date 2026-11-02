@@ -36,9 +36,9 @@ namespace QuickDeploy
         {
             if (notesWindow != null) { notesWindow.Activate(); return; }
             var root = new DockPanel { Margin = new Thickness(28, 24, 28, 20) };
+            // the caption carries the title; the body opens with what it is about
             var head = new StackPanel();
-            head.Children.Add(new TextBlock { Text = Texts.F("notes_title", Bare(u.Latest) + (u.Prerelease ? Texts.Get("self_pre") : "")), FontSize = 22, FontWeight = FontWeights.Bold, TextWrapping = TextWrapping.Wrap });
-            head.Children.Add(Small(Texts.F("notes_now", StateDoc.Version), new Thickness(0, 4, 0, 0)));
+            head.Children.Add(Small(Texts.F("notes_now", StateDoc.Version), new Thickness(0, 0, 0, 0)));
             DockPanel.SetDock(head, Dock.Top);
             root.Children.Add(head);
 
@@ -66,12 +66,7 @@ namespace QuickDeploy
                 Child = new ScrollViewer { Content = body, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Padding = new Thickness(0, 0, 8, 0) },
             });
 
-            var w = new Window
-            {
-                Title = Texts.F("notes_title", Bare(u.Latest)) + " · HD2 Mod Quick Deploy", Width = 680, Height = 640, MinWidth = 480, MinHeight = 360,
-                Owner = this, WindowStartupLocation = WindowStartupLocation.CenterOwner, ShowInTaskbar = false,
-                Background = B("Ground900"), Foreground = B("Ink"), FontFamily = FontFamily, Content = root, Icon = Icon,
-            };
+            var w = new ChromeWindow(this, Texts.F("notes_title", Bare(u.Latest)), root) { Width = 680, Height = 640, MinWidth = 480, MinHeight = 360, ShowInTaskbar = false };
             if (!string.IsNullOrEmpty(u.Page))
             {
                 var open = new Button { Content = Texts.Get("self_open"), Style = (Style)FindResource("Primary"), MinHeight = 38, Padding = new Thickness(18, 0, 18, 0), Margin = new Thickness(0, 0, 8, 0), ToolTip = u.Page };
@@ -82,8 +77,6 @@ namespace QuickDeploy
             var later = new Button { Content = Texts.Get("notes_later"), Style = (Style)FindResource("Ghost"), MinHeight = 38, Padding = new Thickness(18, 0, 18, 0) };
             later.Click += (s, e) => w.Close();
             buttons.Children.Add(later);
-            w.KeyDown += (s, e) => { if (e.Key == Key.Escape) w.Close(); };
-            w.SourceInitialized += (s, e) => DarkTitle(w);
             w.Closed += (s, e) => notesWindow = null;
             notesWindow = w;
             w.Show();
@@ -91,18 +84,6 @@ namespace QuickDeploy
 
         /// <summary>A tag's version without the "v" ("v0.15.0" -> "0.15.0", as the window's own version reads).</summary>
         static string Bare(string tag) => tag != null && tag.Length > 1 && (tag[0] == 'v' || tag[0] == 'V') && char.IsDigit(tag[1]) ? tag.Substring(1) : tag;
-
-        [System.Runtime.InteropServices.DllImport("dwmapi.dll")]
-        static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
-
-        /// <summary>The system's dark title bar (DWMWA_USE_IMMERSIVE_DARK_MODE, 20; 19 before
-        /// Windows 10 20H1) on a window drawn with the system's frame.</summary>
-        static void DarkTitle(Window w)
-        {
-            var h = new WindowInteropHelper(w).Handle;
-            int on = 1;
-            if (DwmSetWindowAttribute(h, 20, ref on, sizeof(int)) != 0) DwmSetWindowAttribute(h, 19, ref on, sizeof(int));
-        }
 
         /// <summary>The part of Markdown release notes use: headings, paragraphs, "- " items (their
         /// following indented lines joined), **bold**, `code` and [links](...) as their words.</summary>

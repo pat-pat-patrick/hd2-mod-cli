@@ -89,6 +89,8 @@ namespace QuickDeploy
                 {
                     ["home"] = Store.Home, ["data"] = Paths.Join(game, "data"), ["zh"] = Texts.Zh,
                     ["mods"] = (Func<List<Dictionary<string, object>>>)(() => Vram.Mods(Library.Load())),
+                    // the manager makes the plugin's window, so its caption matches the main one
+                    ["window"] = (Func<string, FrameworkElement, Window>)((title, content) => new ChromeWindow(this, title, content)),
                 };
                 try { type.GetMethod("Open").Invoke(null, new object[] { this, host }); }
                 catch (System.Reflection.TargetInvocationException x) { Dialog.Tell(this, Texts.F("failed", x.InnerException?.Message ?? x.Message)); }
