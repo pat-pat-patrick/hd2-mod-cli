@@ -44,6 +44,8 @@ namespace Hd2Mod
         public List<string> Marks = new List<string>();
         /// <summary>The resource's size in its archive's row (the text and 8 bytes before it).</summary>
         public long Size;
+        /// <summary>The settings window's lists it writes, by name (LuaMods.SettingsNames).</summary>
+        public List<string> Settings = new List<string>();
 
         /// <summary>The same script as another loader's boot (what was read stays as it is).</summary>
         internal LuaScript AsBoot(string kind, string version)
@@ -76,6 +78,8 @@ namespace Hd2Mod
         public List<string> Caps => Loader == null ? new List<string>() : LoaderCaps.Of(Loader, LoaderVersion, Scripts.SelectMany(s => s.Marks).Distinct());
         /// <summary>A mod, not a loader, that reads MDL3 or HD2Data (LuaScript.Mdl3Api).</summary>
         public bool UsesMdl3 => Loader == null && Scripts.Any(s => s.Mdl3Api);
+        /// <summary>The settings window's lists its scripts write (HD2 Mod Setting GUI's &lt;name&gt;_options.json).</summary>
+        public IEnumerable<string> Settings => Scripts.SelectMany(s => s.Settings).Distinct();
         /// <summary>Its scripts Chef Shared Loader would start that are too big for it (ChefMaxLua).</summary>
         public IEnumerable<LuaScript> TooBigForChef => Scripts.Where(s => s.Size > LuaMods.ChefMaxLua && (s.Header == "Addon" || s.Header == "Boot"));
         /// <summary>The scripts the game's Lua cannot run.</summary>
@@ -142,7 +146,7 @@ namespace Hd2Mod
 
         // what was found in each archive, kept between runs in lua_scan.json by the archive's
         // size and time; a new version of the checks reads every archive again
-        const int ScanVersion = 9;      // 5: UsesChefApi reads scopes (HUDdle, 2026-10-27); 6: HD2FM1 data rows, guarded jit.off(); 7: MDL3, libraries in functions that take them; 8: Mdl3Api; 9: Marks
+        const int ScanVersion = 10;     // 5: UsesChefApi reads scopes (HUDdle, 2026-10-27); 6: HD2FM1 data rows, guarded jit.off(); 7: MDL3, libraries in functions that take them; 8: Mdl3Api; 9: Marks; 10: Settings
 
         /// <summary>Chef Shared Loader 1.2.1 reads no Lua resource whose row size is over this
         /// (`MAX_LUA = 4 * 1024 * 1024`, `if size > MAX_LUA` in its core; its log: "Lua resource(s)
@@ -249,6 +253,7 @@ namespace Hd2Mod
                         LuaJitBytecode = Json.Bool(x, "luajit_bytecode"), BootKind = Json.Str(x, "boot_kind"), BootVersion = Json.Str(x, "version"),
                         WrapsMenus = Json.Bool(x, "wraps_menus"), ChefApi = Json.Bool(x, "chef_api"), Mdl3Api = Json.Bool(x, "mdl3_api"), Size = Json.Long(x, "size"),
                         Jit = Json.List(x, "jit").OfType<string>().ToList(), Marks = Json.List(x, "marks").OfType<string>().ToList(),
+                        Settings = Json.List(x, "settings").OfType<string>().ToList(),
                     };
                     if (Json.Str(x, "error") != null) { s.Error = ((int)Json.Long(x, "line"), Json.Str(x, "error")); s.ErrorKind = Json.Str(x, "error_kind"); }
                     return s;
@@ -273,7 +278,7 @@ namespace Hd2Mod
                         {
                             ["id"] = s.Id.ToString("x16"), ["header"] = s.Header, ["name"] = s.Name, ["bml"] = s.BmlName, ["chef_only"] = s.ChefOnly,
                             ["bytecode"] = s.Bytecode, ["luajit_bytecode"] = s.LuaJitBytecode, ["boot_kind"] = s.BootKind, ["version"] = s.BootVersion,
-                            ["wraps_menus"] = s.WrapsMenus, ["chef_api"] = s.ChefApi, ["mdl3_api"] = s.Mdl3Api, ["size"] = s.Size, ["jit"] = s.Jit.Cast<object>().ToList(), ["marks"] = s.Marks.Cast<object>().ToList(),
+                            ["wraps_menus"] = s.WrapsMenus, ["chef_api"] = s.ChefApi, ["mdl3_api"] = s.Mdl3Api, ["size"] = s.Size, ["jit"] = s.Jit.Cast<object>().ToList(), ["marks"] = s.Marks.Cast<object>().ToList(), ["settings"] = s.Settings.Cast<object>().ToList(),
                             ["line"] = (long)(s.Error?.Line ?? 0), ["error"] = s.Error?.Message, ["error_kind"] = s.ErrorKind,
                         }).ToList(),
                     };
@@ -321,6 +326,7 @@ namespace Hd2Mod
                     s.Jit = JitUses(tokens);
                     s.ChefApi = UsesChefApi(tokens);
                     s.Mdl3Api = UsesMdl3(tokens);
+                    s.Settings = SettingsNames(tokens, s.Name);
                     // the menus by name or as rawget(_G, "ModOptionsMenu"), as ActionCam简体中文 reads them
                     s.WrapsMenus = tokens.Any(t => t.Kind == LuaSyntax.T.Name && (t.Text == "register_option" || t.Text == "register_binding"))
                                 && tokens.Any(t => (t.Kind == LuaSyntax.T.Name || t.Kind == LuaSyntax.T.String) && (t.Text == "ModOptionsMenu" || t.Text == "ModBindingsMenu"));
@@ -553,6 +559,82 @@ namespace Hd2Mod
         /// <summary>Whether a script reads the global MDL3 or HD2Data: by name (MDL3.audio, _G.MDL3), or
         /// by a string in rawget(_G, "MDL3") or _G["MDL3"]; a field of something else (x.MDL3) and
         /// any other string are not.</summary>
+        static readonly Regex SettingsName = new Regex(@"^[A-Za-z0-9_.\-]+$");
+
+        /// <summary>The names of the lists a script writes for HD2 Mod Setting GUI, the settings
+        /// window outside the game (its protocol: &lt;name&gt;_options.json beside the game's
+        /// settings): a string "&lt;name&gt;_options.json"; the name = "&lt;name&gt;" given to the
+        /// shared library's ModSettings.new{...} (every mod of ours, 2026-11-02: Ammo Lamp,
+        /// Stratagem Hotkeys), or a variable the script sets to one string and nothing else
+        /// (BFV Kill Feedback: M.SW_NAME = "KillFeedback", name = M.SW_NAME); and for a script
+        /// that registers with the old menus (register_option,
+        /// register_binding), the lists Boot Mod Loader writes for it: mom_ and mbm_ with its
+        /// mod_id, else the last part of its name, lower case, other characters as _ (BML's
+        /// MOM.group and MOM.sweep). A name only made at run time is not found.</summary>
+        public static List<string> SettingsNames(List<LuaSyntax.Token> t, string header)
+        {
+            var out_ = new List<string>();
+            void Add(string n) { if (!string.IsNullOrEmpty(n) && SettingsName.IsMatch(n) && !out_.Contains(n)) out_.Add(n); }
+            const string Suffix = "_options.json";
+            bool menus = false;
+            string modId = null;
+            bool Whole(int at) => at + 1 >= t.Count || t[at + 1].Kind != LuaSyntax.T.Concat;      // a string not joined to more
+            // a.b.c starting at i (not a field of something before it): its path and where it ends
+            (string Path, int End) Chain(int i)
+            {
+                if (t[i].Kind != LuaSyntax.T.Name || (i > 0 && (t[i - 1].Kind == '.' || t[i - 1].Kind == ':'))) return (null, i);
+                var path = t[i].Text;
+                int j = i + 1;
+                while (j + 1 < t.Count && t[j].Kind == '.' && t[j + 1].Kind == LuaSyntax.T.Name) { path += "." + t[j + 1].Text; j += 2; }
+                return (path, j);
+            }
+            // every variable set to a whole string: its values (one value: it can stand for it)
+            var values = new Dictionary<string, HashSet<string>>();
+            for (int i = 0; i < t.Count; i++)
+            {
+                var (path, end) = Chain(i);
+                if (path == null || end + 1 >= t.Count || t[end].Kind != '=' || (end + 1 < t.Count && t[end + 1].Kind == '=')) continue;
+                if (!values.TryGetValue(path, out var set)) values[path] = set = new HashSet<string>();
+                if (t[end + 1].Kind == LuaSyntax.T.String && Whole(end + 1)) set.Add(t[end + 1].Text);
+                else set.Add("\0");                                                               // set to something else too
+            }
+            string ValueAt(int at)
+            {
+                if (t[at].Kind == LuaSyntax.T.String) return Whole(at) ? t[at].Text : null;
+                var (path, end) = Chain(at);
+                if (path == null || (end < t.Count && t[end].Kind == LuaSyntax.T.Concat)) return null;
+                return values.TryGetValue(path, out var set) && set.Count == 1 && !set.Contains("\0") ? set.First() : null;
+            }
+            for (int i = 0; i < t.Count; i++)
+            {
+                var k = t[i];
+                if (k.Kind == LuaSyntax.T.String && k.Text.Length > Suffix.Length && k.Text.EndsWith(Suffix, StringComparison.Ordinal))
+                    Add(k.Text.Substring(0, k.Text.Length - Suffix.Length));
+                if (k.Kind != LuaSyntax.T.Name) continue;
+                if (k.Text == "register_option" || k.Text == "register_binding") menus = true;
+                if (k.Text == "mod_id" && modId == null && i + 2 < t.Count && t[i + 1].Kind == '=' && t[i + 2].Kind == LuaSyntax.T.String) modId = t[i + 2].Text;
+                // ModSettings.new{ ... }, ModSettings.new({ ... }), pcall(ModSettings.new, { ... })
+                if (k.Text != "ModSettings" || i + 2 >= t.Count || t[i + 1].Kind != '.' || t[i + 2].Kind != LuaSyntax.T.Name || t[i + 2].Text != "new") continue;
+                int j = i + 3;
+                while (j < t.Count && j < i + 6 && t[j].Kind != '{') j++;
+                if (j >= t.Count || t[j].Kind != '{') continue;
+                for (int depth = 0; j < t.Count; j++)
+                {
+                    if (t[j].Kind == '{') depth++;
+                    else if (t[j].Kind == '}' && --depth == 0) break;
+                    else if (depth == 1 && t[j].Kind == LuaSyntax.T.Name && t[j].Text == "name" && j + 2 < t.Count
+                             && t[j + 1].Kind == '=') Add(ValueAt(j + 2));
+                }
+            }
+            if (menus)
+            {
+                var tail = modId ?? (header != null ? Regex.Match(header, @"([A-Za-z0-9_]+)$").Groups[1].Value : null);
+                var b = tail == null ? "" : Regex.Replace(tail.ToLowerInvariant(), "[^a-z0-9]+", "_").Trim('_');
+                if (b.Length > 0) { Add("mom_" + b); Add("mbm_" + b); }
+            }
+            return out_;
+        }
+
         public static bool UsesMdl3(List<LuaSyntax.Token> t)
         {
             bool Global(string s) => s == "MDL3" || s == "HD2Data";

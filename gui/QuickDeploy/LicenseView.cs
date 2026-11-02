@@ -114,6 +114,12 @@ namespace QuickDeploy
                 {
                     ["home"] = Store.Home, ["data"] = Paths.Join(game, "data"), ["zh"] = Texts.Zh,
                     ["mods"] = (Func<List<Dictionary<string, object>>>)(() => Vram.Mods(Library.Load())),
+                    // every library mod whose Lua writes lists for the settings window: {name,
+                    // enabled, settings: [list names]} (LuaMods.SettingsNames); may read archives
+                    ["library"] = (Func<List<Dictionary<string, object>>>)(() => LuaMods.Of(Library.Load())
+                        .Where(ml => ml.Settings.Any())
+                        .Select(ml => new Dictionary<string, object> { ["name"] = ml.Mod.Name, ["enabled"] = ml.Mod.Enabled, ["settings"] = ml.Settings.Cast<object>().ToList() })
+                        .ToList()),
                     // the manager makes the plugin's window, so its caption matches the main one
                     ["window"] = (Func<string, FrameworkElement, Window>)((title, content) => new ChromeWindow(this, title, content)),
                 };

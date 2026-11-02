@@ -106,6 +106,41 @@ namespace Hd2Mod.Tests
             Assert.False(Api("local function f(...) local chef = ... chef.time() end"));
         }
 
+        /// <summary>The settings window's lists a script writes, as their names appear in it; a name
+        /// made at run time, a field of another table, a comment or a path are not taken.</summary>
+        [Fact]
+        public void SettingsListsAreFoundByTheirNames()
+        {
+            List<string> Names(string src, string header = null) =>
+                LuaMods.SettingsNames(LuaSyntax.Tokens(Encoding.UTF8.GetBytes(src)), header);
+            Assert.Equal(new[] { "ammo_lamp" }, Names("local f = io.open(dir .. 'ammo_lamp_options.json', 'wb')"));
+            Assert.Empty(Names("local path = dir .. c.name .. '_options.json'"));                      // the shared library's own line
+            Assert.Empty(Names("-- writes ammo_lamp_options.json\nx = 1"));                               // a comment
+            Assert.Empty(Names("x = 'C:/game/ammo_lamp_options.json'"));                                   // a path, not a name
+            // the shared library's ModSettings.new: its name, not a name inside its options
+            Assert.Equal(new[] { "ammo_lamp" }, Names("local ok, s = pcall(ModSettings.new, {\n  name = 'ammo_lamp', title = 'Ammo Lamp',\n  options = { { key = 'a', name = 'inner' } },\n})"));
+            Assert.Equal(new[] { "stratagem_hotkeys" }, Names("S = ModSettings.new{ title = 'x', name = \"stratagem_hotkeys\" }"));
+            Assert.Equal(new[] { "x" }, Names("S = ModSettings.new({ name = 'x' })"));
+            Assert.Empty(Names("S = Other.new{ name = 'x' }"));
+            Assert.Empty(Names("S = ModSettings.new{ name = prefix .. 'x' }"));                           // made at run time
+            Assert.Empty(Names("S = ModSettings.new{ name = 'x' .. suffix }"));
+            // a variable set to one string (BFV Kill Feedback: M.SW_NAME = "KillFeedback")
+            Assert.Equal(new[] { "KillFeedback" }, Names("M.SW_NAME = \"KillFeedback\"\nlocal S = pcall(ModSettings.new, { name = M.SW_NAME })"));
+            Assert.Equal(new[] { "kf" }, Names("local NAME = 'kf'\nS = ModSettings.new{ name = NAME }"));
+            Assert.Empty(Names("M.N = 'a'\nif x then M.N = 'b' end\nS = ModSettings.new{ name = M.N }"));          // two values: neither
+            Assert.Empty(Names("M.N = 'a'\nM.N = read()\nS = ModSettings.new{ name = M.N }"));                     // set at run time too
+            Assert.Empty(Names("M.N = 'a'\nS = ModSettings.new{ name = X.M.N }"));                                // another variable
+            Assert.Empty(Names("M.N = 'a' .. v\nS = ModSettings.new{ name = M.N }"));
+            // the old menus: the lists Boot Mod Loader writes for the mod
+            Assert.Equal(new[] { "mom_action_cam", "mbm_action_cam" },
+                         Names("ModOptionsMenu.register_option({ key = 'a' })", "mods/author/Action_Cam"));
+            Assert.Equal(new[] { "mom_actioncam", "mbm_actioncam" },
+                         Names("ModOptionsMenu.register_option({ mod_id = 'ActionCam', key = 'a' })", "mods/author/Action_Cam"));
+            Assert.Empty(Names("x = 1", "mods/author/Action_Cam"));                                       // no menus: no list
+            // kept with the script's other facts
+            Assert.Equal(new[] { "ammo_lamp" }, LuaMods.Look(1, Encoding.UTF8.GetBytes("x = 'ammo_lamp_options.json'")).Settings);
+        }
+
         [Fact]
         public void TheParsersLimitsAreLua51s()
         {
