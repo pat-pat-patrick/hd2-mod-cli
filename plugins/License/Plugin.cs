@@ -180,6 +180,19 @@ namespace Hd2Mod.License
             SaveIssuer(home, issuer, null);
         }
 
+        /// <summary>The issuers signed in on this computer, each as {issuer, name, key}: so the
+        /// manager can show a sign-in (and sign it out) when no mod in the library names it.</summary>
+        public static List<Dictionary<string, object>> SignedIn(string home)
+        {
+            var list = new List<Dictionary<string, object>>();
+            var all = Json.Obj(LoadStore(home), "issuers");
+            if (all == null) return list;
+            foreach (var kv in all)
+                if (kv.Value is Dictionary<string, object> rec && Json.Str(rec, "key") != null)
+                    list.Add(new Dictionary<string, object> { ["issuer"] = kv.Key, ["name"] = Json.Str(rec, "name") ?? kv.Key, ["key"] = Json.Str(rec, "key") });
+            return list;
+        }
+
         // -- the license -------------------------------------------------------------------
 
         /// <summary>The fields of a license signed by key for issuer, else null. Same rules as

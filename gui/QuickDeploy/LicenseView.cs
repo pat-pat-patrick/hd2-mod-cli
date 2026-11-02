@@ -31,14 +31,15 @@ namespace QuickDeploy
             : state == "expired" ? Texts.F("lic_expired", Until(expires))
             : Texts.Get("lic_" + state);
 
-        /// <summary>Every author whose mods are in the library; null when none is.</summary>
+        /// <summary>Every author whose mods are in the library, and every author signed in here
+        /// whose mods are not; null when there is none.</summary>
         UIElement LicenseSection()
         {
             List<(Dictionary<string, object> Decl, List<Mod> Mods)> issuers;
-            try { issuers = Licenses.Present ? Licenses.Issuers(Library.Load()) : null; }
+            try { issuers = Licenses.Present ? Licenses.Known(Library.Load()) : null; }
             catch (Exception e) when (e is ModError || e is System.IO.IOException) { return null; }
             var marked = st?.Mods.Where(x => x.License != null).ToList() ?? new List<ModRow>();
-            if (marked.Count == 0) return null;
+            if (issuers == null ? marked.Count == 0 : issuers.Count == 0) return null;
 
             var panel = new StackPanel();
             panel.Children.Add(Small(Texts.Get("lic_intro"), new Thickness(0, 8, 0, 0)));
@@ -51,12 +52,13 @@ namespace QuickDeploy
             {
                 string issuer = Json.Str(decl, "issuer");
                 // read now, not from the last state: a sign-in or sign-out shows at once
-                var now = Licenses.StateOf(mods[0].Path);
+                var now = mods.Count > 0 ? Licenses.StateOf(mods[0].Path) : Licenses.Status(decl);
                 string state = Json.Str(now, "state") ?? "none";
                 bool busy = licenseSigningIn == issuer;
                 var line = Line(busy ? Texts.Get("lic_waiting") : LicenseWords(state, Json.Long(now, "expires")),
                                 busy ? "Blue" : state == "licensed" ? "Blue" : "Yellow",
-                                Json.Str(decl, "name") + " · " + issuer + " · " + Texts.F("lic_mods", string.Join("、", mods.Select(m => m.Name))));
+                                Json.Str(decl, "name") + " · " + issuer + " · " +
+                                (mods.Count > 0 ? Texts.F("lic_mods", string.Join("、", mods.Select(m => m.Name))) : Texts.Get("lic_no_mods")));
                 var buttons = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(20, 10, 0, 0) };
                 if (busy)
                 {

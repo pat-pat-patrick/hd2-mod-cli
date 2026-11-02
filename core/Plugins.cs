@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 using System.Threading;
 
@@ -96,6 +97,10 @@ namespace Hd2Mod
             return Call("Status", Store.Home, AppData, d) as Dictionary<string, object>;
         }
 
+        /// <summary>Where an issuer's license stands here, by its declaration.</summary>
+        public static Dictionary<string, object> Status(Dictionary<string, object> decl) =>
+            Call("Status", Store.Home, AppData, decl) as Dictionary<string, object>;
+
         public static List<string> Accounts() => Call("Accounts", AppData) as List<string>;
 
         public static Dictionary<string, object> BeginSignIn(Dictionary<string, object> decl) =>
@@ -123,6 +128,18 @@ namespace Hd2Mod
                 if (at < 0) found.Add((d, new List<Mod> { m }));
                 else found[at].Item2.Add(m);
             }
+            return found;
+        }
+
+        /// <summary>Issuers(lib), then every issuer signed in here that no mod in the library
+        /// names, with no mods: a sign-in stays in sight (and can be signed out) after its mods
+        /// leave the library (the user, 2026-11-02: removing the probe hid it).</summary>
+        public static List<(Dictionary<string, object> Decl, List<Mod> Mods)> Known(Library lib)
+        {
+            var found = Issuers(lib);
+            foreach (var d in Call("SignedIn", Store.Home) as List<Dictionary<string, object>> ?? new List<Dictionary<string, object>>())
+                if (!found.Any(x => Json.Str(x.Decl, "issuer") == Json.Str(d, "issuer")))
+                    found.Add((d, new List<Mod>()));
             return found;
         }
     }

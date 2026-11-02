@@ -1024,13 +1024,13 @@ namespace Hd2Mod
 
         static void LicenseCmd(Args a, TextWriter o)
         {
-            var issuers = Licenses.Issuers(Library.Load());
-            if (issuers.Count == 0) { o.WriteLine("no mod in the library needs a license"); return; }
+            var issuers = Licenses.Known(Library.Load());
+            if (issuers.Count == 0) { o.WriteLine("no mod in the library needs a license, and no author is signed in here"); return; }
             foreach (var (decl, mods) in issuers)
             {
-                var st = Licenses.StateOf(mods[0].Path);
+                var st = mods.Count > 0 ? Licenses.StateOf(mods[0].Path) : Licenses.Status(decl);
                 o.WriteLine(Json.Str(decl, "name") + " (" + Json.Str(decl, "issuer") + "): " + LicenseWords(st));
-                o.WriteLine("  mods: " + string.Join(", ", mods.Select(m => m.Name)));
+                o.WriteLine("  mods: " + (mods.Count > 0 ? string.Join(", ", mods.Select(m => m.Name)) : "none in the library now"));
             }
         }
 
@@ -1056,7 +1056,7 @@ namespace Hd2Mod
         static Dictionary<string, object> IssuerArg(string reference)
         {
             var lib = Library.Load();
-            var byName = Licenses.Issuers(lib).Where(x => string.Equals(Json.Str(x.Decl, "issuer"), reference, StringComparison.OrdinalIgnoreCase)).ToList();
+            var byName = Licenses.Known(lib).Where(x => string.Equals(Json.Str(x.Decl, "issuer"), reference, StringComparison.OrdinalIgnoreCase)).ToList();
             if (byName.Count > 1) throw new ModError("mods declare " + reference + " with different keys: run `license` to see which");
             if (byName.Count == 1) return byName[0].Decl;
             var mod = Ops.Pick(lib, reference);

@@ -288,6 +288,34 @@ namespace Hd2Mod.Tests
         }
 
         [Fact]
+        public void A_sign_in_stays_known_after_its_mods_leave_the_library()
+        {
+            var mod = LicensedMod();
+            Account(A);
+            Assert.Empty(Licenses.Known(Library.Load()));                       // no mod in the library, none signed in
+            Assert.Equal("ok", SignIn(mod));
+            var known = Licenses.Known(Library.Load());
+            Assert.Single(known);
+            Assert.Empty(known[0].Mods);
+            Assert.Equal(issuer.Name, Json.Str(known[0].Decl, "issuer"));
+            Assert.Equal("Test Author", Json.Str(known[0].Decl, "name"));
+            Assert.Equal("licensed", Json.Str(Licenses.Status(known[0].Decl), "state"));
+
+            var lib = Library.Load();
+            lib.Mods.Add(Ops.NewMod(mod, "Licensed"));
+            lib.Save();
+            known = Licenses.Known(Library.Load());
+            Assert.Single(known);                                                  // the library's, not twice
+            Assert.Single(known[0].Mods);
+
+            Licenses.Forget(issuer.Name);
+            lib = Library.Load();
+            lib.Mods.Clear();
+            lib.Save();
+            Assert.Empty(Licenses.Known(Library.Load()));
+        }
+
+        [Fact]
         public void The_state_carries_each_licensed_mods_standing()
         {
             Account(A);

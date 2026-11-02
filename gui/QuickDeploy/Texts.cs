@@ -1191,6 +1191,7 @@ namespace QuickDeploy
             ["lic_no_plugin"] = ("The license plugin (HD2QD.License.dll) is missing from this program's folder.", "本程序所在文件夹中缺少授权插件（HD2QD.License.dll）。"),
             ["lic_bad_declaration"] = ("This mod's license declaration (hd2_license.json) cannot be read.", "无法读取此 MOD 的授权声明（hd2_license.json）。"),
             ["lic_mods"] = ("Mods: {0}", "MOD：{0}"),
+            ["lic_no_mods"] = ("No mod in the library needs this license now", "库中目前没有需要此授权的 MOD"),
             ["lic_sign_in"] = ("Sign in", "登录"),
             ["lic_sign_in_again"] = ("Sign in again", "重新登录"),
             ["lic_sign_out"] = ("Sign out", "退出登录"),
