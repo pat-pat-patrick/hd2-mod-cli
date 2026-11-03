@@ -1076,8 +1076,9 @@ namespace Hd2Mod
         static void PluginAddCmd(Args a, TextWriter o)
         {
             var path = Paths.Abs(a.Pos["path"]);
-            // not a file: an official plugin by its name, downloaded from its release
-            if (!File.Exists(path))
+            // not a .dll file: an official plugin by its name, downloaded from its release (a
+            // LICENSE file in the folder is not the License plugin, 2026-11-03)
+            if (!File.Exists(path) || !path.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
             {
                 var official = PluginFiles.OfficialNamed(a.Pos["path"]) ?? throw new ModError("no such file, and no official plugin of that name: " + a.Pos["path"]);
                 path = PluginFiles.Fetch(official);

@@ -251,7 +251,14 @@ namespace Hd2Mod.Tests
         [Fact]
         public void An_official_plugin_is_downloaded_and_checked()
         {
-            CliCode(1, "plugin-add", "Sample");                                  // not released
+            File.WriteAllText(Path.Combine(Environment.CurrentDirectory, "sample"), "a file that is not the plugin");
+            try
+            {
+                var err = new StringWriter();                                      // a name, not that file
+                Assert.Equal(1, Commands.Run(new[] { "plugin-add", "Sample" }, new StringWriter(), err));
+                Assert.Contains("not been released yet", err.ToString());
+            }
+            finally { File.Delete(Path.Combine(Environment.CurrentDirectory, "sample")); }
             Assert.Empty(PluginFiles.All());
 
             OfficialList = List(@"{""version"": ""0.9.0"", ""tag"": ""v0.9.0"", ""sha256"": ""00""}, {""version"": ""1.0.0"", ""tag"": ""v1.0.0"", ""sha256"": """ + Sha(Sample) + @"""}");
