@@ -69,10 +69,6 @@ namespace Hd2Mod
             return n.Success && long.TryParse(n.Groups[1].Value, NumberStyles.None, CultureInfo.InvariantCulture, out var v) && v > 0 ? v : (long?)null;
         }
 
-        /// <summary>Nexus Mods' GraphQL API (v2), where what a page shows to anyone can be read
-        /// without signing in.</summary>
-        static string GraphQL => ApiBase.TrimEnd('/') + "/v2/graphql";
-
         const string ModQuery =
             "query Mod($ids: [CompositeDomainWithIdInput!]!) { legacyModsByDomain(ids: $ids) { nodes { " +
             "modId name summary version author pictureUrl updatedAt endorsements downloads adultContent status uploader { name } } } }";
@@ -118,31 +114,6 @@ namespace Hd2Mod
                 Status = Json.Str(d, "status"), Updated = Json.Long(d, "updated_timestamp"),
                 Downloads = Json.Long(d, "mod_downloads"), Endorsements = Json.Long(d, "endorsement_count"), Adult = Json.Bool(d, "contains_adult_content"),
             };
-        }
-
-        /// <summary>One GraphQL request: its data, or the first error Nexus Mods gives, in its words.</summary>
-        static Dictionary<string, object> PostGraphQL(string query, Dictionary<string, object> variables)
-        {
-            var body = Json.Write(new Dictionary<string, object> { ["query"] = query, ["variables"] = variables });
-            using (var req = new HttpRequestMessage(HttpMethod.Post, GraphQL) { Content = new StringContent(body, Encoding.UTF8, "application/json") })
-            {
-                HttpResponseMessage r;
-                try { r = http.SendAsync(req).GetAwaiter().GetResult(); }
-                catch (HttpRequestException e) { throw new ModError("Nexus Mods cannot be reached: " + e.Message, "nexus_offline"); }
-                using (r)
-                {
-                    var text = r.Content.ReadAsStringAsync().GetAwaiter().GetResult();
-                    if ((int)r.StatusCode == 429) throw new ModError("too many requests to Nexus Mods: wait a while", "nexus_busy");
-                    Dictionary<string, object> d;
-                    try { d = Json.Parse(text) as Dictionary<string, object>; }
-                    catch (FormatException) { d = null; }
-                    var error = Json.List(d, "errors").OfType<Dictionary<string, object>>().Select(x => Json.Str(x, "message")).FirstOrDefault(x => x != null);
-                    if (error != null) throw new ModError("Nexus Mods could not answer: " + error, "nexus_error");
-                    if (!r.IsSuccessStatusCode || d == null)
-                        throw new ModError("Nexus Mods answered " + (int)r.StatusCode + ": " + (text.Length > 200 ? text.Substring(0, 200) : text), "nexus_error");
-                    return Json.Obj(d, "data");
-                }
-            }
         }
 
         static string Words(string s) => string.IsNullOrWhiteSpace(s) ? null : s.Replace("<br />", "\n").Replace("<br>", "\n").Trim();

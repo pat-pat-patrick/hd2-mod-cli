@@ -1,12 +1,12 @@
-#if HAS_NEXUS
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
-using System.Security.Cryptography;
 using System.Text;
+#if HAS_NEXUS
+using System.IO;
+using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using Microsoft.Win32;
 #endif
@@ -47,12 +47,6 @@ namespace Hd2Mod
 
         /// <summary>A mod's page on Nexus Mods.</summary>
         public static string Page(NexusRef r) => "https://www.nexusmods.com/" + r.Game + "/mods/" + r.Mod;
-#if HAS_NEXUS
-
-        // Nexus Mods' site button (Mod Manager Download) and API (v1), for the player signed in
-        // with OAuth and PKCE (NexusOAuth; Nexus Mods' API policy and their reply, 2026-10-27).
-        // Every request names the application and its version, and is made only for what the
-        // player started. Only builds made with HAS_NEXUS have any of it.
 
         /// <summary>The name every request carries. A build anyone else makes from this source
         /// says so, because the name is registered with Nexus Mods for the builds published here
@@ -68,13 +62,9 @@ namespace Hd2Mod
             return name;
         }
 
-        // What only our own builds do is in private/ (not in the repository), each through one of
-        // these; a build without it has none of them, and the compiler leaves their calls out.
+        // Our own builds' name is in private/ (not in the repository); a build without it says it
+        // is unofficial.
         static partial void OurName(ref string name);
-        static partial void OtherCredential(ref string credential);
-        static partial void Carry(HttpRequestMessage req, string credential);
-        static partial void NotAccepted(string credential);
-        static partial void AccountOf(string credential, ref (string Name, bool Premium)? account);
 
         /// <summary>The API's address; tests point it at a local fake.</summary>
         public static string ApiBase = Environment.GetEnvironmentVariable("HD2QD_NEXUS_API") ?? "https://api.nexusmods.com";
@@ -93,6 +83,47 @@ namespace Hd2Mod
             c.DefaultRequestHeaders.UserAgent.ParseAdd("HD2ModQuickDeploy/" + StateDoc.Version);
             return c;
         }
+
+
+        /// <summary>One request to Nexus Mods' public GraphQL API (v2), where what a page shows to
+        /// anyone can be read with no key or sign-in, in every build (the user, 2026-11-03: update
+        /// checks with no registration): its data, or the first error Nexus Mods gives, in its words.</summary>
+        public static Dictionary<string, object> PostGraphQL(string query, Dictionary<string, object> variables)
+        {
+            var body = Json.Write(new Dictionary<string, object> { ["query"] = query, ["variables"] = variables });
+            using (var req = new HttpRequestMessage(HttpMethod.Post, ApiBase.TrimEnd('/') + "/v2/graphql") { Content = new StringContent(body, Encoding.UTF8, "application/json") })
+            {
+                HttpResponseMessage r;
+                try { r = http.SendAsync(req).GetAwaiter().GetResult(); }
+                catch (HttpRequestException e) { throw new ModError("Nexus Mods cannot be reached: " + e.Message, "nexus_offline"); }
+                using (r)
+                {
+                    var text = r.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+                    if ((int)r.StatusCode == 429) throw new ModError("too many requests to Nexus Mods: wait a while", "nexus_busy");
+                    Dictionary<string, object> d;
+                    try { d = Json.Parse(text) as Dictionary<string, object>; }
+                    catch (FormatException) { d = null; }
+                    var error = Json.List(d, "errors").OfType<Dictionary<string, object>>().Select(x => Json.Str(x, "message")).FirstOrDefault(x => x != null);
+                    if (error != null) throw new ModError("Nexus Mods could not answer: " + error, "nexus_error");
+                    if (!r.IsSuccessStatusCode || d == null)
+                        throw new ModError("Nexus Mods answered " + (int)r.StatusCode + ": " + (text.Length > 200 ? text.Substring(0, 200) : text), "nexus_error");
+                    return Json.Obj(d, "data");
+                }
+            }
+        }
+
+#if HAS_NEXUS
+        // What only our own builds do is in private/ (not in the repository), each through one of
+        // these; a build without it has none of them, and the compiler leaves their calls out.
+        static partial void OtherCredential(ref string credential);
+        static partial void Carry(HttpRequestMessage req, string credential);
+        static partial void NotAccepted(string credential);
+        static partial void AccountOf(string credential, ref (string Name, bool Premium)? account);
+
+        // Nexus Mods' site button (Mod Manager Download) and API (v1), for the player signed in
+        // with OAuth and PKCE (NexusOAuth; Nexus Mods' API policy and their reply, 2026-10-27).
+        // Every request names the application and its version, and is made only for what the
+        // player started. Only builds made with HAS_NEXUS have any of it.
 
         // ------------------------------------------------------------ what requests carry
 

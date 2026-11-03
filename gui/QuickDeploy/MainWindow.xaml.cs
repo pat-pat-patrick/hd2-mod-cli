@@ -2273,7 +2273,6 @@ namespace QuickDeploy
         {
             switch (filter)
             {
-                case "pending": return m.Enabled && m.Changes > 0;
                 case "options": return m.Options.Count > 0;
                 case "off": return !m.Enabled;
                 case "conflict": return m.Conflicts > 0;
@@ -2346,13 +2345,15 @@ namespace QuickDeploy
         {
             Nav.Children.Clear();
             Nav.Children.Add(Label("library", new Thickness(8, 0, 0, 4)));
-            if (filter == "lua") filter = "all";
+            if (filter == "lua" || filter == "pending") filter = "all";
             var scope = st.Mods.Where(InScope).ToList();
             var defs = new[]
             {
                 // what needs doing something, counted in what the list shows (the profile in use,
                 // or the library); what a mod is (Lua and the rest) is the Filter's (the user, 2026-10-25)
-                ("all", scope.Count), ("pending", scope.Count(m => m.Enabled && m.Changes > 0)),
+                // no "to deploy": one small change makes many files to deploy, and the count said
+                // little (the user, 2026-11-03); the Deploy button counts them
+                ("all", scope.Count),
                 ("updates", scope.Count(HasUpdate)),
                 ("off", scope.Count(m => !m.Enabled)),
                 ("conflict", scope.Count(m => m.Conflicts > 0)), ("broken", scope.Count(m => m.Error != null)),
@@ -2361,7 +2362,7 @@ namespace QuickDeploy
             foreach (var (key, n) in defs)
             {
                 if ((key == "broken" || key == "updates" || key == "norun") && n == 0 && filter != key) continue;
-                bool cur = filter == key, hot = (key == "pending" || key == "broken" || key == "updates") && n > 0;
+                bool cur = filter == key, hot = (key == "broken" || key == "updates") && n > 0;
                 var btn = new Button { Cursor = Cursors.Hand, FocusVisualStyle = null, Margin = new Thickness(0, 2, 0, 2) };
                 var row = new Border
                 {
@@ -5385,12 +5386,7 @@ namespace QuickDeploy
                 checkedAs[u.ModId] = was[u.ModId];
             }
             int Count(string status, Func<UpdateInfo, bool> also = null) => found.Count(u => u.Status == status && (also == null || also(u)));
-#if HAS_NEXUS
-            int upd = Count("update"), noKey = Count("error", u => u.Why == "no_key"), err = Count("error", u => u.Why != "no_key"),
-                none = Count("no_source"), other = Count("no_check");
-#else
             int upd = Count("update"), err = Count("error"), none = Count("no_source"), other = Count("no_check");
-#endif
             Foot(Texts.F("up_foot", upd, Seconds(clock.Elapsed.TotalSeconds)), upd > 0 ? "Yellow" : "Blue");
             if (upd > 0)
             {
@@ -5401,21 +5397,10 @@ namespace QuickDeploy
 
             var text = Texts.F("up_summary", found.Count, upd, Count("current"), Count("unknown"), none);
             if (Count("skipped") > 0) text += "\n\n" + Texts.F("up_summary_skipped", Count("skipped"));
-#if HAS_NEXUS
-            if (noKey > 0) text += "\n\n" + Texts.F("up_summary_key", noKey);
-#endif
             if (other > 0) text += "\n\n" + Texts.F("up_summary_other", other);
             if (err > 0) text += "\n\n" + Texts.F("up_summary_err", err);
             if (none > 0) text += "\n\n" + Texts.Get("up_summary_source");
-#if HAS_NEXUS
-            if (noKey > 0)
-            {
-                if (Dialog.Choose(this, text, Texts.Get("up_set_key"), Texts.Get("ok")) == 0 && await AskKey()) Updates_Click(sender, e);
-            }
-            else Dialog.Tell(this, text);
-#else
             Dialog.Tell(this, text);
-#endif
         }
 
         // the mods whose own check is running: their row says so meanwhile
@@ -5489,13 +5474,6 @@ namespace QuickDeploy
             return grid;
         }
 
-        /// <summary>The words for a mod with no recorded source: a build without Nexus Mods names GitHub only.</summary>
-#if HAS_NEXUS
-        const string NoSource = "up_no_source";
-#else
-        const string NoSource = "up_no_source_plain";
-#endif
-
         UIElement UpdatePanel(ModRow m)
         {
             var box = new StackPanel();
@@ -5525,7 +5503,7 @@ namespace QuickDeploy
             var u = Checked(m);
             string text, colour = "Muted";
             bool apply = false;
-            if (u == null) text = m.Channel == null ? Texts.Get(NoSource) : Texts.Hints ? Texts.Get("up_not_checked") : "";
+            if (u == null) text = m.Channel == null ? Texts.Get("up_no_source") : Texts.Hints ? Texts.Get("up_not_checked") : "";
             else switch (u.Status)
             {
                 case "update":
@@ -5540,18 +5518,9 @@ namespace QuickDeploy
                     break;
                 case "current": text = Texts.Get("up_current"); colour = "Blue"; break;
                 case "skipped": text = Texts.F("up_skipped", u.Latest ?? "?"); break;
-                case "no_source": text = Texts.Get(NoSource); break;
-                case "no_check":
-#if !HAS_NEXUS
-                    // a mod from Nexus Mods: it is this build that does not ask, not the site
-                    if (m.NexusMod > 0) { text = Texts.Get("up_no_check_nexus"); break; }
-#endif
-                    text = Texts.F("up_no_check", u.Channel); break;
-#if HAS_NEXUS
-                default: text = u.Why == "no_key" ? Texts.Get("up_no_key") : Texts.F("up_error", CheckWhy(u.Why)); colour = "Yellow"; break;
-#else
+                case "no_source": text = Texts.Get("up_no_source"); break;
+                case "no_check": text = Texts.F("up_no_check", u.Channel); break;
                 default: text = Texts.F("up_error", CheckWhy(u.Why)); colour = "Yellow"; break;
-#endif
             }
             // a GitHub release without an archive to download: its page only
             if (apply && m.Channel == "GitHub" && string.IsNullOrEmpty(u.Download)) apply = false;
@@ -5653,9 +5622,12 @@ namespace QuickDeploy
                 case "offline": return Texts.Get("up_why_offline");
                 case "missing": return Texts.Get("up_why_missing");
                 case "busy": return Texts.Get("up_why_busy");
-#if HAS_NEXUS
+                // Nexus Mods is checked in every build, through its public API (Updates)
                 case "nexus_offline": return Texts.Get("up_why_offline");
                 case "nexus_busy": return Texts.Get("up_why_busy");
+                case "nexus_missing": return Texts.Get("up_why_nexus_missing");
+                case "nexus_error": return Texts.Get("up_why_nexus_error");
+#if HAS_NEXUS
                 case "nexus_key": return Texts.Get("up_why_key");
 #endif
                 default: return Why(why);

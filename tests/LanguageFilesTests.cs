@@ -13,7 +13,16 @@ namespace Hd2Mod.Tests
     /// asks for by name; another language has only words English has, and names itself.</summary>
     public class LanguageFiles
     {
-        static readonly string Repo = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, @"..\..\..\.."));
+        /// <summary>The repository: the first folder up from the tests' output that has the window's
+        /// language files (the output's depth differs between builds).</summary>
+        static readonly string Repo = FindRepo();
+
+        static string FindRepo()
+        {
+            for (var d = new DirectoryInfo(AppDomain.CurrentDomain.BaseDirectory); d != null; d = d.Parent)
+                if (Directory.Exists(Path.Combine(d.FullName, @"gui\QuickDeploy\Lang"))) return d.FullName;
+            throw new DirectoryNotFoundException(@"no gui\QuickDeploy\Lang above " + AppDomain.CurrentDomain.BaseDirectory);
+        }
 
         static Dictionary<string, object> Read(string path) => (Dictionary<string, object>)Json.Parse(File.ReadAllText(path));
 

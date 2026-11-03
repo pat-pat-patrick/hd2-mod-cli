@@ -546,9 +546,7 @@ namespace Hd2Mod.Tests
             baseUrl = "http://localhost:" + port + "/";
             server.Prefixes.Add(baseUrl);
             server.Start();
-#if HAS_NEXUS
             Nexus.ApiBase = baseUrl.TrimEnd('/');
-#endif
             Updates.GitHubApi = baseUrl + "gh";
             System.Threading.Tasks.Task.Run(Serve);
             for (int f = 1; f <= 2; f++) zips["f" + f] = Zip(("Cape/manifest.json", "{\"Name\": \"Cape Colours\"}"), ("Cape/" + A + ".patch_0", "cape v" + f));
@@ -575,8 +573,8 @@ namespace Hd2Mod.Tests
                 try { c = server.GetContext(); }
                 catch (Exception) { return; }
                 var path = c.Request.Url.AbsolutePath;
-#if HAS_NEXUS
                 lock (Seen) Seen.Add(path + " " + c.Request.Headers["Application-Name"]);
+#if HAS_NEXUS
                 bool authed = (c.Request.Headers["Authorization"] ?? "").StartsWith("Bearer ey");
                 OurAuth(c.Request, ref authed);
                 byte[] ours = null;
@@ -597,10 +595,10 @@ namespace Hd2Mod.Tests
                                  " {\"tag_name\": \"v0.98.0\", \"draft\": false, \"prerelease\": false, \"html_url\": \"https://github.com/pat-pat-patrick/hd2-mod-cli/releases/tag/v0.98.0\"}," +
                                  " {\"tag_name\": \"v0.1.0\", \"draft\": false, \"prerelease\": false, \"html_url\": \"o\"}]");
                 else if (path.StartsWith("/gh/")) { status = 404; body = Bytes("{}"); }
+                // Nexus: the public GraphQL API (v2), asked without signing in, in every build
+                else if (path == "/v2/graphql" && c.Request.HttpMethod == "POST")
+                    (status, body) = GraphQLAnswer(new StreamReader(c.Request.InputStream).ReadToEnd());
 #if HAS_NEXUS
-                // Nexus: the game's mods updated in the last month: 77, at its file 2's time
-                else if (path == "/v1/games/helldivers2/mods/updated.json" && authed)
-                    body = Bytes("[{\"mod_id\": 77, \"latest_file_update\": 1750000000, \"latest_mod_activity\": 1750000000}]");
                 // Nexus: mod 77's files: 1 (old), replaced by 2 (main)
                 else if (path == "/oauth/token" && c.Request.HttpMethod == "POST")
                 {
@@ -608,13 +606,6 @@ namespace Hd2Mod.Tests
                                    .ToDictionary(p => Uri.UnescapeDataString(p[0]), p => Uri.UnescapeDataString(p.Length > 1 ? p[1].Replace('+', ' ') : ""));
                     (status, body) = OAuthToken(form);
                 }
-                // Nexus: the public GraphQL API (v2), asked without signing in
-                else if (path == "/v2/graphql" && c.Request.HttpMethod == "POST")
-                    body = Bytes(GraphQLAnswer(new StreamReader(c.Request.InputStream).ReadToEnd()));
-                else if (path == "/v1/games/helldivers2/mods/77/files.json" && authed)
-                    body = Bytes("{\"files\": [{\"file_id\": 1, \"version\": \"1.0\", \"category_name\": \"OLD_VERSION\", \"uploaded_timestamp\": 1700000000}, " +
-                                 "{\"file_id\": 2, \"version\": \"2.0\", \"category_name\": \"MAIN\", \"uploaded_timestamp\": 1750000000}], " +
-                                 "\"file_updates\": [{\"old_file_id\": 1, \"new_file_id\": 2}]}");
                 else if (!authed) { status = 401; body = Bytes("{\"message\":\"bad key\"}"); }
                 // mods 500 and up: the rate limit is used up
                 else if (Regex.IsMatch(path, @"^/v1/games/helldivers2/mods/5\d\d/")) { status = 429; body = Bytes("{\"message\":\"rate limited\"}"); }
@@ -641,27 +632,113 @@ namespace Hd2Mod.Tests
             base.Dispose();
         }
 
-#if HAS_NEXUS
-        static string Link(int file, bool withKey = true) =>
-            "nxm://helldivers2/mods/77/files/" + file + (withKey ? "?key=abc%2Bd&expires=1700000000&user_id=5" : "");
-
         string lastGraphQL;
 
-        /// <summary>The fake GraphQL API: mod 77 is there, mod 14 is there but deleted, mod 13 makes an error, no other mod is.</summary>
-        string GraphQLAnswer(string request)
+        /// <summary>The fake GraphQL API (v2). The page lookup: mod 77 is there, mod 14 is there but
+        /// deleted, mod 13 makes an error, no other mod is. The update check: the game is 6119; mod
+        /// 77's files are 1 (old) and 2 (main, its update: one group), and 77 was last updated at
+        /// file 2's time; mods 500 and up answer "too many requests" for their files. What was asked
+        /// is in Seen as "graphql files 77", "graphql updated", "graphql game".</summary>
+        (int Status, byte[] Body) GraphQLAnswer(string request)
         {
             lastGraphQL = request;
-            var ids = Json.List(Json.Obj(Json.Parse(request) as Dictionary<string, object>, "variables"), "ids").OfType<Dictionary<string, object>>().ToList();
+            var d = Json.Parse(request) as Dictionary<string, object>;
+            var query = Json.Str(d, "query") ?? "";
+            var vars = Json.Obj(d, "variables");
+            if (query.Contains("game(domainName"))
+            {
+                lock (Seen) Seen.Add("graphql game");
+                return (200, Bytes("{\"data\": {\"game\": {\"id\": 6119}}}"));
+            }
+            if (query.Contains("modFiles"))
+            {
+                var mod = Json.Str(vars, "mod");
+                lock (Seen) Seen.Add("graphql files " + mod);
+                if (Regex.IsMatch(mod ?? "", @"^5\d\d$")) return (429, Bytes("{\"message\":\"rate limited\"}"));
+                var files = mod != "77" ? "[]" :
+                    "[{\"fileId\": 1, \"name\": \"Cape\", \"version\": \"1.0\", \"category\": \"OLD_VERSION\", \"date\": 1700000000, \"groupId\": 10}, " +
+                    "{\"fileId\": 2, \"name\": \"Cape\", \"version\": \"2.0\", \"category\": \"MAIN\", \"date\": 1750000000, \"groupId\": 10}]";
+                return (200, Bytes("{\"data\": {\"modFiles\": " + files + "}}"));
+            }
+            var ids = Json.List(vars, "ids").OfType<Dictionary<string, object>>().ToList();
+            if (!query.Contains("summary"))
+            {
+                // when each mod was last updated: 77 at file 2's time, the others long ago
+                lock (Seen) Seen.Add("graphql updated");
+                var nodes = string.Join(", ", ids.Select(x => "{\"modId\": " + Json.Long(x, "modId") + ", \"updatedAt\": \"" +
+                    (Json.Long(x, "modId") == 77 ? "2025-06-15T15:06:40Z" : "2024-01-01T00:00:00Z") + "\"}"));
+                return (200, Bytes("{\"data\": {\"legacyModsByDomain\": {\"nodes\": [" + nodes + "]}}}"));
+            }
             long id = Json.Long(ids.FirstOrDefault(), "modId");
-            if (id == 13) return "{\"errors\": [{\"message\": \"Cannot query field \\\"x\\\" on type \\\"Mod\\\".\"}]}";
+            if (id == 13) return (200, Bytes("{\"errors\": [{\"message\": \"Cannot query field \\\"x\\\" on type \\\"Mod\\\".\"}]}"));
             if (id == 14)
-                return "{\"data\": {\"legacyModsByDomain\": {\"nodes\": [{\"modId\": 14, \"name\": \"Walker - DELETED\", \"status\": \"wastebinned\"}]}}}";
-            var nodes = id != 77 ? "[]" :
+                return (200, Bytes("{\"data\": {\"legacyModsByDomain\": {\"nodes\": [{\"modId\": 14, \"name\": \"Walker - DELETED\", \"status\": \"wastebinned\"}]}}}"));
+            var found = id != 77 ? "[]" :
                 "[{\"modId\": 77, \"name\": \"Cape Colours on Nexus\", \"summary\": \"Capes in every colour.<br />Two lines.\", \"version\": \"2.0\", " +
                 "\"author\": \"Capey\", \"uploader\": {\"name\": \"CapeUploader\"}, \"pictureUrl\": \"https://example.invalid/cape.png\", " +
                 "\"updatedAt\": \"2026-10-01T12:00:00Z\", \"endorsements\": 1234, \"downloads\": 56789, \"adultContent\": false, \"status\": \"published\"}]";
-            return "{\"data\": {\"legacyModsByDomain\": {\"nodes\": " + nodes + "}}}";
+            return (200, Bytes("{\"data\": {\"legacyModsByDomain\": {\"nodes\": " + found + "}}}"));
         }
+
+        /// <summary>A mod from Nexus mod 77, file 1 (replaced by file 2 there).</summary>
+        static Mod UpdatesMod() => new Mod { Id = "m77", Name = "Cape", Nexus = new NexusRef { Game = "helldivers2", Mod = 77, File = 1 } };
+
+        /// <summary>Nexus mods are checked with no key and no sign-in, in every build (the user,
+        /// 2026-11-03): the public API's files, their group and category.</summary>
+        [Fact]
+        public void A_Nexus_mod_is_checked_without_a_key()
+        {
+            var u = Updates.One(UpdatesMod());
+            Assert.Equal(("update", "1.0", "2.0", 2L), (u.Status, u.Current, u.Latest, u.LatestFile));
+            Assert.Equal("https://www.nexusmods.com/helldivers2/mods/77?tab=files", u.Page);
+            lock (Seen) Assert.Contains("/v2/graphql " + Nexus.AppName, Seen);
+        }
+
+        /// <summary>Once Nexus Mods says too many requests, an update check asks it nothing more:
+        /// the rest of its mods say so without a request (for Nexus Mods' review, 2026-10-25).</summary>
+        [Fact]
+        public void An_update_check_stops_asking_Nexus_once_it_is_busy()
+        {
+            var lib = new Library();
+            foreach (var n in new long[] { 501, 502, 503 })
+                lib.Mods.Add(new Mod { Id = "m" + n, Name = "Mod " + n, Path = Path.Combine(Root, "m" + n), Nexus = new NexusRef { Game = "helldivers2", Mod = n, File = 1, Version = "1" } });
+            lock (Seen) Seen.Clear();
+            var r = Updates.Check(lib);
+            Assert.All(r, u => Assert.Equal("nexus_busy", u.Why));
+            lock (Seen) Assert.Single(Seen.Where(x => x.StartsWith("graphql files 5")));
+        }
+
+        /// <summary>A check asks Nexus Mods once when the library's mods were last updated; a mod
+        /// checked since its last update keeps that answer without a request; a month on, it is
+        /// asked again; a single mod's check always asks (the user, 2026-10-27).</summary>
+        [Fact]
+        public void An_update_check_asks_only_for_mods_that_changed()
+        {
+            var now = Updates.Now;
+            try
+            {
+                var lib = new Library();
+                lib.Mods.Add(UpdatesMod());
+                int Asked() { lock (Seen) return Seen.Count(x => x == "graphql files 77"); }
+                int Lists() { lock (Seen) return Seen.Count(x => x == "graphql updated"); }
+                lock (Seen) Seen.Clear();
+                Assert.Equal("update", Updates.Check(lib).Single().Status);       // never checked: asked
+                Assert.Equal((1, 1), (Lists(), Asked()));
+                Assert.Equal("update", Updates.Check(lib).Single().Status);       // checked after its last update: kept
+                Assert.Equal((2, 1), (Lists(), Asked()));
+                Assert.Equal(2, Updates.Check(lib).Single().LatestFile);
+                Updates.Now = () => DateTimeOffset.UtcNow.ToUnixTimeSeconds() + 28L * 24 * 3600;
+                Updates.Check(lib);                                                  // a month on: asked again
+                Assert.Equal(2, Asked());
+                Updates.One(lib.Mods[0]);                                            // one mod's own check: always asked
+                Assert.Equal(3, Asked());
+            }
+            finally { Updates.Now = now; }
+        }
+
+#if HAS_NEXUS
+        static string Link(int file, bool withKey = true) =>
+            "nxm://helldivers2/mods/77/files/" + file + (withKey ? "?key=abc%2Bd&expires=1700000000&user_id=5" : "");
 
         /// <summary>A mod's number as players pass it around, or its page (the user, 2026-10-29).</summary>
         [Fact]
@@ -858,8 +935,6 @@ namespace Hd2Mod.Tests
             }
         }
 
-        /// <summary>A mod from Nexus mod 77, file 1 (replaced by file 2 there).</summary>
-        static Mod UpdatesMod() => new Mod { Id = "m77", Name = "Cape", Nexus = new NexusRef { Game = "helldivers2", Mod = 77, File = 1 } };
 #endif
 
         /// <summary>Steam somewhere no guess reaches: found through SteamPath, which Steam writes

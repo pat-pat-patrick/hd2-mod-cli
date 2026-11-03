@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -22,8 +23,8 @@ namespace Hd2Mod
     }
 
     /// <summary>Update checks on each mod's own channel (the user, 2026-10-24: "从 GitHub 下下来的，
-    /// 就从 GitHub 检查更新"): Nexus Mods through its API and the player's key (files.json and its
-    /// file_updates chain: which file replaced which), GitHub through its releases (latest).
+    /// 就从 GitHub 检查更新"): Nexus Mods through its public API (v2: the files, their groups and
+    /// categories), with no key, in every build; GitHub through its releases (latest).
     /// Read only; nothing is downloaded unless the player asks.</summary>
     public static class Updates
     {
@@ -81,26 +82,18 @@ namespace Hd2Mod
             var out_ = new List<UpdateInfo>();
             int i = 0;
             bool busy = false;
-#if HAS_NEXUS
-            // the game's mods updated in the last month, asked once for the whole check
+            // when each Nexus mod was last updated there, asked once for the whole check
             Dictionary<long, long> recent = null;
             if (lib.Mods.Any(m => m.Nexus != null))
-                try
-                {
-                    var key = Nexus.Credential();
-                    if (key != null) recent = RecentlyUpdated(key);
-                }
+                try { recent = UpdatedAt(lib.Mods.Where(m => m.Nexus != null).Select(m => m.Nexus)); }
                 catch (ModError e) { busy = e.Kind == "nexus_busy"; }
-#endif
             foreach (var m in lib.Mods)
             {
                 UpdateInfo u;
-#if HAS_NEXUS
                 if (!busy && recent != null && m.Nexus != null && Unchanged(m, recent) is UpdateInfo kept) u = kept;
                 else
-#endif
                 // once Nexus Mods says too many requests, it is not asked again in this check:
-                // the rest of its mods say so without a request (its rate limit is the player's)
+                // the rest of its mods say so without a request
                 u = busy && m.Nexus != null
                     ? new UpdateInfo { ModId = m.Id, Name = m.Name, Channel = Origins.Of(m).Channel, Page = Origins.Of(m).Page, Status = "error", Why = "nexus_busy" }
                     : One(m, false);
@@ -109,9 +102,7 @@ namespace Hd2Mod
                 out_.Add(u);
                 progress?.Invoke(++i, lib.Mods.Count);
             }
-#if HAS_NEXUS
             SaveChecks();
-#endif
             return out_;
         }
 
@@ -128,9 +119,7 @@ namespace Hd2Mod
                 if (m.Nexus != null)
                 {
                     CheckNexus(m.Nexus, u);
-#if HAS_NEXUS
                     if (save) SaveChecks();
-#endif
                 }
                 else if (m.GitHub != null) CheckGitHub(m.GitHub, u);
                 else u.Status = m.Page != null ? "no_check" : "no_source";
@@ -139,68 +128,114 @@ namespace Hd2Mod
             return u;
         }
 
+        // ------------------------------------------------------------ Nexus Mods, without a key
+
+        // Nexus Mods' public GraphQL API (v2) answers what a mod's page shows to anyone, with no key
+        // and no sign-in, so every build checks Nexus mods (the user, 2026-11-03). A file's updates
+        // share its groupId; the files' categories say which are main and which are old.
+
+        const string FilesQuery = "query Files($mod: ID!, $game: ID!) { modFiles(modId: $mod, gameId: $game) { fileId name version category date groupId } }";
+        const string UpdatedQuery = "query Updated($ids: [CompositeDomainWithIdInput!]!) { legacyModsByDomain(ids: $ids) { nodes { modId updatedAt } } }";
+        const string GameQuery = "query Game($domain: String) { game(domainName: $domain) { id } }";
+
+        static readonly Dictionary<string, long> gameIds = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>A game's number on Nexus Mods (helldivers2: 6119), asked once.</summary>
+        static long GameId(string domain)
+        {
+            lock (gameIds)
+                if (gameIds.TryGetValue(domain, out var known)) return known;
+            var id = Json.Long(Json.Obj(Nexus.PostGraphQL(GameQuery, new Dictionary<string, object> { ["domain"] = domain }), "game"), "id");
+            if (id <= 0) throw new ModError("Nexus Mods has no game " + domain, "nexus_missing");
+            lock (gameIds) gameIds[domain] = id;
+            return id;
+        }
+
+        /// <summary>A mod's files on its page: fileId, name, version, category, date, groupId.</summary>
+        static List<Dictionary<string, object>> Files(NexusRef r)
+        {
+            var d = Nexus.PostGraphQL(FilesQuery, new Dictionary<string, object>
+            {
+                ["mod"] = r.Mod.ToString(CultureInfo.InvariantCulture), ["game"] = GameId(r.Game).ToString(CultureInfo.InvariantCulture),
+            });
+            return Json.List(d, "modFiles").OfType<Dictionary<string, object>>().ToList();
+        }
+
+        /// <summary>When each mod was last updated on Nexus Mods (Unix seconds), fifty mods a request.</summary>
+        static Dictionary<long, long> UpdatedAt(IEnumerable<NexusRef> refs)
+        {
+            var out_ = new Dictionary<long, long>();
+            var all = refs.GroupBy(r => (r.Game, r.Mod)).Select(g => g.First()).ToList();
+            for (int at = 0; at < all.Count; at += 50)
+            {
+                var ids = all.Skip(at).Take(50).Select(r => (object)new Dictionary<string, object> { ["gameDomain"] = r.Game, ["modId"] = r.Mod }).ToList();
+                var d = Nexus.PostGraphQL(UpdatedQuery, new Dictionary<string, object> { ["ids"] = ids });
+                foreach (var n in Json.List(Json.Obj(d, "legacyModsByDomain"), "nodes").OfType<Dictionary<string, object>>())
+                    out_[Json.Long(n, "modId")] = Unix(Json.Str(n, "updatedAt"));
+            }
+            return out_;
+        }
+
+        static long Unix(string iso) =>
+            DateTimeOffset.TryParse(iso, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var t) ? t.ToUnixTimeSeconds() : 0;
+
         static void CheckNexus(NexusRef r, UpdateInfo u)
         {
-#if !HAS_NEXUS
-            u.Status = "no_check";
-#else
-            var key = Nexus.Credential();
-            if (string.IsNullOrEmpty(key)) { u.Status = "error"; u.Why = "no_key"; return; }
-            var d = Json.Parse(Nexus.Api("/v1/games/" + r.Game + "/mods/" + r.Mod + "/files.json", key)) as Dictionary<string, object>;
-            var files = Json.List(d, "files").OfType<Dictionary<string, object>>().ToList();
-            var byId = files.ToDictionary(f => Json.Long(f, "file_id"));
-            var next = new Dictionary<long, long>();
-            foreach (var x in Json.List(d, "file_updates").OfType<Dictionary<string, object>>())
-                next[Json.Long(x, "old_file_id")] = Json.Long(x, "new_file_id");
+            var files = Files(r);
             u.Current = r.Version;
             Dictionary<string, object> latest = null;
             if (r.File > 0)
             {
-                // the chain of replacements from the file the mod is
-                long id = r.File;
-                var seen = new HashSet<long>();
-                while (next.TryGetValue(id, out var newer) && seen.Add(id)) id = newer;
-                if (id != r.File && byId.TryGetValue(id, out var f)) latest = f;
-                else if (byId.TryGetValue(r.File, out var mine))
+                var mine = files.FirstOrDefault(f => Json.Long(f, "fileId") == r.File);
+                if (mine != null)
                 {
                     if (string.IsNullOrEmpty(u.Current)) u.Current = Json.Str(mine, "version");
-                    var cat = Json.Str(mine, "category_name") ?? "";
-                    if (cat == "OLD_VERSION" || cat == "ARCHIVED") latest = NewestMain(files);
+                    // the newest file of the mod's own line (its updates share the group), else, when
+                    // the file itself is now old or archived, the page's newest main file
+                    var group = Json.Long(mine, "groupId");
+                    var newest = group == 0 ? null : files.Where(f => Json.Long(f, "groupId") == group).OrderByDescending(f => Json.Long(f, "date")).FirstOrDefault();
+                    if (newest != null && Json.Long(newest, "fileId") != r.File && Json.Long(newest, "date") > Json.Long(mine, "date")) latest = newest;
+                    else
+                    {
+                        var cat = Json.Str(mine, "category") ?? "";
+                        if (cat == "OLD_VERSION" || cat == "ARCHIVED") latest = NewestMain(files);
+                    }
                 }
+                // the file is no longer on the page: the page's newest main file
+                else latest = NewestMain(files);
+                if (latest != null && Json.Long(latest, "fileId") == r.File) latest = null;
                 u.Status = latest != null ? "update" : "current";
             }
             else
             {
                 latest = NewestMain(files);
                 if (latest == null) u.Status = "current";
-                else if (r.Time > 0) u.Status = Json.Long(latest, "uploaded_timestamp") > r.Time + 3600 ? "update" : "current";
+                else if (r.Time > 0) u.Status = Json.Long(latest, "date") > r.Time + 3600 ? "update" : "current";
                 else u.Status = "unknown";
                 if (u.Status != "update" && u.Status != "unknown") latest = null;
             }
             if (latest != null)
             {
                 u.Latest = Json.Str(latest, "version") ?? Json.Str(latest, "name");
-                u.LatestFile = Json.Long(latest, "file_id");
-                u.LatestTime = Json.Long(latest, "uploaded_timestamp");
-                u.Download = u.LatestFile.ToString();
+                u.LatestFile = Json.Long(latest, "fileId");
+                u.LatestTime = Json.Long(latest, "date");
+                u.Download = u.LatestFile.ToString(CultureInfo.InvariantCulture);
                 u.Page = Nexus.Page(r) + "?tab=files";
             }
             Remember(r, u);
-#endif
         }
 
-#if HAS_NEXUS
         // ------------------------------------------------------------ fewer requests to Nexus Mods
 
-        // A check asks Nexus Mods once which of the game's mods were updated in the last month; a mod
-        // whose last full check is newer than its last update there, and less than a month old, keeps
-        // that check's answer without a request of its own (the user, 2026-10-27: a check of 150 mods
-        // was 150 requests). The answers are kept in nexus_checks.json, by the file the mod is.
+        // A check asks Nexus Mods once when each of the library's mods was last updated there; a mod
+        // whose last full check is newer than that, and less than a month old, keeps that check's
+        // answer without a request of its own (the user, 2026-10-27: a check of 150 mods was 150
+        // requests). The answers are kept in nexus_checks.json, by the file the mod is.
 
         /// <summary>The time, in Unix seconds; tests move it on.</summary>
         public static Func<long> Now = () => DateTimeOffset.UtcNow.ToUnixTimeSeconds();
 
-        /// <summary>A check this old is done in full again: updated.json's "1m" reaches a month back.</summary>
+        /// <summary>A check this old is done in full again.</summary>
         const long Month = 27L * 24 * 3600;
 
         // the answers, read once for the settings folder they belong to (another library, another file)
@@ -227,16 +262,6 @@ namespace Hd2Mod
 
         static string CheckKey(NexusRef r) => r.Game + "/" + r.Mod + "/" + r.File + "/" + r.Version + "/" + r.Time;
 
-        /// <summary>The mod ids updated in the last month, with when.</summary>
-        static Dictionary<long, long> RecentlyUpdated(string key)
-        {
-            var list = Json.Parse(Nexus.Api("/v1/games/" + Nexus.Game + "/mods/updated.json?period=1m", key)) as List<object>;
-            var out_ = new Dictionary<long, long>();
-            foreach (var x in (list ?? new List<object>()).OfType<Dictionary<string, object>>())
-                out_[Json.Long(x, "mod_id")] = Math.Max(Json.Long(x, "latest_file_update"), Json.Long(x, "latest_mod_activity"));
-            return out_;
-        }
-
         static void Remember(NexusRef r, UpdateInfo u)
         {
             if (u.Status != "update" && u.Status != "current" && u.Status != "unknown") return;
@@ -247,15 +272,15 @@ namespace Hd2Mod
             };
         }
 
-        /// <summary>The last full check's answer, when Nexus Mods lists no update of the mod since and the
-        /// check is less than a month old; else null (a request is needed).</summary>
+        /// <summary>The last full check's answer, when Nexus Mods says the mod was not updated since
+        /// and the check is less than a month old; else null (a request is needed).</summary>
         static UpdateInfo Unchanged(Mod m, Dictionary<long, long> recent)
         {
             var d = Json.Obj(Checks(), CheckKey(m.Nexus));
             if (d == null) return null;
             var at = Json.Long(d, "checked_at");
             if (Now() - at > Month) return null;
-            if (recent.TryGetValue(m.Nexus.Mod, out var changed) && changed >= at - 3600) return null;
+            if (!recent.TryGetValue(m.Nexus.Mod, out var changed) || changed >= at - 3600) return null;
             var (channel, page) = Origins.Of(m);
             return new UpdateInfo
             {
@@ -264,10 +289,9 @@ namespace Hd2Mod
                 LatestFile = Json.Long(d, "latest_file"), LatestTime = Json.Long(d, "latest_time"),
             };
         }
-#endif
 
         static Dictionary<string, object> NewestMain(List<Dictionary<string, object>> files) =>
-            files.Where(f => (Json.Str(f, "category_name") ?? "") == "MAIN").OrderByDescending(f => Json.Long(f, "uploaded_timestamp")).FirstOrDefault();
+            files.Where(f => (Json.Str(f, "category") ?? "") == "MAIN").OrderByDescending(f => Json.Long(f, "date")).FirstOrDefault();
 
         static void CheckGitHub(GitHubRef r, UpdateInfo u)
         {
