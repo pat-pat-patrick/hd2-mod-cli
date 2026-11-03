@@ -7,7 +7,7 @@ namespace Hd2Mod
 {
     public static class StateDoc
     {
-        public const string Version = "0.14.2";
+        public const string Version = "0.15.0";
         /// <summary>How many of a conflict's resources the state names; the count says how many there are.</summary>
         const int Shown = 30;
 
