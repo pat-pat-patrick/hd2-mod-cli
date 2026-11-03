@@ -335,6 +335,9 @@ namespace QuickDeploy
                         sw.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
                     }, () =>
                     {
+                        // HD2QD_SELECT: that mod in the details at the end, for a picture of them
+                        var pick = st.Mods.FirstOrDefault(x => x.Name == Environment.GetEnvironmentVariable("HD2QD_SELECT"));
+                        if (pick != null) { Current(pick.Id); RenderList(); RenderDetail(); }
                         var path = Environment.GetEnvironmentVariable("HD2QD_WHEEL_OUT");
                         if (path != null) System.IO.File.WriteAllText(path, out_.ToString());
                     });

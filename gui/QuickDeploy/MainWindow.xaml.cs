@@ -5003,28 +5003,9 @@ namespace QuickDeploy
             Key(B("Yellow"), null, Texts.Get("c_move"), moved + " · " + Texts.Size(move));
             Key(B("Ink"), null, Texts.Get("c_write"), written + " · " + Texts.Size(write));
             box.Children.Add(legend);
-
-            // the two numbers
-            var tiles = new Grid { Margin = new Thickness(0, 14, 0, 0) };
-            tiles.ColumnDefinitions.Add(new ColumnDefinition());
-            tiles.ColumnDefinitions.Add(new ColumnDefinition());
-            long copyBytes = m.SameDrive ? 0 : write;
-            tiles.Children.Add(Tile(Texts.Get("tile_write"), Texts.Size(copyBytes), m.SameDrive ? "Blue" : "Yellow", Texts.Get(m.SameDrive ? "tile_write_n" : "tile_write_c"), 0));
-            tiles.Children.Add(Tile(Texts.Get("tile_reuse"), Texts.Size(keep + move), "Blue", Texts.F("tile_reuse_n", Texts.N(kept + moved)), 1));
-            box.Children.Add(tiles);
-
+            // the bar and its key say enough: the written and reused totals and the list of files
+            // went (the user, 2026-11-03)
             return box;
-        }
-
-        Border Tile(string label, string value, string colour, string note, int column)
-        {
-            var s = new StackPanel();
-            s.Children.Add(new TextBlock { Text = label, FontSize = 12, Foreground = B("Muted") });
-            s.Children.Add(new TextBlock { Text = value, FontFamily = Mono, FontSize = 18, FontWeight = FontWeights.Bold, Foreground = B(colour) });
-            s.Children.Add(new TextBlock { Text = note, FontSize = 12, Foreground = B("Muted"), TextWrapping = TextWrapping.Wrap });
-            var t = new Border { BorderBrush = B("Grid"), BorderThickness = new Thickness(1), Background = B("Ground900"), Padding = new Thickness(12), Child = s, Margin = new Thickness(column == 0 ? 0 : 4, 0, column == 0 ? 4 : 0, 0) };
-            Grid.SetColumn(t, column);
-            return t;
         }
 
         // ---------------------------------------------------------------- small pieces
