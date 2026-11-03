@@ -64,7 +64,7 @@ namespace QuickDeploy
             var sb = new System.Text.StringBuilder();
             void Add(object x) => sb.Append(x).Append('\u001f');
             Add(Texts.Lang); Add(c.Count);
-            foreach (var r in c.Resources) { Add(r.Type); Add(r.Id); Add(ResourceWords(r)); }
+            foreach (var g in c.Groups) { Add(g.Type); Add(g.Count); Add(GroupWords(g)); }
             foreach (var id in ids.OrderBy(x => x, StringComparer.Ordinal))     // not the load order, which a choice changes
             {
                 var m = st.Mods.First(x => x.Id == id);
@@ -135,24 +135,9 @@ namespace QuickDeploy
             card.Children.Add(WinnerRows(ids, winner, "pick_now", inGame, true, FromLine));
             // which resources, by name when HD2SDK's list knows them; an id alone tells a player
             // nothing and is left to the mod's details (the user, 2026-11-03: the view was cluttered)
-            const int lines = 5;
-            var list = new StackPanel { Margin = new Thickness(0, 4, 0, 0) };
-            // the same words once: the models of one armour set are all "护甲：SR-24 Street Scout"
-            var said = new HashSet<string>();
-            foreach (var r in c.Resources.Where(x => ResourceWords(x) != null && said.Add(TypeLabel(x.Type) + ResourceWords(x))).Take(lines))
-            {
-                var dp = new DockPanel { Margin = new Thickness(0, 1, 0, 1) };
-                var type = new TextBlock { Text = TypeLabel(r.Type) + "  ·  ", FontSize = 12, Foreground = B("Muted") };
-                DockPanel.SetDock(type, Dock.Left);
-                dp.Children.Add(type);
-                var what = Selectable.Text(ResourceWords(r), 12, "Muted");
-                what.VerticalAlignment = VerticalAlignment.Center;
-                dp.Children.Add(what);
-                list.Children.Add(dp);
-            }
-            int shownCount = c.Resources.Count(x => ResourceWords(x) != null && said.Contains(TypeLabel(x.Type) + ResourceWords(x)));
-            if (list.Children.Count > 0 && c.Count > shownCount)
-                list.Children.Add(Small(Texts.F("clash_more", c.Count - shownCount), new Thickness(0, 2, 0, 0)));
+            // one line for each kind of them, with how many ("模型 ×16 · 护甲：O-3 Free Spirit")
+            var list = ResourceLines(c, 5, 12, "Muted", false);
+            list.Margin = new Thickness(0, 4, 0, 0);
             if (list.Children.Count > 0) card.Children.Add(list);
             return new Border
             {

@@ -200,6 +200,10 @@ namespace QuickDeploy
         public bool Same, ManagedBoot;
         /// <summary>The first of its resources: type, id, and name when HD2SDK's list knows it.</summary>
         public List<(string Type, string Id, string Name, List<(string Category, string Name)> Of)> Resources = new List<(string, string, string, List<(string, string)>)>();
+        /// <summary>Every resource of it grouped by what it is: type, name, the game items whose
+        /// archives hold it, how many, and the first ids; named groups first, the most first.</summary>
+        public List<(string Type, string Name, List<(string Category, string Name)> Of, int Count, List<string> Ids)> Groups =
+            new List<(string, string, List<(string, string)>, int, List<string>)>();
         /// <summary>The options (and sub-options, else -1) that bring it, by mod (the conflicts view only).</summary>
         public List<(string Mod, int Option, int Sub)> From = new List<(string, int, int)>();
     }
@@ -388,6 +392,8 @@ namespace QuickDeploy
                         Mods = List(c, "mods").OfType<string>().ToList(), Count = Int(c, "count"), Winner = Str(c, "winner"), Deployed = Str(c, "deployed"), Same = Bool(c, "same"), ManagedBoot = Bool(c, "managed_boot"),
                         Resources = List(c, "resources").OfType<Dictionary<string, object>>().Select(r => (Str(r, "type"), Str(r, "id"), Str(r, "name"), Archives(r, "archives"))).ToList(),
                         From = List(c, "from").OfType<Dictionary<string, object>>().Select(f => (Str(f, "mod"), Int(f, "option"), Int(f, "sub"))).ToList(),
+                        Groups = List(c, "groups").OfType<Dictionary<string, object>>()
+                            .Select(g => (Str(g, "type"), Str(g, "name"), Archives(g, "archives"), Int(g, "count"), List(g, "ids").OfType<string>().ToList())).ToList(),
                     });
             s.ResourceNames = Bool(d, "resource_names");
             if (d.TryGetValue("lua_check", out var lcp) && lcp is Dictionary<string, object> lcq && Bool(lcq, "pending")) s.LuaPending = true;

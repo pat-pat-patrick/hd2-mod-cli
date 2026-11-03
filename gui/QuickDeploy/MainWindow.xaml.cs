@@ -4899,24 +4899,9 @@ namespace QuickDeploy
                     }
                     else box.Children.Add(Small(Texts.F("clash_win", c.Winner), new Thickness(0, 6, 0, 0)));
                 }
-                // which resources (the user, 2026-10-25): type, then the name or the id
-                const int lines = 8;
-                var list = new StackPanel { Margin = new Thickness(0, 10, 0, 0) };
-                foreach (var r in c.Resources.Take(lines))
-                {
-                    // the type, then the name or the id, which can be copied without the type
-                    var dp = new DockPanel { Margin = new Thickness(0, 1, 0, 1) };
-                    var type = new TextBlock { Text = TypeLabel(r.Type) + "  ·  ", FontSize = 13, Foreground = B("Muted") };
-                    DockPanel.SetDock(type, Dock.Left);
-                    dp.Children.Add(type);
-                    var words = ResourceWords(r);
-                    var what = words != null ? Selectable.Text(words, 13) : Selectable.Text(r.Id, 12, "Muted", Mono);
-                    what.VerticalAlignment = VerticalAlignment.Center;
-                    dp.Children.Add(what);
-                    list.Children.Add(dp);
-                }
-                if (c.Count > Math.Min(lines, c.Resources.Count))
-                    list.Children.Add(Small(Texts.F("clash_more", c.Count - Math.Min(lines, c.Resources.Count)), new Thickness(0, 2, 0, 0)));
+                // which resources (the user, 2026-10-25), one line for each kind of them
+                var list = ResourceLines(c, 8, 13, "Ink", true);
+                list.Margin = new Thickness(0, 10, 0, 0);
                 if (list.Children.Count > 0) box.Children.Add(list);
                 if (!st.ResourceNames && c.Resources.Count > 0 && Texts.Hints)
                     box.Children.Add(Small(Texts.Get("clash_no_names"), new Thickness(0, 8, 0, 0)));
@@ -7121,6 +7106,36 @@ namespace QuickDeploy
             if (r.Name != null && items && r.Of.Any(o => r.Name.IndexOf(o.Name, StringComparison.OrdinalIgnoreCase) >= 0)) return ItemsLabel(r.Of);
             return r.Name ?? (items ? ItemsLabel(r.Of) : null);
         }
+
+        /// <summary>A conflict's resources, one line for each kind of them (Clash.Groups): the type,
+        /// how many when more than one, then the name or the game item ("模型 ×16 · 护甲：O-3 Free
+        /// Spirit"); with ids, the kinds with no name by their first id. Then how many are not
+        /// shown. The same words were listed once a resource (the user, 2026-11-03).</summary>
+        StackPanel ResourceLines(Clash c, int lines, double size, string colour, bool ids)
+        {
+            var list = new StackPanel();
+            int shown = 0;
+            foreach (var g in c.Groups.Where(g => ids || GroupWords(g) != null).Take(lines))
+            {
+                var dp = new DockPanel { Margin = new Thickness(0, 1, 0, 1) };
+                var type = new TextBlock { Text = TypeLabel(g.Type) + (g.Count > 1 ? " ×" + g.Count : "") + "  ·  ", FontSize = size, Foreground = B("Muted") };
+                DockPanel.SetDock(type, Dock.Left);
+                dp.Children.Add(type);
+                var words = GroupWords(g);
+                var what = words != null ? Selectable.Text(words, size, colour)
+                    : Selectable.Text(g.Ids.FirstOrDefault() + (g.Count > 1 ? " …" : ""), size - 1, "Muted", Mono);
+                what.VerticalAlignment = VerticalAlignment.Center;
+                dp.Children.Add(what);
+                list.Children.Add(dp);
+                shown += g.Count;
+            }
+            if (list.Children.Count > 0 && c.Count > shown)
+                list.Children.Add(Small(Texts.F("clash_more", c.Count - shown), new Thickness(0, 2, 0, 0)));
+            return list;
+        }
+
+        static string GroupWords((string Type, string Name, List<(string Category, string Name)> Of, int Count, List<string> Ids) g) =>
+            ResourceWords((g.Type, null, g.Name, g.Of));
 
         /// <summary>A resource type as the conflicts name it: in words for the common ones, else the engine's name.</summary>
         static string TypeLabel(string type) => Texts.Has("rt_" + type) ? Texts.Get("rt_" + type) : type;

@@ -352,18 +352,45 @@ namespace Hd2Mod
             // those are shared, not fought over; winner: whose copy a deploy gives
             // which option of a mod brings a conflict: by the archives it comes from (from: an
             // archive's mod), each mod's options and sub-options whose folder holds one
+            // every resource of a set, grouped by what it is: its type and its name, else the game
+            // items whose archives hold it, with how many; the ones with no name by type (the user,
+            // 2026-11-03: the same "护甲：O-3 Free Spirit" was listed eight times, then "8 more")
+            List<object> Groups(List<Deploy.Clash> all)
+            {
+                var groups = new Dictionary<string, (string Type, string Name, List<(string Category, string Name)> Of, List<string> Ids)>();
+                var order = new List<string>();
+                foreach (var c in all)
+                {
+                    var type = ResourceNames.Type(c.Type);
+                    var name = ResourceNames.Name(c.Id);
+                    var of = GameArchives.Of(c.Id, game);
+                    var key = type + "\u001f" + name + "\u001f" + string.Join("\u001e", of.Select(a => a.Category + "\u001d" + a.Name));
+                    if (!groups.TryGetValue(key, out var g)) { groups[key] = g = (type, name, of, new List<string>()); order.Add(key); }
+                    g.Ids.Add(c.Id.ToString("x16"));
+                }
+                return order.Select(k => groups[k])
+                    .OrderBy(g => g.Name == null && g.Of.Count == 0 ? 1 : 0).ThenByDescending(g => g.Ids.Count)
+                    .Select(g => (object)new Dictionary<string, object>
+                    {
+                        ["type"] = g.Type, ["name"] = g.Name, ["count"] = (long)g.Ids.Count,
+                        ["archives"] = g.Of.Select(a => (object)new Dictionary<string, object> { ["category"] = a.Category, ["name"] = a.Name }).ToList(),
+                        ["ids"] = g.Ids.Take(3).Cast<object>().ToList(),
+                    }).ToList();
+            }
+
             void Sets(List<Deploy.Clash> found, List<object> into, Func<List<string>, string> winner, Dictionary<string, string> from = null)
             {
-                var pairs = new List<(List<string> Mods, bool Same, bool Boot, long Count, List<Deploy.Clash> Some)>();
+                var pairs = new List<(List<string> Mods, bool Same, bool Boot, long Count, List<Deploy.Clash> Some, List<Deploy.Clash> All)>();
                 foreach (var c in found)
                 {
                     bool boot = c.Type == Deploy.LuaType && c.Id == LuaMods.BootId;
                     int i = pairs.FindIndex(p => p.Same == c.Same && p.Boot == boot && p.Mods.SequenceEqual(c.Mods));
-                    if (i < 0) pairs.Add((c.Mods, c.Same, boot, 1, new List<Deploy.Clash> { c }));
+                    if (i < 0) pairs.Add((c.Mods, c.Same, boot, 1, new List<Deploy.Clash> { c }, new List<Deploy.Clash> { c }));
                     else
                     {
                         if (pairs[i].Some.Count < Shown) pairs[i].Some.Add(c);
-                        pairs[i] = (pairs[i].Mods, pairs[i].Same, pairs[i].Boot, pairs[i].Count + 1, pairs[i].Some);
+                        pairs[i].All.Add(c);
+                        pairs[i] = (pairs[i].Mods, pairs[i].Same, pairs[i].Boot, pairs[i].Count + 1, pairs[i].Some, pairs[i].All);
                     }
                 }
                 // which resources they are (the user, 2026-10-25): the first ones of each pair,
@@ -381,6 +408,7 @@ namespace Hd2Mod
                             .Where(x => x.Item2 != null).Distinct()
                             .Select(x => (object)new Dictionary<string, object> { ["mod"] = x.Item1, ["option"] = (long)x.Item2.Value.Item1, ["sub"] = (long)x.Item2.Value.Item2 })
                             .ToList(),
+                        ["groups"] = Groups(p.All),
                         ["resources"] = p.Some.Select(c => (object)new Dictionary<string, object>
                         {
                             ["type"] = ResourceNames.Type(c.Type), ["id"] = c.Id.ToString("x16"), ["name"] = ResourceNames.Name(c.Id),
