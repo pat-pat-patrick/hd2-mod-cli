@@ -231,6 +231,8 @@ namespace QuickDeploy
 
     class State
     {
+        /// <summary>The number of the state read it came from (the window's), 0 for the saved list.</summary>
+        public int ReadNo;
         public string GameDir, Home, Version, ModsDir;
         public int Kept, Moved, Written, Deleted, FileCount, LinkedFiles, CopiedFiles, Deploys;
         public long KeptBytes, MovedBytes, WrittenBytes, CopiedBytes, DeletedBytes, LinkedBytes, CopyBytes, SavedBytes;

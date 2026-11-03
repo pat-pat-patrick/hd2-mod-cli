@@ -68,7 +68,7 @@ namespace QuickDeploy
             foreach (var id in ids.OrderBy(x => x, StringComparer.Ordinal))     // not the load order, which a choice changes
             {
                 var m = st.Mods.First(x => x.Id == id);
-                Add(m.Id); Add(m.Name); Add(m.Icon); Add(m.Enabled); Add(m.InProfile);
+                Add(m.Id); Add(m.Name); Add(m.Icon); Add(m.Enabled); Add(m.InProfile); Add(m.Id == selectedId);
                 foreach (var o in m.Options)
                 {
                     Add(o.Name); Add(o.Enabled); Add(string.Join("|", o.Clashes));
@@ -250,7 +250,7 @@ namespace QuickDeploy
             IEnumerable<Border> Rows() => Find<Border>(List, b => b.Tag is string);
             string Words(DependencyObject d) => string.Join(" ", LogicalTreeHelper.GetChildren(d).OfType<DependencyObject>()
                 .Select(c => c is TextBlock t ? t.Text : c is CheckBox cb ? (cb.IsChecked == true ? "[on]" : "[off]") : Words(c)).Where(x => x.Length > 0));
-            string Screen() => "scroll " + ListScroll.VerticalOffset + "\n" + string.Join("\n", Rows().Select(r =>
+            string Screen() => "details: " + (st?.Mods.FirstOrDefault(x => x.Id == selectedId)?.Name ?? "-") + ", scroll " + ListScroll.VerticalOffset + "\n" + string.Join("\n", Rows().Select(r =>
                 "  " + Words(r) + (((Grid)r.Parent).Children.OfType<System.Windows.Shapes.Rectangle>().Any() ? "  [dashed]" : "")));
             void Watch(string what, Action click, Action then)
             {
@@ -287,8 +287,16 @@ namespace QuickDeploy
                 filter = "conflict";
                 RenderList();
                 UpdateLayout();
-                var row = Rows().FirstOrDefault(r => r.Cursor == System.Windows.Input.Cursors.Hand);
-                Watch("a click on " + row?.Tag, () => row?.RaiseEvent(new System.Windows.Input.MouseButtonEventArgs(System.Windows.Input.Mouse.PrimaryDevice, 0, System.Windows.Input.MouseButton.Left)
+                // a choice made while a state read is on its way, as the file watcher starts one
+                var pick = Find<Button>(List, b => (b.Tag as string) == "pick").FirstOrDefault();
+                Watch("Use this one while a state read is on its way", () =>
+                {
+                    Refresh();
+                    pick?.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+                }, () =>
+                {
+                var offRow = Rows().FirstOrDefault(r => Find<CheckBox>(r, c => c.IsChecked != true).Any());
+                Watch("a click on the line of a mod turned off", () => offRow?.RaiseEvent(new System.Windows.Input.MouseButtonEventArgs(System.Windows.Input.Mouse.PrimaryDevice, 0, System.Windows.Input.MouseButton.Left)
                                                   { RoutedEvent = UIElement.MouseLeftButtonUpEvent }), () =>
                 {
                     var sw = Find<CheckBox>(List, c => c.IsChecked != true).FirstOrDefault();
@@ -302,6 +310,7 @@ namespace QuickDeploy
                         var path = Environment.GetEnvironmentVariable("HD2QD_WHEEL_OUT");
                         if (path != null) System.IO.File.WriteAllText(path, out_.ToString());
                     });
+                });
                 });
             };
             t.Start();

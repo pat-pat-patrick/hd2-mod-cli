@@ -1218,6 +1218,7 @@ namespace QuickDeploy
                 {
                     refreshAgain = false;
                     Mark("state read: start");
+                    int readNo = ++readsStarted;
                     var r = await Queued(() => Cli.Run("state"));
                     Mark("state read: done");
                     if (!r.Ok)
@@ -1243,6 +1244,7 @@ namespace QuickDeploy
                         var had = st.Mods.Where(x => x.Lu != null).ToDictionary(x => x.Id, x => x.Lu);
                         foreach (var x in read.Mods) if (had.TryGetValue(x.Id, out var lu)) x.Lu = lu;
                     }
+                    read.ReadNo = readNo;
                     st = read;
                     stateJson = r.Out;
                     fromSaved = false;
@@ -1264,6 +1266,9 @@ namespace QuickDeploy
 
         bool setupDone;
         bool warming;
+        // the state reads started so far: a read that began before a command finished does not
+        // have its change yet (WinnerRows' choices wait for one that began after)
+        int readsStarted;
 
         // the packs moved this run: each once, so nothing can go round in a loop
         readonly HashSet<string> adjoined = new HashSet<string>();
@@ -1440,11 +1445,12 @@ namespace QuickDeploy
         /// <summary>A change, then the state again. done: its text (the window's own) goes
         /// to the footer with the time it took. A refusal is said in the window's own words
         /// when it has them, never as a command to type.</summary>
-        async Task<bool> Act(Func<CliResult> work, bool done)
+        async Task<bool> Act(Func<CliResult> work, bool done, Action worked = null)
         {
             if (busy) return false;
             var clock = System.Diagnostics.Stopwatch.StartNew();
             var r = await Exec(work);
+            worked?.Invoke();
             if (r.Refused?.Kind == "maybe_update") r = await NewVersionOrNot(r);
             clock.Stop();
             if (Refused(r)) return false;
@@ -6986,8 +6992,10 @@ namespace QuickDeploy
         }
 
         /// <summary>The mods of a conflict as lines: picture, name, the one that wins now marked
-        /// (tagKey). A click on another makes it win: it moves just after the last of the others in
-        /// the load order (the last one wins); the others keep their places. inGame: whose copy the
+        /// (tagKey). A click on a line shows that mod in the details, on or off (the user,
+        /// 2026-11-03: the details panel is there for it); the button on another enabled line
+        /// (pointed at, or chosen) makes it win: it moves just after the last of the others in the
+        /// load order (the last one wins); the others keep their places. inGame: whose copy the
         /// game has now (the last deploy); when a choice has not been deployed yet, that one keeps
         /// tagKey and its solid frame, and the one chosen is framed in dashes and marked "in effect
         /// after deploy" (the user, 2026-11-03: a click must change the view itself).</summary>
@@ -7027,6 +7035,19 @@ namespace QuickDeploy
                 pic.Opacity = off ? 0.55 : 1;
                 DockPanel.SetDock(pic, Dock.Left);
                 line.Children.Add(pic);
+                Button use = null;
+                if (!wins && !off)
+                {
+                    // the choice: on the line pointed at, or the one chosen
+                    use = new Button
+                    {
+                        Content = Texts.Get(tagKey == "pick_runs_now" ? "pick_run_this" : "pick_use_this"), Style = (Style)FindResource("Ghost"), MinHeight = 26, Padding = new Thickness(10, 0, 10, 0),
+                        VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0), Tag = "pick",
+                        Visibility = x.Id == selectedId ? Visibility.Visible : Visibility.Hidden,
+                    };
+                    DockPanel.SetDock(use, Dock.Right);
+                    line.Children.Add(use);
+                }
                 if (solid || next)
                 {
                     var tag = new Border
@@ -7043,38 +7064,66 @@ namespace QuickDeploy
                 var under = below?.Invoke(x);
                 if (under != null) named.Children.Add(under);
                 line.Children.Add(named);
+                bool shown = x.Id == selectedId;              // in the details now
                 var row = new Border
                 {
-                    BorderBrush = next ? Brushes.Transparent : B(solid ? "Yellow" : "Grid"), BorderThickness = new Thickness(1), Background = B("Ground900"),
-                    Padding = new Thickness(8, 6, 8, 6), Child = line, Cursor = wins || off ? Cursors.Arrow : Cursors.Hand, Tag = x.Id, MinHeight = twoLines ? 58 : 0,
+                    BorderBrush = next ? Brushes.Transparent : B(solid ? "Yellow" : shown ? "Muted" : "Grid"), BorderThickness = new Thickness(1), Background = B(shown ? "Band" : "Ground900"),
+                    Padding = new Thickness(8, 6, 8, 6), Child = line, Cursor = Cursors.Hand, Tag = x.Id, MinHeight = twoLines ? 58 : 0,
                 };
                 // the chosen one's frame in dashes, over the row (it takes no clicks)
                 var cell = new Grid { Margin = new Thickness(0, 0, 0, 6) };
                 cell.Children.Add(row);
                 if (next)
                     cell.Children.Add(new Rectangle { Stroke = B("Yellow"), StrokeThickness = 1.5, StrokeDashArray = new DoubleCollection { 4, 3 }, IsHitTestVisible = false });
-                if (!wins && !off)
+                var id = x.Id;
+                var rest = row.BorderBrush;
+                row.MouseEnter += (s, e) => { if (!solid && !next) row.BorderBrush = B("Muted"); if (use != null) use.Visibility = Visibility.Visible; };
+                row.MouseLeave += (s, e) => { row.BorderBrush = rest; if (use != null && id != selectedId) use.Visibility = Visibility.Hidden; };
+                // a click on the line: that mod in the details
+                row.MouseLeftButtonUp += (s, e) =>
                 {
-                    var rest = row.BorderBrush;
-                    row.MouseEnter += (s, e) => { if (!solid) row.BorderBrush = B("Muted"); };
-                    row.MouseLeave += (s, e) => row.BorderBrush = rest;
-                    var id = x.Id;
-                    row.MouseLeftButtonUp += (s, e) =>
+                    if (selectedId == id) return;
+                    Current(id);
+                    RenderList();
+                    RenderDetail();
+                };
+                if (use != null)
+                    use.Click += (s, e) =>
                     {
+                        // drawn at once, and kept until a state read that began after the move
+                        // finished: a read already on its way when the button was clicked has the
+                        // old winner, and the frame jumped back to it for a moment (the user, 2026-11-03)
+                        picksNow[key] = (id, null);
                         var last = mods.Where(o => o.Id != id && o.Enabled).OrderBy(o => o.Index).LastOrDefault();
-                        picksNow[key] = (id, st);
-                        if (last != null && mods.First(o => o.Id == id).Index < last.Index) Run("move", id, "--after", last.Id);
+                        if (last != null && mods.First(o => o.Id == id).Index < last.Index)
+                            PickMove(key, id, new[] { "move", id, "--after", last.Id });
+                        else picksNow[key] = (id, readsStarted);
                         if (filter == "conflict") RenderConflicts();
                         else RenderDetail();
                     };
-                }
                 rowsBox.Children.Add(cell);
             }
             return rowsBox;
         }
 
-        // the choices clicked in WinnerRows, by the mods of the set, with the state they were made in
-        readonly Dictionary<string, (string Id, State Under)> picksNow = new Dictionary<string, (string, State)>();
+        // the choices clicked in WinnerRows, by the mods of the set: the mod, and the state reads
+        // started when its move finished (null: not finished yet)
+        readonly Dictionary<string, (string Id, int? DoneAt)> picksNow = new Dictionary<string, (string, int?)>();
+
+        async void PickMove(string key, string id, string[] args)
+        {
+            bool ran = false;
+            await Act(() => Cli.Run(args), false, () =>
+            {
+                ran = true;
+                if (picksNow.TryGetValue(key, out var p) && p.Id == id) picksNow[key] = (id, readsStarted);
+            });
+            if (ran) return;
+            // turned away (another command was running): the choice is not made
+            if (picksNow.TryGetValue(key, out var q) && q.Id == id) picksNow.Remove(key);
+            if (filter == "conflict") RenderConflicts();
+            else RenderDetail();
+        }
 
         /// <summary>Whose version of a set's resources a deploy uses, as the window has it now: a
         /// choice just clicked, until the state it was made in is read again; with a switch just
@@ -7084,7 +7133,8 @@ namespace QuickDeploy
             var key = string.Join("|", ids.OrderBy(x => x, StringComparer.Ordinal));
             if (picksNow.TryGetValue(key, out var pick))
             {
-                if (pick.Under == st) return pick.Id;
+                // the state on show was read before the move finished: it does not have it yet
+                if (pick.DoneAt == null || st.ReadNo <= pick.DoneAt) return pick.Id;
                 picksNow.Remove(key);
             }
             var mods = ids.Select(ById).Where(x => x != null).ToList();
