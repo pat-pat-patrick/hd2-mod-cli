@@ -56,7 +56,12 @@ namespace QuickDeploy
 
         void LoadView()
         {
-            try { groupView = Json.Str(Store.Load("gui.json"), "list_view") != "order"; }
+            try
+            {
+                var d = Store.Load("gui.json");
+                groupView = Json.Str(d, "list_view") != "order";
+                showPotential = !(d.TryGetValue("conflicts_potential", out var p) && p is bool b && !b);
+            }
             catch (Exception e) when (e is System.IO.IOException || e is UnauthorizedAccessException || e is FormatException) { }
         }
 
@@ -66,9 +71,21 @@ namespace QuickDeploy
             {
                 var d = Store.Load("gui.json");
                 d["list_view"] = groupView ? "groups" : "order";
+                d["conflicts_potential"] = showPotential;
                 Store.Save("gui.json", d);
             }
             catch (Exception e) when (e is System.IO.IOException || e is UnauthorizedAccessException || e is FormatException) { }
+        }
+
+        /// <summary>The conflicts view: also the sets that do not conflict now but could, by a mod
+        /// turned on or another option chosen (the user, 2026-11-04: a tick in the switch's place).</summary>
+        bool showPotential = true;
+
+        void Potential_Click(object sender, RoutedEventArgs e)
+        {
+            showPotential = PotentialBox.IsChecked == true;
+            SaveView();
+            RenderList();
         }
 
         void View_Click(object sender, RoutedEventArgs e)
@@ -97,7 +114,11 @@ namespace QuickDeploy
             // the conflicts are a view of their own in the list's place (ConflictView): groups or
             // order mean nothing there, so their switch is not shown
             bool conflicts = filter == "conflict";
-            ((FrameworkElement)((FrameworkElement)ViewGroups.Parent).Parent).Visibility = conflicts ? Visibility.Collapsed : Visibility.Visible;
+            ViewSwitch.Visibility = conflicts ? Visibility.Collapsed : Visibility.Visible;
+            PotentialBox.Visibility = conflicts ? Visibility.Visible : Visibility.Collapsed;
+            PotentialBox.IsChecked = showPotential;
+            PotentialBox.Content = Texts.Get("cf_potential");
+            PotentialBox.ToolTip = Texts.Get("cf_potential_tip");
             ListScroll.Visibility = groupView && !conflicts ? Visibility.Collapsed : Visibility.Visible;
             GroupScroll.Visibility = groupView && !conflicts ? Visibility.Visible : Visibility.Collapsed;
         }

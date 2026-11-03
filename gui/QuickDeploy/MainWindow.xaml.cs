@@ -4024,11 +4024,11 @@ namespace QuickDeploy
         void RenderList()
         {
             if (dragRow != null) EndDrag(false);         // the rows are about to be built again
-            ListTitle.Text = filter == "all" ? Texts.Get("t_all") : Texts.Get("f_" + filter);
             bool profiled = st.ProfilesOn;
             if (!profiled) viewLibrary = false;
-            ListTitle.Visibility = profiled ? Visibility.Collapsed : Visibility.Visible;
             ProfileBtn.Visibility = profiled ? Visibility.Visible : Visibility.Collapsed;
+            // at the left edge, or after the profile's name
+            ViewSwitch.Margin = PotentialBox.Margin = new Thickness(profiled ? 16 : 0, 0, 0, 0);
             if (profiled)
             {
                 var head = new StackPanel { Orientation = Orientation.Horizontal };

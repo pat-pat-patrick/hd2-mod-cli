@@ -133,18 +133,21 @@
               <Button x:Name="AddBtn" Style="{StaticResource Ghost}" MinHeight="44" Click="Add_Click"/>
               <Button x:Name="RefreshBtn" Style="{StaticResource Ghost}" MinHeight="44" Margin="8,0,0,0" Click="Refresh_Click"/>
             </StackPanel>
+            <!-- no title of the list's own: the library's panel on the left says which list it is
+                 (the user, 2026-11-04) -->
             <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,4,0,0">
-              <TextBlock x:Name="ListTitle" FontSize="28" FontWeight="Bold" VerticalAlignment="Center"/>
               <!-- with profiles on, the title is the profile in use, and opens the profiles -->
               <Button x:Name="ProfileBtn" Visibility="Collapsed" Cursor="Hand" FocusVisualStyle="{x:Null}"
                       VerticalAlignment="Center" Click="Profile_Click"/>
               <!-- the groups as Finder's columns, or the load order (the user, 2026-10-27) -->
-              <Border BorderBrush="{StaticResource Grid}" BorderThickness="1" Margin="16,0,0,0" VerticalAlignment="Center">
+              <Border x:Name="ViewSwitch" BorderBrush="{StaticResource Grid}" BorderThickness="1" VerticalAlignment="Center">
                 <StackPanel Orientation="Horizontal">
                   <RadioButton x:Name="ViewGroups" Style="{StaticResource Segment}" GroupName="listview" MinWidth="88" Click="View_Click"/>
                   <RadioButton x:Name="ViewOrder" Style="{StaticResource Segment}" GroupName="listview" MinWidth="88" Click="View_Click"/>
                 </StackPanel>
               </Border>
+              <!-- in the conflicts, in the switch's place: the possible conflicts too, or only those now -->
+              <CheckBox x:Name="PotentialBox" Style="{StaticResource Tick}" Visibility="Collapsed" VerticalAlignment="Center" Click="Potential_Click"/>
             </StackPanel>
           </DockPanel>
           <!-- the search field, with the two filters inside it on the left: where a mod comes

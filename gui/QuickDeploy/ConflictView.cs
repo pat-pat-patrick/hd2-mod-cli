@@ -28,9 +28,12 @@ namespace QuickDeploy
             // flickered (the user, 2026-11-03)
             var want = new List<UIElement>();
             var keep = new HashSet<string>();
+            int hidden = 0;
             foreach (var c in sets)
             {
                 var ids = c.Mods.Select(n => st.Mods.FirstOrDefault(x => x.Name == n)?.Id).Where(id => id != null).ToList();
+                // the tick off: only what conflicts now (StateOf)
+                if (!showPotential && StateOf(c, ids) != "conflict") { hidden++; continue; }
                 // by its mods and its items: two items can have the same mods
                 var key = string.Join("|", ids.OrderBy(x => x, StringComparer.Ordinal)) + "#" + string.Join("|", c.Groups.SelectMany(g => g.Of).Select(a => a.Category + "/" + a.Name).Distinct());
                 var sig = CardSig(c, ids);
@@ -39,12 +42,14 @@ namespace QuickDeploy
                 want.Add(had.Card);
             }
             foreach (var k in cfCards.Keys.Where(k => !keep.Contains(k)).ToList()) cfCards.Remove(k);
-            if (sets.Count == 0)
+            if (want.Count == 0)
             {
-                if (!(List.Children.Count == 1 && List.Children[0] is TextBlock))
+                // none now, some possible: the tick says where they are
+                var none = Texts.Get(hidden > 0 ? "cf_none_now" : "cf_none");
+                if (!(List.Children.Count == 1 && List.Children[0] is TextBlock t && t.Text == none))
                 {
                     List.Children.Clear();
-                    List.Children.Add(new TextBlock { Text = Texts.Get("cf_none"), Foreground = B("Muted"), Margin = new Thickness(20), TextWrapping = TextWrapping.Wrap });
+                    List.Children.Add(new TextBlock { Text = none, Foreground = B("Muted"), Margin = new Thickness(20), TextWrapping = TextWrapping.Wrap });
                 }
                 return;
             }
@@ -83,6 +88,16 @@ namespace QuickDeploy
             return sb.ToString();
         }
 
+        /// <summary>Whether a set conflicts now ("conflict"), or why not ("options", "one_on",
+        /// "none_on"). A switch just turned (not read yet): by the mods on, as the state will say.</summary>
+        string StateOf(Clash c, List<string> ids)
+        {
+            var mods = ids.Select(ById).Where(x => x != null).ToList();
+            int on = mods.Count(x => x.Enabled);
+            return mods.Any(x => x.Assumed != null) ? (on > 1 ? (c.Now == "options" ? "options" : "conflict") : on == 1 ? "one_on" : "none_on")
+                 : c.Now ?? (on > 1 ? "conflict" : on == 1 ? "one_on" : "none_on");
+        }
+
         /// <summary>One set: how many resources and mods, the mods with their switches (whose
         /// version is used marked; a click on another enabled one uses its), and the first of the
         /// resources.</summary>
@@ -92,10 +107,7 @@ namespace QuickDeploy
             // a set stays when it conflicts no more (every option counts, chosen or not: the user,
             // 2026-11-03): its heading grey, and why. A switch just turned (not read yet): by the
             // mods on, as the state will say
-            var mods = ids.Select(ById).Where(x => x != null).ToList();
-            int on = mods.Count(x => x.Enabled);
-            var state = mods.Any(x => x.Assumed != null) ? (on > 1 ? (c.Now == "options" ? "options" : "conflict") : on == 1 ? "one_on" : "none_on")
-                      : c.Now ?? (on > 1 ? "conflict" : on == 1 ? "one_on" : "none_on");
+            var state = StateOf(c, ids);
             bool clashing = state == "conflict";
             // the heading is what they replace: the game item, else the resource's name, else its
             // type; how many mods and resources is the line under it (the user, 2026-11-03: the
