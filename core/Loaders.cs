@@ -16,13 +16,48 @@ namespace Hd2Mod
     {
         public const string None = "none";
 
+        // one state read asks the same things of every mod many times over: which loader it is,
+        // and each loader's facts, for every choice of loader and every helper, each time listing
+        // every mod's folders and opening the loaders' archives (1.3 s of a 2.4 s read, a library
+        // of 103 mods, the user, 2026-11-03). Within one read (Pass) each answer is kept, by the
+        // mod object that read has: its folders do not change under it.
+        [ThreadStatic] static Dictionary<(object, string), object> passed;
+
+        /// <summary>Answers kept until the result is disposed (a state read); nested, the outer
+        /// one keeps them.</summary>
+        public static IDisposable Pass()
+        {
+            if (passed != null) return new PassEnd(false);
+            passed = new Dictionary<(object, string), object>();
+            return new PassEnd(true);
+        }
+
+        sealed class PassEnd : IDisposable
+        {
+            readonly bool mine;
+            public PassEnd(bool mine) { this.mine = mine; }
+            public void Dispose() { if (mine) passed = null; }
+        }
+
+        static T Kept<T>(object of, string what, Func<T> make)
+        {
+            var p = passed;
+            if (p == null || of == null) return make();
+            if (p.TryGetValue((of, what), out var had)) return (T)had;
+            var made = make();
+            p[(of, what)] = made;
+            return made;
+        }
+
         // what a mod's archives make it, by the archives' sizes and times
         static readonly Dictionary<string, (string Sig, string Kind)> known = new Dictionary<string, (string, string)>(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>"bml", "chef", "bsl", "mdl3", or null: as LuaMods names a loader, but read only from the
         /// archives that hold a boot or Chef Shared Loader's core (a row scan for the others), so a
         /// state read can ask it of every mod without reading their scripts.</summary>
-        public static string KindOf(Mod mod)
+        public static string KindOf(Mod mod) => Kept(mod, "kind", () => KindOfNow(mod));
+
+        static string KindOfNow(Mod mod)
         {
             if (mod == null || !Directory.Exists(mod.Path)) return null;
             List<string> folders;
@@ -63,7 +98,10 @@ namespace Hd2Mod
         public static List<Mod> Of(Library lib) => lib.Mods.Where(m => KindOf(m) != null).ToList();
 
         /// <summary>The loader in effect: the one chosen, else the last one enabled; null for none.</summary>
-        public static Mod Chosen(Library lib, Dictionary<string, object> cfg = null)
+        public static Mod Chosen(Library lib, Dictionary<string, object> cfg = null) =>
+            cfg == null ? Kept(lib, "chosen", () => ChosenNow(lib, null)) : ChosenNow(lib, cfg);
+
+        static Mod ChosenNow(Library lib, Dictionary<string, object> cfg)
         {
             var loaders = Of(lib);
             if (loaders.Count == 0) return null;
@@ -81,7 +119,9 @@ namespace Hd2Mod
 
         /// <summary>A loader's version (its boot's, or Chef's core's) and the feature markers its code
         /// carries (LoaderCaps).</summary>
-        static (string Version, List<string> Marks) Facts(Mod mod)
+        static (string Version, List<string> Marks) Facts(Mod mod) => Kept(mod, "facts", () => FactsNow(mod));
+
+        static (string Version, List<string> Marks) FactsNow(Mod mod)
         {
             string version = null;
             var marks = new List<string>();
@@ -120,13 +160,13 @@ namespace Hd2Mod
         // the answers, by the mod's archives' sizes and times; only complete ones (every archive read)
         static readonly Dictionary<string, (string Sig, bool Needs)> needs = new Dictionary<string, (string, bool)>(StringComparer.OrdinalIgnoreCase);
 
-        public static bool NeedsChef(Mod mod) =>
-            AnyScript(mod, needs, s => s.ChefOnly || s.ChefApi || s.Header == "Boot" || (s.Header == "Addon" && !s.BmlName));
+        public static bool NeedsChef(Mod mod) => Kept(mod, "needs_chef", () =>
+            AnyScript(mod, needs, s => s.ChefOnly || s.ChefApi || s.Header == "Boot" || (s.Header == "Addon" && !s.BmlName)));
 
         /// <summary>Whether a mod's scripts read MDL3 or HD2Data (LuaScript.Mdl3Api).</summary>
         static readonly Dictionary<string, (string Sig, bool Needs)> usesMdl3 = new Dictionary<string, (string, bool)>(StringComparer.OrdinalIgnoreCase);
 
-        public static bool UsesMdl3(Mod mod) => AnyScript(mod, usesMdl3, s => s.Mdl3Api);
+        public static bool UsesMdl3(Mod mod) => Kept(mod, "uses_mdl3", () => AnyScript(mod, usesMdl3, s => s.Mdl3Api));
 
         /// <summary>Whether any of a mod's scripts is so, kept in answers.</summary>
         static bool AnyScript(Mod mod, Dictionary<string, (string Sig, bool Needs)> answers, Func<LuaScript, bool> so)

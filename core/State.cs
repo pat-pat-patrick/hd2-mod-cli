@@ -285,6 +285,11 @@ namespace Hd2Mod
         /// conflicts.</summary>
         public static Dictionary<string, object> Build(Library lib, string game, bool verify = false)
         {
+            using (Loaders.Pass()) return BuildNow(lib, game, verify);
+        }
+
+        static Dictionary<string, object> BuildNow(Library lib, string game, bool verify)
+        {
             var errors = new Dictionary<string, string>();
             var d = game != null ? Deploy.Compute(lib, game, verify, errors) : null;
             var check = Deploy.Check(lib, game, d);

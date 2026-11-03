@@ -300,6 +300,24 @@ namespace Hd2Mod.Tests
             Assert.Equal("bsl", Loaders.KindOf(Library.Load().Mods.Single(m => m.Name == "Other")));
         }
 
+        /// <summary>A state read keeps each mod's loader answers for that read only (Loaders.Pass:
+        /// asked again for every choice of loader, they were 1.3 s of a 2.4 s read, the user,
+        /// 2026-11-03). Must live: the read keeps what it saw. Must die: the next read sees a change.</summary>
+        [Fact]
+        public void LoaderAnswersLastOneStateRead()
+        {
+            Cli("add", Addon("Lamp", "mods/me/lamp"));
+            var lamp = Library.Load().Mods.Single(m => m.Name == "Lamp");
+            var archive = Directory.GetFiles(lamp.Path, A + ".patch_0", SearchOption.AllDirectories).Single();
+            using (Loaders.Pass())
+            {
+                Assert.Null(Loaders.KindOf(lamp));
+                File.WriteAllBytes(archive, LuaArchive((LuaMods.BootId, "-- MDL3 3.0.0-dev.18 game boot (PUC Lua 5.1)\nlocal x = 1\n")));
+                Assert.Null(Loaders.KindOf(lamp));
+            }
+            Assert.Equal("mdl3", Loaders.KindOf(lamp));
+        }
+
         /// <summary>The user (2026-10-26, "先试试协调方案"): Boot Mod Loader in effect, Chef Shared Loader
         /// helping with the mods made for it only: Chef goes to the game too, just before the loader,
         /// and is no second loader and no boot in the way; only while such a mod is on, and only with a
