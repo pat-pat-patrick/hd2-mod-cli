@@ -6480,7 +6480,21 @@ namespace QuickDeploy
                 var row = new DockPanel { Margin = new Thickness(0, 4, 0, 4) };
                 if (!tagAuto)
                 {
-                    var offBtn = new Button { Content = "✕", Template = Plain(), Cursor = Cursors.Hand, FocusVisualStyle = null, Foreground = B("Muted"), Width = 28, ToolTip = Texts.F("tag_off", m.Name) };
+                    // a drawn cross, centred on the row: the text "✕" sat higher than the name beside
+                    // it (the user, 2026-11-04), as it was cut in the search field
+                    var cross = new Path
+                    {
+                        Data = Geometry.Parse("M0,0 L9,9 M9,0 L0,9"), Stroke = B("Muted"), StrokeThickness = 1.5,
+                        StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round,
+                        HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
+                    };
+                    var offBtn = new Button
+                    {
+                        Content = cross, Template = Plain(), Cursor = Cursors.Hand, FocusVisualStyle = null, Background = Brushes.Transparent,
+                        Width = 28, Height = 28, VerticalAlignment = VerticalAlignment.Center, ToolTip = Texts.F("tag_off", m.Name),
+                    };
+                    offBtn.MouseEnter += (s, e) => cross.Stroke = B("Ink");
+                    offBtn.MouseLeave += (s, e) => cross.Stroke = B("Muted");
                     var mod = m;
                     var name = tagSel;
                     offBtn.Click += (s, e) =>
