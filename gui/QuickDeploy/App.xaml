@@ -335,14 +335,17 @@
       </Setter>
     </Style>
 
-    <!-- the right-click menu: a plain dark list -->
+    <!-- the right-click menu: a plain dark list, scrolling when it is given a MaxHeight it would
+         pass (the conflicts view's option menu ran off the screen) -->
     <Style TargetType="ContextMenu">
       <Setter Property="OverridesDefaultStyle" Value="True"/>
       <Setter Property="Template">
         <Setter.Value>
           <ControlTemplate TargetType="ContextMenu">
             <Border Background="{StaticResource Ground700}" BorderBrush="{StaticResource Grid}" BorderThickness="1" Padding="0,4">
-              <StackPanel IsItemsHost="True"/>
+              <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Focusable="False">
+                <StackPanel IsItemsHost="True"/>
+              </ScrollViewer>
             </Border>
           </ControlTemplate>
         </Setter.Value>

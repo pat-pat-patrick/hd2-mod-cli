@@ -167,19 +167,26 @@ namespace QuickDeploy
 
         ContextMenu OptionMenu(ModRow m, List<int> which)
         {
-            // narrow: each choice its name, and under it how many mods it conflicts with; the mods
-            // themselves on pointing (the user, 2026-11-03: the names in a line made it very wide)
-            var menu = new ContextMenu { MaxWidth = 380 };
+            // narrow: each choice its name, and after it on the same line how many mods it conflicts
+            // with; the mods themselves on pointing (the user, 2026-11-03: the names in a line made
+            // it very wide; the count on a line of its own made it very long). No taller than most
+            // of the screen: a mod with many choices scrolls (it ran off the screen)
+            var menu = new ContextMenu { MaxWidth = 380, MaxHeight = SystemParameters.WorkArea.Height * 0.6 };
             MenuItem Item(string name, List<string> clashes, bool chosen, Action act)
             {
-                var head = new StackPanel { Margin = new Thickness(0, 2, 0, 2) };
-                head.Children.Add(new TextBlock { Text = name, TextTrimming = TextTrimming.CharacterEllipsis });
-                head.Children.Add(new TextBlock
+                var head = new Grid();
+                head.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                head.Children.Add(new TextBlock { Text = name, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center });
+                var count = new TextBlock
                 {
                     Text = clashes.Count == 0 ? Texts.Get("cf_opt_free") : Texts.F("opt_clash_n", clashes.Count),
                     // on the chosen one, drawn on yellow: the dark ink
-                    FontSize = 12, Foreground = B(chosen ? "TapeInk" : clashes.Count == 0 ? "Muted" : "Yellow"), Margin = new Thickness(0, 1, 0, 0),
-                });
+                    FontSize = 12, Foreground = B(chosen ? "TapeInk" : clashes.Count == 0 ? "Muted" : "Yellow"),
+                    Margin = new Thickness(20, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center,
+                };
+                Grid.SetColumn(count, 1);
+                head.Children.Add(count);
                 var it = new MenuItem { Header = head, IsCheckable = false, IsChecked = chosen };
                 if (clashes.Count > 0) it.ToolTip = Texts.F("opt_clash", string.Join(Texts.Get("sep_list"), clashes));
                 it.Click += (s, e) => { if (!chosen) act(); };
