@@ -406,7 +406,9 @@ namespace QuickDeploy
 
         void RemovePlugin(string file, string title)
         {
-            if (!Dialog.AskDanger(this, Texts.F("plugin_remove_ask", title, file), Texts.Get("plugin_remove"))) return;
+            // one whose downloads the manager reads says they go too
+            bool data = PluginFiles.DataOf(file).Length > 0;
+            if (!Dialog.AskDanger(this, Texts.F(data ? "plugin_remove_ask_data" : "plugin_remove_ask", title, file), Texts.Get("plugin_remove"))) return;
             try { PluginFiles.Remove(file); }
             catch (Exception e) when (e is ModError || e is System.IO.IOException || e is UnauthorizedAccessException)
             { Dialog.Tell(this, Texts.F("failed", e.Message)); return; }

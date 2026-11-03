@@ -993,6 +993,7 @@
   "plugin_added": "已添加插件：{0}",
   "plugin_remove": "移除",
   "plugin_remove_ask": "是否移除插件“{0}”？其文件（{1}）将从设置目录中删除。",
+  "plugin_remove_ask_data": "是否移除插件“{0}”？其文件（{1}）以及它下载的数据将从设置目录中删除。",
   "plugin_removed": "已移除插件：{0}",
   "plugin_failed": "此插件无法显示其内容：{0}",
   "plugin_needed": "MOD 库中有 MOD 需要此插件。",

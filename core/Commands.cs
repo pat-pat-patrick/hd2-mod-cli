@@ -1105,8 +1105,12 @@ namespace Hd2Mod
             }
         }
 
-        static void PluginRemoveCmd(Args a, TextWriter o) =>
-            o.WriteLine("removed " + PluginFiles.Remove(a.Pos["plugin"]) + " from " + PluginFiles.Dir);
+        static void PluginRemoveCmd(Args a, TextWriter o)
+        {
+            var file = PluginFiles.Remove(a.Pos["plugin"]);
+            o.WriteLine("removed " + file + " from " + PluginFiles.Dir);
+            foreach (var rel in PluginFiles.DataOf(file)) o.WriteLine("and what it downloaded: " + Store.PathOf(rel));
+        }
 
         static string LoaderName(string kind, ModLua ml) =>
             kind == "bml" ? "Boot Mod Loader" + (ml?.Boot?.BootVersion != null ? " " + ml.Boot.BootVersion : "")

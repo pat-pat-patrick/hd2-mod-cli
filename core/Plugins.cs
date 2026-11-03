@@ -121,8 +121,27 @@ namespace Hd2Mod
                 ?? throw new ModError("no plugin " + name + " has been added (plugins lists them)", "plugin_missing", name);
             File.Delete(PathOf(file));
             Forget(PathOf(file));
+            foreach (var rel in DataOf(file))
+            {
+                var p = Store.PathOf(rel);
+                if (Directory.Exists(p)) Directory.Delete(p, true);
+                else if (File.Exists(p)) File.Delete(p);
+            }
             return file;
         }
+
+        /// <summary>What a plugin downloaded into the settings folder for the manager itself to
+        /// read, which goes when the plugin is removed (the user, 2026-11-04: names still showed
+        /// after Resource names was removed; its lists were still there). HD2SDK's own copy in
+        /// Blender stays a source: it is the player's, not the plugin's. A plugin's own records
+        /// (a license, a cache) stay: removing it is not asking to lose them.</summary>
+        static readonly Dictionary<string, string[]> DownloadedData = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["HD2QD.ResourceNames.dll"] = new[] { "resource_names" },
+        };
+
+        /// <summary>The settings folder's entries (relative) a plugin's removal deletes with it.</summary>
+        public static string[] DataOf(string file) => DownloadedData.TryGetValue(file ?? "", out var d) ? d : new string[0];
 
         /// <summary>Every HD2QD.*.dll added: its file name, its plugin class (null when it cannot
         /// be used) and why not.</summary>

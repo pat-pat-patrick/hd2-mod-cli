@@ -116,6 +116,24 @@ namespace Hd2Mod.Tests
             Assert.Equal("plugin_missing", Assert.Throws<ModError>(() => PluginFiles.Remove("Sample")).Kind);
         }
 
+        /// <summary>Removing Resource names deletes the lists it downloaded, which the manager reads
+        /// itself (the user, 2026-11-04: the names still showed). Must live: they go with it. Must
+        /// die: another plugin's removal leaves them.</summary>
+        [Fact]
+        public void Removing_resource_names_deletes_what_it_downloaded()
+        {
+            AddSample();
+            File.WriteAllBytes(Path.Combine(PluginFiles.Dir, "HD2QD.ResourceNames.dll"), new byte[] { 1, 2, 3 });
+            var lists = Path.Combine(Store.Home, "resource_names");
+            Directory.CreateDirectory(lists);
+            File.WriteAllText(ResourceNames.Downloaded, "101 Helmet One\n");
+            File.WriteAllText(GameArchives.Downloaded, "{}");
+            Cli("plugin-remove", "Sample");
+            Assert.True(File.Exists(ResourceNames.Downloaded));
+            Assert.Contains("and what it downloaded: " + lists, Cli("plugin-remove", "ResourceNames"));
+            Assert.False(Directory.Exists(lists));
+        }
+
         /// <summary>What is not a plugin is refused before anything of it runs or is copied.</summary>
         [Fact]
         public void A_file_that_is_not_a_plugin_is_refused()

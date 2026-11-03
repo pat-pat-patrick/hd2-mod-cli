@@ -1017,6 +1017,7 @@
   "plugin_added": "Plugin added: {0}",
   "plugin_remove": "Remove",
   "plugin_remove_ask": "Remove the plugin {0}? Its file ({1}) is deleted from the settings folder.",
+  "plugin_remove_ask_data": "Remove the plugin {0}? Its file ({1}) and what it downloaded are deleted from the settings folder.",
   "plugin_removed": "Plugin removed: {0}",
   "plugin_failed": "This plugin could not draw its card: {0}",
   "plugin_needed": "Mods in the library need this plugin.",
