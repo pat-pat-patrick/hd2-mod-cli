@@ -97,8 +97,8 @@
             <Button x:Name="DeployBtn" Style="{StaticResource Primary}" MinHeight="44" MinWidth="160" Click="Deploy_Click"/>
             <Button x:Name="LaunchBtn" Style="{StaticResource Ghost}" MinHeight="44" Margin="8,0,0,0" MinWidth="120" Click="Launch_Click"/>
           </StackPanel>
-          <!-- the status: a click opens the manager's log, where it is written down -->
-          <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Cursor="Hand" Background="Transparent" MouseLeftButtonUp="Foot_Click">
+          <!-- the status (a click does nothing: the user, 2026-11-03) -->
+          <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
             <Ellipse x:Name="FootDot" Width="8" Height="8" Fill="{StaticResource Muted}" Margin="0,0,8,0"/>
             <TextBlock x:Name="FootText" FontFamily="{StaticResource Mono}" FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
                        ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>

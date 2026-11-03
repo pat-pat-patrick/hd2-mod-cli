@@ -314,8 +314,7 @@ All of it is read outside the game, before a deploy: nothing runs in the game. T
 - **Asking about a problem?** Settings → *Problem report* → *Export problem
   report* writes one zip to the desktop and puts a short summary on the
   clipboard: send the zip with your question (`hd2qd report` does the same).
-  The manager's own log is under it on the same page (a click on the status
-  line at the bottom of the window opens it): every command that changes
+  The manager's own log is under it on the same page: every command that changes
   something, from the window or the command line, how it ended and what it
   said, with its level written (error, warning, info, debug). It is
   `hd2qd.log` in the settings folder.
@@ -637,7 +636,7 @@ mod 库与游戏不在同一分区时无法使用硬链接，有变化的文件�
 - **请勿直接修改游戏目录中已部署的 patch 文件**：硬链接与 mod 库中的文件为同一文件，修改会同时影响 mod 库。恢复原版不影响 mod 库。
 - 游戏运行时无法部署或恢复原版。
 - 界面语言为本程序独立的设置（设置窗口中选择，下次启动时保留）；未设置时跟随 Windows 的语言。
-- **反馈问题时**：在设置页“问题反馈”中点击“导出诊断包”，桌面上会生成一个 zip 文件，简要摘要同时复制到剪贴板；提问时附上该 zip 即可（命令行为 `hd2qd report`）。同一页下方是管理器日志（点击窗口底部的状态栏也可打开）：记录来自窗口或命令行的每项更改操作、结果和输出，并标明级别（错误、警告、信息、调试），文件为设置文件夹中的 `hd2qd.log`。装有 MDL3 时，诊断包还会记录其原生组件是否就位，并附上 MDL3、Data Hub 及其所加载 mod 的日志。诊断包不含崩溃转储和 Nexus Mods 登录信息，Windows 用户文件夹会写成 `%USERPROFILE%`。
+- **反馈问题时**：在设置页“问题反馈”中点击“导出诊断包”，桌面上会生成一个 zip 文件，简要摘要同时复制到剪贴板；提问时附上该 zip 即可（命令行为 `hd2qd report`）。同一页下方是管理器日志：记录来自窗口或命令行的每项更改操作、结果和输出，并标明级别（错误、警告、信息、调试），文件为设置文件夹中的 `hd2qd.log`。装有 MDL3 时，诊断包还会记录其原生组件是否就位，并附上 MDL3、Data Hub 及其所加载 mod 的日志。诊断包不含崩溃转储和 Nexus Mods 登录信息，Windows 用户文件夹会写成 `%USERPROFILE%`。
 - **hd2qd 可以由 AI 助手调用。** 所有数据保存在 `%USERPROFILE%\.hd2-mod-cli`，而不是 AppData：由打包应用（多数桌面版 AI 助手都是）启动的程序，在 `%APPDATA%` 下新建的文件夹会被 Windows 放进该应用的私有目录，其他程序都读不到，mod 库会在没有任何报错的情况下分成两份。如果仍将 `HD2MOD_HOME` 设在 AppData 下，hd2qd 会在写入前检查，并拒绝执行、说明写入本会落在何处。
 
 ### 命令行 hd2qd

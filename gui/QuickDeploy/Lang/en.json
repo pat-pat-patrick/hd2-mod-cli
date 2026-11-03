@@ -291,7 +291,7 @@
   "set_group_ui": "Interface",
   "set_group_mods": "Mod management",
   "set_log": "MANAGER LOG",
-  "set_log_note": "What this manager was asked to do, from this window or the command line, and how each ended: errors, refusals, what it said. It goes into the problem report too. A click on the status line at the bottom of the window opens it.",
+  "set_log_note": "What this manager was asked to do, from this window or the command line, and how each ended: errors, refusals, what it said. It goes into the problem report too.",
   "set_log_since_start": "Since the window opened",
   "lp_add": "Add a loader…",
   "lp_logs_folder": "Game log folder",
