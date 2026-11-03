@@ -143,11 +143,19 @@ namespace Hd2Mod
                     targets.Add((e, target));
                 }
                 Directory.CreateDirectory(tmp);
-                foreach (var (e, target) in targets)
+                // an entry packed with LZMA, which .NET refuses, by our own reader (ZipLzma); the
+                // central directory lists the entries in ZipArchive's order
+                var raw = ZipLzma.Directory(zipPath);
+                if (raw.Count != targets.Count) raw = null;
+                for (int i = 0; i < targets.Count; i++)
                 {
+                    var (e, target) = targets[i];
                     if (e.FullName.EndsWith("/") || e.FullName.EndsWith("\\")) { Directory.CreateDirectory(target); continue; }
                     Directory.CreateDirectory(System.IO.Path.GetDirectoryName(target));
-                    e.ExtractToFile(target, true);
+                    if (raw != null && raw[i].Method == ZipLzma.Method)
+                        try { ZipLzma.Extract(zipPath, raw[i], target); }
+                        catch (InvalidDataException x) { z.Dispose(); Remove(tmp); throw new ModError(zipPath + ": " + e.FullName + ": " + x.Message, "archive_damaged", zipPath); }
+                    else e.ExtractToFile(target, true);
                 }
             }
             // a zip with one folder at the top that holds the manifest: that folder is the mod

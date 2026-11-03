@@ -98,6 +98,32 @@ namespace Hd2Mod.Tests
             Assert.Single(Library.Load().Mods);
         }
 
+        /// <summary>A zip whose entries are packed with LZMA (method 14), which .NET's zip reader
+        /// refuses: HD2 Clear Sight 0.0.5 (the user, 2026-11-03: many players could not add it).
+        /// Must live: every file as Python wrote it. Must die: an entry whose LZMA properties are
+        /// out of range is refused as damaged, and nothing is left behind.</summary>
+        [Fact]
+        public void A_zip_packed_with_LZMA_is_added()
+        {
+            var samples = Path.Combine(AppContext.BaseDirectory, "data", "ziplzma");
+            Cli("add", Path.Combine(samples, "lzma.zip"));
+            var mod = Library.Load().Mods.Single();
+            Assert.Equal("LZMA Sample", mod.Name);
+            Assert.Equal(File.ReadAllText(Path.Combine(samples, "expected.txt")), Listing(mod.Path));
+            Cli("remove", mod.Id);
+
+            // the first entry's LZMA properties byte (after its local header and the 4 bytes of
+            // version and properties' length) set out of range
+            var bad = Path.Combine(Root, "bad.zip");
+            var bytes = File.ReadAllBytes(Path.Combine(samples, "lzma.zip"));
+            int at = 30 + BitConverter.ToUInt16(bytes, 26) + BitConverter.ToUInt16(bytes, 28) + 4;
+            bytes[at] = 0xFF;
+            File.WriteAllBytes(bad, bytes);
+            Assert.Equal("archive_damaged", Refused("add", bad));
+            Assert.Empty(Library.Load().Mods);
+            Assert.Empty(Directory.GetDirectories(Store.ModsDir(), "bad_*"));        // nothing is left behind
+        }
+
         /// <summary>Where tar cannot read the 7z (Windows 10), the mod is added all the same.</summary>
         [Fact]
         public void Without_tar_a_7z_is_added_by_our_reader()

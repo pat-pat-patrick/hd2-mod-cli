@@ -749,6 +749,10 @@ namespace Hd2Mod
             }
         }
 
+        /// <summary>An LZMA stream of a known size (props: the 5 bytes of its properties), for
+        /// zip entries packed with LZMA (ZipLzma).</summary>
+        internal static Stream LzmaOf(Stream input, byte[] props, long size) => new LzmaStream(input, props, size);
+
         sealed class LzmaStream : ReadOnly
         {
             readonly Lzma lz;
