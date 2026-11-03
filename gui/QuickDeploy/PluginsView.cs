@@ -57,6 +57,7 @@ namespace QuickDeploy
             {
                 var card = new StackPanel();
                 var head = new DockPanel();
+                var update = type != null ? PluginFiles.UpdateOf(file, type) : null;
                 var right = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Top };
                 right.Children.Add(new TextBlock
                 {
@@ -72,6 +73,25 @@ namespace QuickDeploy
                 title.VerticalAlignment = VerticalAlignment.Center;          // level with the version and Remove
                 head.Children.Add(title);
                 card.Children.Add(head);
+                // a newer official release: said under the title, with its button (the user, 2026-11-03)
+                if (update != null)
+                {
+                    var line = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0) };
+                    var up = new Button
+                    {
+                        Content = Texts.F("plugin_update_go", update.Value.Newest), Style = (Style)FindResource("Primary"),
+                        MinHeight = 32, Padding = new Thickness(14, 0, 14, 0), VerticalAlignment = VerticalAlignment.Center,
+                    };
+                    var pl = update.Value.Plugin;
+                    up.Click += (s, e) => FetchPlugin(pl, (Button)s);
+                    line.Children.Add(up);
+                    line.Children.Add(new TextBlock
+                    {
+                        Text = Texts.F("plugin_update_out", update.Value.Newest, update.Value.Added), Foreground = B("Yellow"), FontSize = 13,
+                        VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(12, 0, 0, 0),
+                    });
+                    card.Children.Add(line);
+                }
                 if (type == null)
                     card.Children.Add(Small(Texts.Get(why == "api" ? "plugin_api" : "plugin_broken"), new Thickness(0, 8, 0, 0)));
                 else if (PluginFiles.Kind(type) == "panel")
@@ -213,6 +233,8 @@ namespace QuickDeploy
         /// drawn with the plugin's own icon (its app.ico), its title as the tip.</summary>
         void PinnedPlugins()
         {
+            // a dot on the plugins button while an added plugin has a newer release
+            PluginDot.Visibility = PluginFiles.NewerReleases().Count > 0 ? Visibility.Visible : Visibility.Collapsed;
             PinnedBox.Children.Clear();
             var game = Store.GameDir(null, false);
             foreach (var (file, type, _) in PluginFiles.All())

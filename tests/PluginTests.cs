@@ -278,6 +278,36 @@ namespace Hd2Mod.Tests
             finally { OfficialList = List(null); }
         }
 
+        /// <summary>An added plugin is offered the official list's newer release, and plugin-update
+        /// puts it in place (the user, 2026-11-03: an added plugin was never offered its new
+        /// version). Must live: 1.0.0 added, 1.1.0 listed. Must die: the same or an older version
+        /// listed offers nothing.</summary>
+        [Fact]
+        public void An_added_plugin_is_offered_its_newer_release()
+        {
+            AddSample();
+            var t = PluginFiles.All().Single().Type;
+            string V(string v) => @"{""version"": """ + v + @""", ""tag"": ""v" + v + @""", ""sha256"": """ + Sha(Sample) + @"""}";
+            try
+            {
+                OfficialList = List(V("1.0.0"));
+                Assert.Null(PluginFiles.UpdateOf("HD2QD.Sample.dll", t));
+                Assert.Contains("every added plugin is the newest release", Cli("plugin-update"));
+                OfficialList = List(V("0.9.0"));
+                Assert.Null(PluginFiles.UpdateOf("HD2QD.Sample.dll", t));
+
+                OfficialList = List(V("1.0.0") + ", " + V("1.1.0"));
+                var u = PluginFiles.UpdateOf("HD2QD.Sample.dll", t);
+                Assert.Equal(("1.0.0", "1.1.0"), (u.Value.Added, u.Value.Newest));
+                Assert.Contains("1.1.0 is out (plugin-update)", Cli("plugins"));
+                var (url, asked) = Serve(File.ReadAllBytes(Sample));
+                PluginFiles.Downloads = url;
+                Assert.Contains("updated HD2QD.Sample.dll 1.0.0 -> 1.1.0", Cli("plugin-update"));
+                Assert.Equal("/someone/sample/releases/download/v1.1.0/HD2QD.Sample.dll", asked.Result);
+            }
+            finally { OfficialList = List(null); }
+        }
+
         static byte[] Encoding(string s) => System.Text.Encoding.UTF8.GetBytes(s);
 
         /// <summary>A plugin's commands run from the manager's command line; a name the manager has

@@ -932,6 +932,8 @@
   "plugins_list_error": "GitHub 返回了错误",
   "plugins_list_not_list": "返回的内容不是插件列表",
   "plugin_get": "下载并添加",
+  "plugin_update_out": "有新版本 {0}（当前 {1}）",
+  "plugin_update_go": "更新到 {0}",
   "plugin_from_file": "从文件添加…",
   "plugin_unreleased": "尚未发布，目前只能从文件添加。",
   "plugins_unreleased": "以下插件尚未发布，目前只能从文件添加。",

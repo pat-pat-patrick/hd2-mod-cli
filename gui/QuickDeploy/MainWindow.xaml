@@ -50,8 +50,14 @@
             <Button x:Name="PluginsBtn" Width="38" Height="38" VerticalAlignment="Center" Margin="0,0,12,0" Cursor="Hand"
                     Style="{StaticResource Ghost}" Padding="0" Click="Plugins_Click"
                     WindowChrome.IsHitTestVisibleInChrome="True">
+              <Grid Width="20" Height="20">
               <TextBlock x:Name="PlugGlyph" Text="&#xEA86;" FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" FontSize="20"
                          Foreground="{StaticResource Ink}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+              <!-- an added plugin has a newer release: the same dot as the gear's for this program -->
+              <Ellipse x:Name="PluginDot" Visibility="Collapsed" Width="10" Height="10" Fill="{StaticResource Red}"
+                       Stroke="{StaticResource Ground700}" StrokeThickness="2"
+                       HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-4,-4,0"/>
+              </Grid>
             </Button>
             <!-- the settings page: the language, the explaining lines, where this comes from -->
             <Button x:Name="SettingsBtn" Width="38" Height="38" VerticalAlignment="Center" Margin="0" Cursor="Hand"

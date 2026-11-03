@@ -956,6 +956,8 @@
   "plugins_list_error": "GitHub answered with an error",
   "plugins_list_not_list": "what came back is not a plugin list",
   "plugin_get": "Download and add",
+  "plugin_update_out": "{0} is out (this is {1})",
+  "plugin_update_go": "Update to {0}",
   "plugin_from_file": "Add from file…",
   "plugin_unreleased": "Not released yet; it can be added from a file only.",
   "plugins_unreleased": "These plugins have not been released yet; for now they can be added from a file only.",

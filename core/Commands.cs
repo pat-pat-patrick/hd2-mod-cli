@@ -98,6 +98,8 @@ namespace Hd2Mod
             Cmd("plugin-add", new Spec { Help = "add a plugin (HD2QD.<name>.dll) to the settings folder, over one of the same name, from a file or, by its name, an official plugin's release; a plugin runs as this program does, so add only plugins from a source you trust",
                                          Positionals = new[] { "path" }, Run = PluginAddCmd }),
             Cmd("plugin-remove", new Spec { Help = "remove an added plugin (HD2QD.AssetCheck.dll, or AssetCheck)", Positionals = new[] { "plugin" }, Run = PluginRemoveCmd }),
+            Cmd("plugin-update", new Spec { Help = "replace every added official plugin that has a newer release with that release (checked against the official list's SHA-256)",
+                                            Run = PluginUpdateCmd }),
 #if HAS_NEXUS
             Cmd("nexus", new Spec { Help = "download a Nexus Mods link (nxm://...) and put it in the library (a mod from it already there gets the new version)",
                                     Positionals = new[] { "link" }, Run = NexusCmd }),
@@ -1055,11 +1057,12 @@ namespace Hd2Mod
         {
             var all = PluginFiles.All();
             if (all.Count == 0) o.WriteLine("no plugin has been added (" + PluginFiles.Dir + ")");
+            var (_, listWhy) = PluginFiles.RefreshList();
             foreach (var (file, type, why) in all)
                 o.WriteLine("  " + file + (type != null ? " " + PluginFiles.Version(type) + "  " + PluginFiles.Title(type, "en")
+                                           + (PluginFiles.UpdateOf(file, type) is var u && u != null ? "  " + u.Value.Newest + " is out (plugin-update)" : "")
                                            : "  cannot be used: " + (why == "api" ? "for another version of this program" : "damaged")));
             if (all.Count > 0) o.WriteLine("folder: " + PluginFiles.Dir);
-            var (_, listWhy) = PluginFiles.RefreshList();
             if (listWhy != null)
                 o.WriteLine("the official plugin list could not be read from " + PluginFiles.ListUrl + " ("
                             + (listWhy == "offline" ? "GitHub cannot be reached" : listWhy == "missing" ? "not published" : listWhy == "busy" ? "too many requests for now"
@@ -1085,6 +1088,20 @@ namespace Hd2Mod
             }
             var (file, version, replaced) = PluginFiles.Install(path);
             o.WriteLine("added " + file + " " + version + (replaced != null ? " (replaces " + replaced + ")" : "") + " to " + PluginFiles.Dir);
+        }
+
+        static void PluginUpdateCmd(Args a, TextWriter o)
+        {
+            PluginFiles.RefreshList();
+            var updates = PluginFiles.NewerReleases();
+            if (updates.Count == 0) { o.WriteLine("every added plugin is the newest release"); return; }
+            foreach (var (file, plugin, added, newest) in updates)
+            {
+                var path = PluginFiles.Fetch(plugin);
+                try { PluginFiles.Install(path); }
+                finally { try { Directory.Delete(Path.GetDirectoryName(path), true); } catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { } }
+                o.WriteLine("updated " + file + " " + added + " -> " + newest);
+            }
         }
 
         static void PluginRemoveCmd(Args a, TextWriter o) =>

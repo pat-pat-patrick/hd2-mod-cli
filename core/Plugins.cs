@@ -205,6 +205,25 @@ namespace Hd2Mod
             return o.Versions.Any(v => v.Sha256 == r.Sha) ? o : null;
         }
 
+        /// <summary>An added plugin's newer official release: the official list names its file and
+        /// has a version newer than the one added (the user, 2026-11-03: an added plugin was never
+        /// offered its new version). By the name: the release that replaces it is checked against
+        /// the list's SHA-256 when it is downloaded (Fetch). Null when there is none.</summary>
+        public static (OfficialPlugin Plugin, string Added, string Newest)? UpdateOf(string file, Type t)
+        {
+            var o = Official().FirstOrDefault(p => string.Equals(p.File, file, StringComparison.OrdinalIgnoreCase));
+            var latest = o?.Latest;
+            var added = Version(t);
+            if (latest == null || added == null) return null;
+            if (SelfUpdate.Compare(SelfUpdate.Numbers(latest.Value.Version) ?? new int[3], SelfUpdate.Numbers(added) ?? new int[3]) <= 0) return null;
+            return (o, added, latest.Value.Version);
+        }
+
+        /// <summary>Every added plugin that has a newer official release (UpdateOf).</summary>
+        public static List<(string File, OfficialPlugin Plugin, string Added, string Newest)> NewerReleases() =>
+            All().Select(x => (x.File, u: UpdateOf(x.File, x.Type))).Where(x => x.u != null)
+                 .Select(x => (x.File, x.u.Value.Plugin, x.u.Value.Added, x.u.Value.Newest)).ToList();
+
         /// <summary>Whether an added plugin has a button in the window's title bar: only an official
         /// plugin (OfficialOf) that the official list gives one ("button": true), a window plugin;
         /// the title bar is the manager's own, so no other plugin can put anything there (the user,
