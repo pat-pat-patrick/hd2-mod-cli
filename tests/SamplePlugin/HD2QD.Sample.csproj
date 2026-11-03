@@ -20,6 +20,8 @@
 
   <ItemGroup>
     <Compile Include="Plugin.cs" />
+    <!-- its own icon, for the title-bar button of an official plugin (PluginFiles.IconBytes) -->
+    <EmbeddedResource Include="app.ico" LogicalName="app.ico" />
   </ItemGroup>
 
 </Project>

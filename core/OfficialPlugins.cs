@@ -14,6 +14,8 @@ namespace Hd2Mod
         /// <summary>Title and Summary are English, the list's own; TitleIn and SummaryIn give a language's.</summary>
         public string File, Title, Summary, Author, Repository, Asset, WantedBy;
         public int Api;
+        /// <summary>The list gives it a button in the manager's title bar ("button": true).</summary>
+        public bool Button;
         public List<(string Version, string Tag, string Sha256)> Versions = new List<(string, string, string)>();
 
         /// <summary>The newest version released, else null (not released yet).</summary>
@@ -154,7 +156,7 @@ namespace Hd2Mod
                     File = Json.Str(p, "file"), Title = Json.Str(p, "title"),
                     Summary = Json.Str(p, "summary"), Author = Json.Str(p, "author"),
                     Repository = Json.Str(p, "repository"), Asset = Json.Str(p, "asset"), WantedBy = Json.Str(p, "wanted_by_file"),
-                    Api = (int)Json.Long(p, "api"),
+                    Api = (int)Json.Long(p, "api"), Button = Json.Bool(p, "button"),
                 };
                 foreach (var v in Json.List(p, "versions").OfType<Dictionary<string, object>>())
                     if (Json.Str(v, "version") != null && Json.Str(v, "tag") != null && Json.Str(v, "sha256") != null)

@@ -151,14 +151,69 @@ namespace Hd2Mod
         public static string Summary(Type t, string lang) => t?.GetMethod("Summary")?.Invoke(null, new object[] { lang }) as string;
         public static string Version(Type t) => t?.Assembly.GetName().Version?.ToString(3);
 
-        /// <summary>A window plugin's Icon (optional, Api 2): one character of Segoe Fluent Icons /
-        /// Segoe MDL2 Assets. A plugin with one gets a button in the window's title bar, which the
-        /// player can take away (Pinned).</summary>
-        public static string Icon(Type t) =>
-            Kind(t) == "window" && t?.GetField("Icon")?.GetValue(null) is string s && s.Length > 0 ? s : null;
+        /// <summary>A plugin's own icon, the bytes of its app.ico: an embedded resource of that
+        /// name, else the app.ico among its WPF resources (where a WPF program built as a plugin
+        /// keeps its window's icon). Null when it has none.</summary>
+        public static byte[] IconBytes(Type t)
+        {
+            var asm = t?.Assembly;
+            if (asm == null) return null;
+            try
+            {
+                using (var s = asm.GetManifestResourceStream("app.ico"))
+                    if (s != null) return ReadAll(s);
+                using (var g = asm.GetManifestResourceStream(asm.GetName().Name + ".g.resources"))
+                {
+                    if (g == null) return null;
+                    using (var r = new System.Resources.ResourceReader(g))
+                        foreach (System.Collections.DictionaryEntry e in r)
+                            if (string.Equals(e.Key as string, "app.ico", StringComparison.OrdinalIgnoreCase) && e.Value is Stream st)
+                                return ReadAll(st);
+                }
+            }
+            catch (Exception e) when (e is IOException || e is BadImageFormatException || e is InvalidOperationException || e is ArgumentException)
+            {
+                ManagerLog.Warn("plugin icon: " + e.Message);
+            }
+            return null;
+        }
 
-        /// <summary>Whether a plugin with an Icon shows its button in the title bar: yes unless the
-        /// player took it away (gui.json "unpinned_plugins").</summary>
+        static byte[] ReadAll(Stream s)
+        {
+            using (var m = new MemoryStream()) { s.CopyTo(m); return m.ToArray(); }
+        }
+
+        static readonly Dictionary<string, (long Length, DateTime Time, string Sha)> shaRead = new Dictionary<string, (long, DateTime, string)>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>The added plugin file is an official plugin: the official list names it and one
+        /// of its released versions has this file's SHA-256 (a name alone proves nothing: anyone can
+        /// call a file HD2QD.Settings.dll). Hashed once while the file is unchanged.</summary>
+        public static OfficialPlugin OfficialOf(string file)
+        {
+            var o = Official().FirstOrDefault(p => string.Equals(p.File, file, StringComparison.OrdinalIgnoreCase));
+            if (o == null || o.Versions.Count == 0) return null;
+            var fi = new FileInfo(PathOf(file));
+            if (!fi.Exists) return null;
+            if (!shaRead.TryGetValue(fi.FullName, out var r) || r.Length != fi.Length || r.Time != fi.LastWriteTimeUtc)
+            {
+                string sha;
+                using (var h = System.Security.Cryptography.SHA256.Create())
+                using (var f = fi.OpenRead())
+                    sha = BitConverter.ToString(h.ComputeHash(f)).Replace("-", "").ToLowerInvariant();
+                shaRead[fi.FullName] = r = (fi.Length, fi.LastWriteTimeUtc, sha);
+            }
+            return o.Versions.Any(v => v.Sha256 == r.Sha) ? o : null;
+        }
+
+        /// <summary>Whether an added plugin has a button in the window's title bar: only an official
+        /// plugin (OfficialOf) that the official list gives one ("button": true), a window plugin;
+        /// the title bar is the manager's own, so no other plugin can put anything there (the user,
+        /// 2026-11-03). The player can still take it away (Pinned).</summary>
+        public static bool HasButton(string file, Type t) =>
+            t != null && Kind(t) == "window" && OfficialOf(file) is OfficialPlugin o && o.Button;
+
+        /// <summary>Whether a plugin with a title-bar button shows it: yes unless the player took
+        /// it away (gui.json "unpinned_plugins").</summary>
         public static bool Pinned(string file) =>
             !Json.List(Store.Load("gui.json"), "unpinned_plugins").OfType<string>().Contains(file, StringComparer.OrdinalIgnoreCase);
 

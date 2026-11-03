@@ -91,8 +91,9 @@ namespace QuickDeploy
                     {
                         var row = new StackPanel { Orientation = Orientation.Horizontal };
                         row.Children.Add(OpenButton(type));
-                        // a plugin with an icon has a button in the title bar, which can be taken away
-                        if (PluginFiles.Icon(type) != null)
+                        // an official plugin the official list gives a button has one in the title
+                        // bar, which can be taken away
+                        if (PluginFiles.HasButton(file, type))
                         {
                             var pin = new CheckBox
                             {
@@ -207,27 +208,25 @@ namespace QuickDeploy
             }
         }
 
-        /// <summary>The title bar's plugin buttons, left of the plugins page's: each added window
-        /// plugin with an Icon that the player has not taken away, its title as the tip.</summary>
+        /// <summary>The title bar's plugin buttons, left of the plugins page's: each official plugin
+        /// the official list gives one (PluginFiles.HasButton) and the player has not taken away,
+        /// drawn with the plugin's own icon (its app.ico), its title as the tip.</summary>
         void PinnedPlugins()
         {
             PinnedBox.Children.Clear();
             var game = Store.GameDir(null, false);
             foreach (var (file, type, _) in PluginFiles.All())
             {
-                var icon = type == null ? null : PluginFiles.Icon(type);
-                if (icon == null || !PluginFiles.Pinned(file)) continue;
+                if (type == null || !PluginFiles.HasButton(file, type) || !PluginFiles.Pinned(file)) continue;
+                var icon = PluginIcon(type);
+                if (icon == null) continue;
                 var title = PluginFiles.Title(type, Texts.Lang) ?? file;
                 var b = new Button
                 {
                     Width = 38, Height = 38, Margin = new Thickness(0, 0, 12, 0), Padding = new Thickness(0), Cursor = System.Windows.Input.Cursors.Hand,
                     Style = (Style)FindResource("Ghost"), VerticalAlignment = VerticalAlignment.Center,
                     ToolTip = game == null ? title + "\n" + Texts.Get("plugin_no_game") : title, IsEnabled = game != null,
-                    Content = new TextBlock
-                    {
-                        Text = icon, FontFamily = new System.Windows.Media.FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"), FontSize = 20,
-                        Foreground = B("Ink"), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
-                    },
+                    Content = icon,
                 };
                 ToolTipService.SetShowOnDisabled(b, true);
                 System.Windows.Shell.WindowChrome.SetIsHitTestVisibleInChrome(b, true);
@@ -238,6 +237,31 @@ namespace QuickDeploy
                     catch (Exception x) when (!(x is OutOfMemoryException)) { Dialog.Tell(this, Texts.F("failed", x.Message)); }
                 };
                 PinnedBox.Children.Add(b);
+            }
+        }
+
+        /// <summary>A plugin's own icon, 20 x 20 like the header's glyphs: the frame of its app.ico
+        /// that is the smallest at least as large as 20 at this screen's scale, scaled smoothly.</summary>
+        UIElement PluginIcon(Type type)
+        {
+            var bytes = PluginFiles.IconBytes(type);
+            if (bytes == null) return null;
+            try
+            {
+                var scale = System.Windows.Media.VisualTreeHelper.GetDpi(this).DpiScaleX;
+                var frames = new System.Windows.Media.Imaging.IconBitmapDecoder(new System.IO.MemoryStream(bytes),
+                    System.Windows.Media.Imaging.BitmapCreateOptions.None, System.Windows.Media.Imaging.BitmapCacheOption.OnLoad).Frames;
+                var want = 20 * scale;
+                var frame = frames.Where(f => f.PixelWidth >= want).OrderBy(f => f.PixelWidth).FirstOrDefault()
+                            ?? frames.OrderByDescending(f => f.PixelWidth).First();
+                var image = new Image { Source = frame, Width = 20, Height = 20, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+                System.Windows.Media.RenderOptions.SetBitmapScalingMode(image, System.Windows.Media.BitmapScalingMode.HighQuality);
+                return image;
+            }
+            catch (Exception e) when (e is System.IO.IOException || e is NotSupportedException || e is System.IO.FileFormatException || e is ArgumentException)
+            {
+                ManagerLog.Warn("plugin icon: " + e.Message);
+                return null;
             }
         }
 
@@ -278,7 +302,7 @@ namespace QuickDeploy
             catch (Exception e) when (e is System.IO.IOException || e is UnauthorizedAccessException) { r = (false, "error"); }
             bool whyChanged = r.Why != listWhy;
             listWhy = r.Why;
-            if (r.Changed) Refresh();
+            if (r.Changed) { Refresh(); PinnedPlugins(); }      // which plugins are official, and get a button, comes from the list
             if ((r.Changed || whyChanged) && PluginsPage.Visibility == Visibility.Visible) RenderPlugins();
         }
 

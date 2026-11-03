@@ -294,14 +294,28 @@ namespace Hd2Mod.Tests
             Cli("list");                                                          // still the manager's
         }
 
-        /// <summary>A window plugin with an Icon has a button in the title bar, shown unless the
-        /// player takes it away (the user, 2026-11-03: the mod console needs one).</summary>
+        /// <summary>A title-bar button only for an official plugin the official list gives one, proved
+        /// by its SHA-256, not its name (the user, 2026-11-03: the title bar is the manager's own);
+        /// drawn with the plugin's own app.ico; shown unless the player takes it away.</summary>
         [Fact]
-        public void A_plugin_with_an_icon_is_pinned_until_taken_away()
+        public void Only_an_official_plugin_the_list_names_gets_a_title_bar_button()
         {
             AddSample();
             var t = PluginFiles.All().Single().Type;
-            Assert.Equal("", PluginFiles.Icon(t));
+            string Entry(string sha, bool button) =>
+                @"{""format"": 2, ""plugins"": [{""file"": ""HD2QD.Sample.dll"", ""title"": ""Sample plugin"", ""repository"": ""someone/sample"", ""api"": 2"
+                + (button ? @", ""button"": true" : "") + @", ""versions"": [{""version"": ""1.0.0"", ""tag"": ""v1.0.0"", ""sha256"": """ + sha + @"""}]}]}";
+            var real = Sha(Sample);
+            PluginFiles.OfficialJson = () => Entry(real, true);
+            Assert.True(PluginFiles.HasButton("HD2QD.Sample.dll", t));
+            PluginFiles.OfficialJson = () => Entry(real, false);                 // the list gives it none
+            Assert.False(PluginFiles.HasButton("HD2QD.Sample.dll", t));
+            PluginFiles.OfficialJson = () => Entry(new string('0', 64), true);   // the same name, other bytes: not official
+            Assert.False(PluginFiles.HasButton("HD2QD.Sample.dll", t));
+            PluginFiles.OfficialJson = () => OfficialList;                       // named, never released: not official
+            Assert.False(PluginFiles.HasButton("HD2QD.Sample.dll", t));
+            var icon = PluginFiles.IconBytes(t);
+            Assert.Equal(new byte[] { 0, 0, 1, 0 }, icon.Take(4).ToArray());    // an .ico
             Assert.True(PluginFiles.Pinned("HD2QD.Sample.dll"));
             PluginFiles.Pin("HD2QD.Sample.dll", false);
             Assert.False(PluginFiles.Pinned("hd2qd.sample.dll"));
