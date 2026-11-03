@@ -46,10 +46,13 @@ namespace QuickDeploy
             top.Children.Add(new TextBlock { Text = Texts.Get("plugins"), FontSize = 28, FontWeight = FontWeights.Bold });
             PluginsBox.Children.Add(top);
             PluginsBox.Children.Add(Texts.Hints ? Small(Texts.Get("plugins_intro"), new Thickness(0, 4, 0, 20)) : new Border { Height = 16 });
-            var all = PluginFiles.All();
+            // by the name shown, in the window's language (the user, 2026-11-03); the official ones
+            // not added keep those the library's mods need first
+            var all = ByName(PluginFiles.All());
             List<(OfficialPlugin Plugin, List<string> Mods)> available;
             try { available = PluginFiles.Available(Library.Load()); }
             catch (Exception e) when (e is ModError || e is System.IO.IOException) { available = new List<(OfficialPlugin, List<string>)>(); }
+            available = available.OrderBy(a => a.Mods.Count > 0 ? 0 : 1).ThenBy(a => a.Plugin.TitleIn(Texts.Lang), NameOrder).ToList();
             if (all.Count == 0) PluginsBox.Children.Add(Small(Texts.Get("plugins_none"), new Thickness(0, 0, 0, 0)));
             var host = all.Count > 0 ? PluginHostHere() : null;
             bool first = true;
@@ -231,13 +234,27 @@ namespace QuickDeploy
         /// <summary>The title bar's plugin buttons, left of the plugins page's: each official plugin
         /// the official list gives one (PluginFiles.HasButton) and the player has not taken away,
         /// drawn with the plugin's own icon (its app.ico), its title as the tip.</summary>
+        /// <summary>Added plugins by the name shown in the window's language, else their file's.</summary>
+        static List<(string File, Type Type, string Why)> ByName(List<(string File, Type Type, string Why)> all) =>
+            all.OrderBy(x => (x.Type != null ? PluginFiles.Title(x.Type, Texts.Lang) : null) ?? x.File, NameOrder).ToList();
+
+        /// <summary>Names compared as the window's language orders them (zh-CN by pinyin), not the system's.</summary>
+        static StringComparer NameOrder
+        {
+            get
+            {
+                try { return StringComparer.Create(new System.Globalization.CultureInfo(Texts.Lang), true); }
+                catch (System.Globalization.CultureNotFoundException) { return StringComparer.CurrentCultureIgnoreCase; }
+            }
+        }
+
         void PinnedPlugins()
         {
             // a dot on the plugins button while an added plugin has a newer release
             PluginDot.Visibility = PluginFiles.NewerReleases().Count > 0 ? Visibility.Visible : Visibility.Collapsed;
             PinnedBox.Children.Clear();
             var game = Store.GameDir(null, false);
-            foreach (var (file, type, _) in PluginFiles.All())
+            foreach (var (file, type, _) in ByName(PluginFiles.All()))
             {
                 if (type == null || !PluginFiles.HasButton(file, type) || !PluginFiles.Pinned(file)) continue;
                 var icon = PluginIcon(type);
