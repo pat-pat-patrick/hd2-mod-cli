@@ -227,6 +227,7 @@ namespace QuickDeploy
             ClickTest();
             GroupTest();
             ConflictPickTest();
+            ReportDialogTest();
             PreviewTest();
             DragTest();
             DropTest();
@@ -6872,55 +6873,13 @@ namespace QuickDeploy
             body.Children.Add(autoLine);
             body.Children.Add(Small(Texts.Get(SelfUpdate.Official ? "self_auto_note_official" : "self_auto_note_dev"), new Thickness(0, 8, 0, 0)));
 
-            // a problem report to send with a question (the user, 2026-10-29: one click, here)
+            // a problem report to send with a question (the user, 2026-10-29: one click, here); its
+            // window uploads it, or saves it for the player to send (ReportDialog, 2026-11-03)
             body.Children.Add(Label("set_report", new Thickness(0, 20, 0, 6)));
             body.Children.Add(Small(Texts.Get("report_note"), new Thickness(0, 0, 0, 10)));
-            var reportBox = new StackPanel();
-            body.Children.Add(reportBox);
-            string reportPath = null, reportFailed = null;
-            bool packing = false;
-            void FillReport()
-            {
-                reportBox.Children.Clear();
-                if (packing) reportBox.Children.Add(Small(Texts.Get("report_making"), new Thickness(0, 0, 0, 10)));
-                else if (reportFailed != null)
-                    reportBox.Children.Add(new TextBlock { Text = Texts.F("failed", reportFailed), Foreground = B("Yellow"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 10) });
-                else if (reportPath != null)
-                {
-                    reportBox.Children.Add(new TextBlock { Text = Texts.Get("report_done"), Foreground = B("Ink"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 4) });
-                    var where = Selectable.Text(reportPath, 11, "Muted", Mono);
-                    where.Margin = new Thickness(0, 0, 0, 10);
-                    reportBox.Children.Add(where);
-                }
-                var btns = new StackPanel { Orientation = Orientation.Horizontal };
-                var make = new Button { Content = Texts.Get("report_do"), Style = (Style)FindResource("Ghost"), MinHeight = 36, IsEnabled = !packing };
-                make.Click += async (s, e2) =>
-                {
-                    packing = true;
-                    reportFailed = null;
-                    FillReport();
-                    (string Path, string Summary) made = default;
-                    var r = await Queued(() => Cli.Call(() => { made = Report.Write(Library.Load(), Store.GameDir(null, false)); return made.Path; }));
-                    packing = false;
-                    if (r.Ok)
-                    {
-                        reportPath = made.Path;
-                        try { Clipboard.SetText(made.Summary); } catch (Exception) { }      // another program holding the clipboard: the zip is enough
-                        ShowInFolder(reportPath);
-                    }
-                    else { reportPath = null; reportFailed = r.Message; }
-                    FillReport();
-                };
-                btns.Children.Add(make);
-                if (reportPath != null && !packing)
-                {
-                    var show = new Button { Content = Texts.Get("report_open"), Style = (Style)FindResource("Ghost"), MinHeight = 36, Margin = new Thickness(8, 0, 0, 0) };
-                    show.Click += (s, e2) => ShowInFolder(reportPath);
-                    btns.Children.Add(show);
-                }
-                reportBox.Children.Add(btns);
-            }
-            FillReport();
+            var make = new Button { Content = Texts.Get("report_do"), Style = (Style)FindResource("Ghost"), MinHeight = 36, HorizontalAlignment = HorizontalAlignment.Left };
+            make.Click += (s, e2) => OpenReportDialog();
+            body.Children.Add(make);
 
             // the manager's own log (the user, 2026-11-01): what it was asked to do and how that ended
             var managerLogHead = Label("set_log", new Thickness(0, 20, 0, 6));
