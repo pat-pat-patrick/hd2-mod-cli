@@ -104,12 +104,21 @@ namespace QuickDeploy
                 string Label((string Mod, int Option, int Sub) f) =>
                     f.Sub >= 0 && f.Sub < m.Options[f.Option].Subs.Count ? m.Options[f.Option].Name + " › " + m.Options[f.Option].Subs[f.Sub].Name : m.Options[f.Option].Name;
                 var link = new Button { Template = Plain(), Cursor = System.Windows.Input.Cursors.Hand, FocusVisualStyle = null, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 2, 0, 0) };
-                var words = new TextBlock { FontSize = 12, Foreground = B("Muted"), TextTrimming = TextTrimming.CharacterEllipsis };
-                words.Inlines.Add(new System.Windows.Documents.Run(Texts.F("cf_from", string.Join(Texts.Get("sep_list"), mine.Select(Label).Distinct()))));
-                words.Inlines.Add(new System.Windows.Documents.Run("  ▾"));
-                link.Content = words;
-                link.MouseEnter += (s, e) => words.Foreground = B("Ink");
-                link.MouseLeave += (s, e) => words.Foreground = B("Muted");
+                // the arrow the Filter and Labels buttons have (Caret), not a character (the user,
+                // 2026-11-03: the small triangle was hard to see)
+                var words = new TextBlock { Text = Texts.F("cf_from", string.Join(Texts.Get("sep_list"), mine.Select(Label).Distinct())), FontSize = 13,
+                                            Foreground = B("Muted"), TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
+                var arrow = new System.Windows.Shapes.Path
+                {
+                    Data = System.Windows.Media.Geometry.Parse("M0,0 L5,5 L10,0"), Stroke = B("Muted"), StrokeThickness = 1.6,
+                    Margin = new Thickness(8, 2, 0, 0), VerticalAlignment = VerticalAlignment.Center,
+                };
+                var content = new StackPanel { Orientation = Orientation.Horizontal };
+                content.Children.Add(words);
+                content.Children.Add(arrow);
+                link.Content = content;
+                link.MouseEnter += (s, e) => { words.Foreground = B("Ink"); arrow.Stroke = B("Ink"); };
+                link.MouseLeave += (s, e) => { words.Foreground = B("Muted"); arrow.Stroke = B("Muted"); };
                 link.Click += (s, e) =>
                 {
                     var menu = OptionMenu(m, mine.Select(f => f.Option).Distinct().ToList());
@@ -158,17 +167,21 @@ namespace QuickDeploy
 
         ContextMenu OptionMenu(ModRow m, List<int> which)
         {
-            var menu = new ContextMenu();
+            // narrow: each choice its name, and under it how many mods it conflicts with; the mods
+            // themselves on pointing (the user, 2026-11-03: the names in a line made it very wide)
+            var menu = new ContextMenu { MaxWidth = 380 };
             MenuItem Item(string name, List<string> clashes, bool chosen, Action act)
             {
-                var head = new StackPanel { Orientation = Orientation.Horizontal };
-                head.Children.Add(new TextBlock { Text = name });
+                var head = new StackPanel { Margin = new Thickness(0, 2, 0, 2) };
+                head.Children.Add(new TextBlock { Text = name, TextTrimming = TextTrimming.CharacterEllipsis });
                 head.Children.Add(new TextBlock
                 {
-                    Text = "   " + (clashes.Count == 0 ? Texts.Get("cf_opt_free") : Texts.F("opt_clash", string.Join(Texts.Get("sep_list"), clashes))),
-                    Foreground = B(clashes.Count == 0 ? "Muted" : "Yellow"),
+                    Text = clashes.Count == 0 ? Texts.Get("cf_opt_free") : Texts.F("opt_clash_n", clashes.Count),
+                    // on the chosen one, drawn on yellow: the dark ink
+                    FontSize = 12, Foreground = B(chosen ? "TapeInk" : clashes.Count == 0 ? "Muted" : "Yellow"), Margin = new Thickness(0, 1, 0, 0),
                 });
                 var it = new MenuItem { Header = head, IsCheckable = false, IsChecked = chosen };
+                if (clashes.Count > 0) it.ToolTip = Texts.F("opt_clash", string.Join(Texts.Get("sep_list"), clashes));
                 it.Click += (s, e) => { if (!chosen) act(); };
                 return it;
             }
@@ -220,7 +233,7 @@ namespace QuickDeploy
                     {
                         foreach (var c in LogicalTreeHelper.GetChildren(d).OfType<DependencyObject>())
                         {
-                            if (c is Button b && b.Content is TextBlock) yield return b;
+                            if (c is Button b && (b.Content is TextBlock || (b.Content is StackPanel sp && sp.Children.OfType<System.Windows.Shapes.Path>().Any()))) yield return b;
                             foreach (var r in Links(c)) yield return r;
                         }
                     }
@@ -230,12 +243,24 @@ namespace QuickDeploy
                     link?.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
                     // the menu as text, to HD2QD_WHEEL_OUT
                     var said = new System.Text.StringBuilder();
-                    string Words(object x) => x is TextBlock t ? t.Text : x is Panel p ? string.Join("", p.Children.OfType<TextBlock>().Select(t => t.Text)) : x?.ToString();
+                    string Words(object x) => x is TextBlock t ? t.Text : x is Panel p ? string.Join(" | ", p.Children.OfType<TextBlock>().Select(t => t.Text)) : x?.ToString();
                     said.AppendLine("open " + (lastOptionMenu?.IsOpen == true));
                     foreach (var it in lastOptionMenu?.Items.Cast<object>() ?? Enumerable.Empty<object>())
                         said.AppendLine(it is Separator ? "--" : it is MenuItem mi ? (mi.IsChecked ? "(*) " : "    ") + Words(mi.Header) + (mi.IsEnabled ? "" : "  [title]") : "?");
                     var path = Environment.GetEnvironmentVariable("HD2QD_WHEEL_OUT");
                     if (path != null) System.IO.File.WriteAllText(path, said.ToString());
+                    // the menu as a picture beside it, and its width (a pop-up is a window of its own)
+                    Dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        var menu = lastOptionMenu;
+                        if (path == null || menu == null || menu.ActualWidth <= 0) return;
+                        System.IO.File.AppendAllText(path, "width " + menu.ActualWidth + " height " + menu.ActualHeight + Environment.NewLine);
+                        var bmp = new System.Windows.Media.Imaging.RenderTargetBitmap((int)Math.Ceiling(menu.ActualWidth * 2), (int)Math.Ceiling(menu.ActualHeight * 2), 192, 192, System.Windows.Media.PixelFormats.Pbgra32);
+                        bmp.Render(menu);
+                        var png = new System.Windows.Media.Imaging.PngBitmapEncoder();
+                        png.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bmp));
+                        using (var f = System.IO.File.Create(path + ".png")) png.Save(f);
+                    }), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
                 };
                 m.Start();
                 return;

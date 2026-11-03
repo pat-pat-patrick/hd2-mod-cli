@@ -5013,34 +5013,6 @@ namespace QuickDeploy
             tiles.Children.Add(Tile(Texts.Get("tile_reuse"), Texts.Size(keep + move), "Blue", Texts.F("tile_reuse_n", Texts.N(kept + moved)), 1));
             box.Children.Add(tiles);
 
-            // the files
-            box.Children.Add(new TextBlock { Text = Texts.Get("files_changed"), FontSize = 12, FontWeight = FontWeights.SemiBold, Foreground = B("Muted"), Margin = new Thickness(0, 16, 0, 6) });
-            var list = new StackPanel();
-            foreach (var f in m.Files.Where(f => f.Action != "keep").Take(40))
-            {
-                var row = new DockPanel { MinHeight = 32, Margin = new Thickness(10, 0, 10, 0) };
-                bool w = f.Action == "write";
-                var tag = new Border
-                {
-                    Width = 36, Background = w ? B("Ink") : B("Yellow"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0),
-                    Child = new TextBlock { Text = Texts.Get(w ? "tag_write" : "tag_move"), FontFamily = Mono, FontSize = 11, FontWeight = FontWeights.Bold, Foreground = B("TapeInk"), HorizontalAlignment = HorizontalAlignment.Center },
-                };
-                DockPanel.SetDock(tag, Dock.Left);
-                row.Children.Add(tag);
-                var size = new TextBlock { Text = Texts.Size(f.Bytes), FontFamily = Mono, FontSize = 12, Foreground = B("Muted"), VerticalAlignment = VerticalAlignment.Center };
-                DockPanel.SetDock(size, Dock.Right);
-                row.Children.Add(size);
-                var fileName = new TextBlock
-                {
-                    Text = f.Name + (f.From != null ? "  " + Texts.F("moved_from", f.From) : ""), FontFamily = Mono, FontSize = 12,
-                    TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center, ToolTip = f.Src,
-                };
-                var copied = f.Name;
-                Selectable.Menu(fileName, () => copied);
-                row.Children.Add(fileName);
-                list.Children.Add(new Border { BorderBrush = B("Ground700"), BorderThickness = new Thickness(0, 0, 0, 1), Child = row });
-            }
-            box.Children.Add(new Border { BorderBrush = B("Grid"), BorderThickness = new Thickness(1), Background = B("Ground900"), Child = list });
             return box;
         }
 
@@ -7160,8 +7132,14 @@ namespace QuickDeploy
         }
 
         /// <summary>A conflict's resource in words: its name, else the game items it belongs to, else null.</summary>
-        static string ResourceWords((string Type, string Id, string Name, List<(string Category, string Name)> Of) r) =>
-            r.Name ?? (r.Of != null && r.Of.Count > 0 ? ItemsLabel(r.Of) : null);
+        static string ResourceWords((string Type, string Id, string Name, List<(string Category, string Name)> Of) r)
+        {
+            bool items = r.Of != null && r.Of.Count > 0;
+            // "Helmet O-3 Free Spirit" from the name list names the same as the game item, whose
+            // category is in the window's language: the item then (the user, 2026-11-03)
+            if (r.Name != null && items && r.Of.Any(o => r.Name.IndexOf(o.Name, StringComparison.OrdinalIgnoreCase) >= 0)) return ItemsLabel(r.Of);
+            return r.Name ?? (items ? ItemsLabel(r.Of) : null);
+        }
 
         /// <summary>A resource type as the conflicts name it: in words for the common ones, else the engine's name.</summary>
         static string TypeLabel(string type) => Texts.Has("rt_" + type) ? Texts.Get("rt_" + type) : type;
