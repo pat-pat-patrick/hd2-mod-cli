@@ -79,7 +79,7 @@ namespace QuickDeploy
                     var line = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0) };
                     var up = new Button
                     {
-                        Content = Texts.F("plugin_update_go", update.Value.Newest), Style = (Style)FindResource("Primary"),
+                        Content = Texts.Get("plugin_update_go"), Style = (Style)FindResource("Primary"),
                         MinHeight = 32, Padding = new Thickness(14, 0, 14, 0), VerticalAlignment = VerticalAlignment.Center,
                     };
                     var pl = update.Value.Plugin;
