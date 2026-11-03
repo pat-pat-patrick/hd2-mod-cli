@@ -24,7 +24,7 @@ namespace QuickDeploy
             List.Children.Clear();
             Dispatcher.BeginInvoke(new Action(() => ListScroll.ScrollToVerticalOffset(at)), System.Windows.Threading.DispatcherPriority.Loaded);
             // in an order a choice does not change (the load order's names did)
-            var sets = st.Clashes.Where(c => !c.Same && !c.ManagedBoot && c.Mods.Count > 1)
+            var sets = st.AllClashes.Where(c => !c.Same && !c.ManagedBoot && c.Mods.Count > 1)
                                  .OrderByDescending(c => c.Mods.Count).ThenByDescending(c => c.Count)
                                  .ThenBy(c => string.Join("\u001f", c.Mods.OrderBy(n => n, StringComparer.CurrentCultureIgnoreCase)), StringComparer.CurrentCultureIgnoreCase).ToList();
             if (sets.Count == 0)
@@ -42,7 +42,7 @@ namespace QuickDeploy
             var card = new StackPanel();
             card.Children.Add(new TextBlock
             {
-                Text = Texts.F("cf_set", c.Count, c.Mods.Count), FontSize = 14, FontWeight = FontWeights.SemiBold, Foreground = B("Yellow"),
+                Text = Texts.F("cf_set", c.Count, c.Mods.Count, c.Resources.Count > 0 ? TypeLabel(c.Resources[0].Type) : ""), FontSize = 14, FontWeight = FontWeights.SemiBold, Foreground = B("Yellow"),
                 Margin = new Thickness(0, 0, 0, 10),
             });
             var ids = c.Mods.Select(n => st.Mods.FirstOrDefault(x => x.Name == n)?.Id).Where(id => id != null).ToList();
@@ -59,7 +59,7 @@ namespace QuickDeploy
                 Margin = new Thickness(0, 21, 0, 27),
             };
             joined.Children.Add(bracket);
-            var names = WinnerRows(ids, winner, "pick_now", inGame);
+            var names = WinnerRows(ids, winner, "pick_now", inGame, true);
             Grid.SetColumn((UIElement)names, 1);
             joined.Children.Add(names);
             card.Children.Add(joined);

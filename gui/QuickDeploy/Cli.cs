@@ -151,6 +151,8 @@ namespace QuickDeploy
         /// <summary>Resources another mod ships too: Conflicts, where the bytes differ and
         /// one version wins, and Shared, where they are the very same bytes.</summary>
         public int Conflicts, Shared;
+        /// <summary>In a conflict with any mod, on or off (the conflicts view).</summary>
+        public bool InConflict;
         public int Changes => Files.Count(f => f.Action != "keep");
         public int Chosen => Options.Sum(o => o.Subs.Count == 0 ? (o.Enabled ? 1 : 0) : (o.Enabled ? o.Subs.Count(x => x.Enabled) : 0));
         public int Choices => Options.Sum(o => o.Subs.Count == 0 ? 1 : o.Subs.Count);
@@ -243,6 +245,8 @@ namespace QuickDeploy
         /// <summary>The player's groups, in the order they were made (Groups).</summary>
         public List<GroupRow> Groups = new List<GroupRow>();
         public List<Clash> Clashes = new List<Clash>();
+        /// <summary>The same over every mod, on or off (the conflicts view).</summary>
+        public List<Clash> AllClashes = new List<Clash>();
         /// <summary>Whether resources can be named (HD2SDK's list was found).</summary>
         public bool ResourceNames;
         // (Lua is set again when a read is still waiting for the scripts)
@@ -363,12 +367,13 @@ namespace QuickDeploy
             s.KeepPrevious = Bool(d, "keep_previous");
             foreach (var l in List(d, "leftovers").OfType<Dictionary<string, object>>())
                 s.Leftovers.Add(new Leftover { Path = Str(l, "path"), Name = Str(l, "name"), Bytes = Long(l, "bytes") });
-            foreach (var c in List(d, "conflicts").OfType<Dictionary<string, object>>())
-                s.Clashes.Add(new Clash
-                {
-                    Mods = List(c, "mods").OfType<string>().ToList(), Count = Int(c, "count"), Winner = Str(c, "winner"), Deployed = Str(c, "deployed"), Same = Bool(c, "same"), ManagedBoot = Bool(c, "managed_boot"),
-                    Resources = List(c, "resources").OfType<Dictionary<string, object>>().Select(r => (Str(r, "type"), Str(r, "id"), Str(r, "name"))).ToList(),
-                });
+            foreach (var (key, into) in new[] { ("conflicts", s.Clashes), ("all_conflicts", s.AllClashes) })
+                foreach (var c in List(d, key).OfType<Dictionary<string, object>>())
+                    into.Add(new Clash
+                    {
+                        Mods = List(c, "mods").OfType<string>().ToList(), Count = Int(c, "count"), Winner = Str(c, "winner"), Deployed = Str(c, "deployed"), Same = Bool(c, "same"), ManagedBoot = Bool(c, "managed_boot"),
+                        Resources = List(c, "resources").OfType<Dictionary<string, object>>().Select(r => (Str(r, "type"), Str(r, "id"), Str(r, "name"))).ToList(),
+                    });
             s.ResourceNames = Bool(d, "resource_names");
             if (d.TryGetValue("lua_check", out var lcp) && lcp is Dictionary<string, object> lcq && Bool(lcq, "pending")) s.LuaPending = true;
             else if (d.TryGetValue("lua_check", out var lcv) && lcv is Dictionary<string, object> lc)
@@ -476,6 +481,7 @@ namespace QuickDeploy
                     row.Lu = lu;
                 }
                 row.Conflicts = s.Clashes.Where(c => !c.Same && !c.ManagedBoot && c.Mods.Contains(row.Name)).Sum(c => c.Count);
+                row.InConflict = s.AllClashes.Any(c => !c.Same && !c.ManagedBoot && c.Mods.Contains(row.Name));
                 row.Shared = s.Clashes.Where(c => c.Same && c.Mods.Contains(row.Name)).Sum(c => c.Count);
                 s.Mods.Add(row);
             }

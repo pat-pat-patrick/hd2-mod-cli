@@ -2284,7 +2284,7 @@ namespace QuickDeploy
             {
                 case "options": return m.Options.Count > 0;
                 case "off": return !m.Enabled;
-                case "conflict": return m.Conflicts > 0;
+                case "conflict": return m.InConflict;
                 case "broken": return m.Error != null;
                 case "lua": return m.Lua;
                 case "updates": return HasUpdate(m);
@@ -2365,7 +2365,7 @@ namespace QuickDeploy
                 ("all", scope.Count),
                 ("updates", scope.Count(HasUpdate)),
                 ("off", scope.Count(m => !m.Enabled)),
-                ("conflict", scope.Count(m => m.Conflicts > 0)), ("broken", scope.Count(m => m.Error != null)),
+                ("conflict", scope.Count(m => m.InConflict)), ("broken", scope.Count(m => m.Error != null)),
                 ("norun", scope.Count(m => NoRun(m) != null)),
             };
             foreach (var (key, n) in defs)
@@ -6986,7 +6986,7 @@ namespace QuickDeploy
         /// game has now (the last deploy); when a choice has not been deployed yet, that one keeps
         /// tagKey and its solid frame, and the one chosen is framed in dashes and marked "in effect
         /// after deploy" (the user, 2026-11-03: a click must change the view itself).</summary>
-        UIElement WinnerRows(List<string> ids, string now, string tagKey, string inGame = null)
+        UIElement WinnerRows(List<string> ids, string now, string tagKey, string inGame = null, bool switches = false)
         {
             // by name, not in the load order: a click moved the mod, and the rows swapped places
             // under the pointer; what is in effect is what they are for (the user, 2026-11-03)
@@ -7003,11 +7003,26 @@ namespace QuickDeploy
             var rowsBox = new StackPanel();
             foreach (var x in mods)
             {
+                bool off = !x.Enabled;                        // shown with its switch (the conflicts view)
                 bool wins = x.Id == now;                      // the load order's: what a deploy gives
-                bool solid = pending ? x.Id == inGame : wins; // the game's now
+                bool solid = (pending ? x.Id == inGame : wins) && !off; // the game's now
                 bool next = pending && wins;                  // chosen, not deployed yet
                 var line = new DockPanel();
-                var pic = Picture(x.Icon, GlyphMod, 28, "Blue", 18);
+                if (switches)
+                {
+                    var sw = new CheckBox { Style = (Style)FindResource("Switch"), IsChecked = x.Enabled, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0), ToolTip = x.Name };
+                    var m = x;
+                    sw.Click += (s, e) =>
+                    {
+                        bool turnOn = sw.IsChecked == true;
+                        if (turnOn && st.ProfilesOn && !m.InProfile) { Run("profile-add", m.Id); return; }
+                        Change(m.Id, c => c.Enabled = turnOn, turnOn ? "enable" : "disable", m.Id);
+                    };
+                    DockPanel.SetDock(sw, Dock.Left);
+                    line.Children.Add(sw);
+                }
+                var pic = Picture(x.Icon, GlyphMod, 28, off ? "Muted" : "Blue", 18);
+                pic.Opacity = off ? 0.55 : 1;
                 DockPanel.SetDock(pic, Dock.Left);
                 line.Children.Add(pic);
                 if (solid || next)
@@ -7022,18 +7037,18 @@ namespace QuickDeploy
                     line.Children.Add(tag);
                 }
                 line.Children.Add(new TextBlock { Text = x.Name, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 0, 0, 0),
-                                                  TextTrimming = TextTrimming.CharacterEllipsis, ToolTip = x.Name });
+                                                  TextTrimming = TextTrimming.CharacterEllipsis, ToolTip = x.Name, Opacity = off ? 0.55 : 1 });
                 var row = new Border
                 {
                     BorderBrush = next ? Brushes.Transparent : B(solid ? "Yellow" : "Grid"), BorderThickness = new Thickness(1), Background = B("Ground900"),
-                    Padding = new Thickness(8, 6, 8, 6), Child = line, Cursor = wins ? Cursors.Arrow : Cursors.Hand, Tag = x.Id,
+                    Padding = new Thickness(8, 6, 8, 6), Child = line, Cursor = wins || off ? Cursors.Arrow : Cursors.Hand, Tag = x.Id,
                 };
                 // the chosen one's frame in dashes, over the row (it takes no clicks)
                 var cell = new Grid { Margin = new Thickness(0, 0, 0, 6) };
                 cell.Children.Add(row);
                 if (next)
                     cell.Children.Add(new Rectangle { Stroke = B("Yellow"), StrokeThickness = 1.5, StrokeDashArray = new DoubleCollection { 4, 3 }, IsHitTestVisible = false });
-                if (!wins)
+                if (!wins && !off)
                 {
                     var rest = row.BorderBrush;
                     row.MouseEnter += (s, e) => { if (!solid) row.BorderBrush = B("Muted"); };
@@ -7041,9 +7056,9 @@ namespace QuickDeploy
                     var id = x.Id;
                     row.MouseLeftButtonUp += (s, e) =>
                     {
-                        var last = mods.Where(o => o.Id != id).OrderBy(o => o.Index).Last();
+                        var last = mods.Where(o => o.Id != id && o.Enabled).OrderBy(o => o.Index).LastOrDefault();
                         picksNow[key] = (id, st);
-                        if (mods.First(o => o.Id == id).Index < last.Index) Run("move", id, "--after", last.Id);
+                        if (last != null && mods.First(o => o.Id == id).Index < last.Index) Run("move", id, "--after", last.Id);
                         if (filter == "conflict") RenderConflicts();
                         else RenderDetail();
                     };

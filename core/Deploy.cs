@@ -99,12 +99,27 @@ namespace Hd2Mod
         /// <summary>The files the load order needs, every archive numbered from 0. With
         /// errors, a mod that cannot be read is noted there by name and left out; without,
         /// it stops the command.</summary>
-        public static List<Wanted> Plan(Library lib, Dictionary<string, string> errors = null)
+        public static List<Wanted> Plan(Library lib, Dictionary<string, string> errors = null) =>
+            // the loader in effect last, the other loaders not at all (Loaders)
+            Planned(Loaders.DeployOrder(lib), errors);
+
+        /// <summary>Every mod's files, on or off, numbered as a deploy of them all would number
+        /// them: the conflicts view shows every mod in a conflict, with its switch (the user,
+        /// 2026-11-03). The loaders as Plan has them; a mod that cannot be read is left out.</summary>
+        public static List<Wanted> PlanAll(Library lib)
+        {
+            var chosen = Loaders.Chosen(lib);
+            var order = lib.Mods.Where(m => Loaders.KindOf(m) == null).ToList();
+            order.AddRange(Loaders.HelpersFor(lib, chosen));
+            if (chosen != null) order.Add(chosen);
+            return Planned(order, new Dictionary<string, string>());
+        }
+
+        static List<Wanted> Planned(List<Mod> mods, Dictionary<string, string> errors)
         {
             var counters = new Dictionary<string, int>();
             var out_ = new List<Wanted>();
-            // the loader in effect last, the other loaders not at all (Loaders)
-            foreach (var mod in Loaders.DeployOrder(lib))
+            foreach (var mod in mods)
             {
                 string problem = null;
                 List<string> folders = null;
@@ -701,6 +716,79 @@ namespace Hd2Mod
         /// row's offset and size stay inside its file.</summary>
         public static List<Res> Rows(string path)
         {
+            var sig = FileSig(path);
+            lock (rowsKnown) if (rowsKnown.TryGetValue(path, out var had) && had.Sig == sig) return had.Rows;
+            var rows = RowsNow(path);
+            lock (rowsKnown) rowsKnown[path] = (sig, rows);
+            return rows;
+        }
+
+        // each archive's rows and its resources' hashes, kept while the files are unchanged
+        // (their sizes and times): every state read listed every archive and hashed every shared
+        // resource again, and the conflicts view over every mod, on or off, made that 1 s of a
+        // read (2026-11-03). What is returned is never changed by its callers.
+        static readonly Dictionary<string, (string Sig, List<Res> Rows)> rowsKnown =
+            new Dictionary<string, (string, List<Res>)>(StringComparer.OrdinalIgnoreCase);
+        static readonly Dictionary<string, (string Sig, HashSet<(ulong, ulong)> Tried, Dictionary<(ulong, ulong), string> Hashes)> hashesKnown =
+            new Dictionary<string, (string, HashSet<(ulong, ulong)>, Dictionary<(ulong, ulong), string>)>(StringComparer.OrdinalIgnoreCase);
+
+        // the hashes are kept between runs too, in resource_hashes.json: the first read of a run
+        // hashed every shared resource of every mod, 1 s at the window's start (2026-11-03)
+        static string hashesFrom;       // the settings folder they were read from
+        static bool hashesDirty;
+
+        static void LoadHashes()
+        {
+            if (hashesFrom == Store.Home) return;
+            hashesFrom = Store.Home;
+            Dictionary<string, object> d;
+            try { d = Store.Load("resource_hashes.json"); }
+            catch (Exception e) when (e is IOException || e is UnauthorizedAccessException || e is FormatException) { return; }
+            if (Json.Long(d, "version") != 1 || !(Json.Obj(d, "archives") is Dictionary<string, object> archives)) return;
+            lock (hashesKnown)
+                foreach (var kv in archives)
+                {
+                    if (hashesKnown.ContainsKey(kv.Key) || !(kv.Value is Dictionary<string, object> a)) continue;
+                    var sig = Json.Str(a, "sig");
+                    if (sig == null || !(Json.Obj(a, "hashes") is Dictionary<string, object> hs)) continue;
+                    var map = new Dictionary<(ulong, ulong), string>();
+                    foreach (var h in hs)
+                    {
+                        var parts = h.Key.Split(':');
+                        if (parts.Length == 2 && h.Value is string v &&
+                            ulong.TryParse(parts[0], System.Globalization.NumberStyles.HexNumber, null, out var t) &&
+                            ulong.TryParse(parts[1], System.Globalization.NumberStyles.HexNumber, null, out var id))
+                            map[(t, id)] = v;
+                    }
+                    hashesKnown[kv.Key] = (sig, new HashSet<(ulong, ulong)>(map.Keys), map);
+                }
+        }
+
+        static void SaveHashes()
+        {
+            if (!hashesDirty) return;
+            hashesDirty = false;
+            var archives = new Dictionary<string, object>();
+            lock (hashesKnown)
+                foreach (var kv in hashesKnown)
+                    if (kv.Value.Hashes.Count > 0 && File.Exists(kv.Key))      // an archive deleted is left out
+                        archives[kv.Key] = new Dictionary<string, object>
+                        {
+                            ["sig"] = kv.Value.Sig,
+                            ["hashes"] = kv.Value.Hashes.ToDictionary(h => h.Key.Item1.ToString("x16") + ":" + h.Key.Item2.ToString("x16"), h => (object)h.Value),
+                        };
+            try { Store.Save("resource_hashes.json", new Dictionary<string, object> { ["version"] = 1L, ["archives"] = archives }); }
+            catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { }
+        }
+
+        static string FileSig(string path)
+        {
+            var fi = new FileInfo(path);
+            return fi.Exists ? fi.Length + ":" + fi.LastWriteTimeUtc.Ticks : "-";
+        }
+
+        static List<Res> RowsNow(string path)
+        {
             var out_ = new List<Res>();
             using (var f = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
             {
@@ -856,6 +944,7 @@ namespace Hd2Mod
         {
             var out_ = new HashSet<(ulong, ulong)>();
             if (shared.Count == 0) return out_;
+            LoadHashes();
             var want = new HashSet<(ulong, ulong)>(shared);
             var hashes = new Dictionary<(ulong, ulong), List<string>>();
             foreach (var archive in shared.SelectMany(k => from[k]).Distinct())
@@ -867,6 +956,7 @@ namespace Hd2Mod
             foreach (var k in shared)
                 if (hashes.TryGetValue(k, out var list) && list.Count == from[k].Count && list.All(h => h == list[0]))
                     out_.Add(k);
+            SaveHashes();
             return out_;
         }
 
@@ -874,6 +964,26 @@ namespace Hd2Mod
         /// archive, of the .stream and of the .gpu_resources beside it. A resource whose bytes do
         /// not fit in those files is left out.</summary>
         static Dictionary<(ulong, ulong), string> Hashes(string archive, HashSet<(ulong, ulong)> want)
+        {
+            var sig = FileSig(archive) + "|" + FileSig(archive + ".stream") + "|" + FileSig(archive + ".gpu_resources");
+            (string Sig, HashSet<(ulong, ulong)> Tried, Dictionary<(ulong, ulong), string> Hashes) had;
+            lock (hashesKnown)
+                if (!hashesKnown.TryGetValue(archive, out had) || had.Sig != sig)
+                    hashesKnown[archive] = had = (sig, new HashSet<(ulong, ulong)>(), new Dictionary<(ulong, ulong), string>());
+            HashSet<(ulong, ulong)> missing;
+            lock (hashesKnown) missing = new HashSet<(ulong, ulong)>(want.Where(k => !had.Tried.Contains(k)));
+            if (missing.Count > 0)
+            {
+                var found = HashesNow(archive, missing);
+                // only what was read is kept: a resource left out (a file busy, bytes that do not
+                // fit) is tried again at the next read
+                lock (hashesKnown)
+                    foreach (var kv in found) { had.Tried.Add(kv.Key); had.Hashes[kv.Key] = kv.Value; hashesDirty = true; }
+            }
+            lock (hashesKnown) return had.Hashes.Where(kv => want.Contains(kv.Key)).ToDictionary(kv => kv.Key, kv => kv.Value);
+        }
+
+        static Dictionary<(ulong, ulong), string> HashesNow(string archive, HashSet<(ulong, ulong)> want)
         {
             var out_ = new Dictionary<(ulong, ulong), string>();
             List<Res> mine;

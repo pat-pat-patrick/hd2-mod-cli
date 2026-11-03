@@ -115,5 +115,41 @@ namespace Hd2Mod.Tests
             Cli("deploy");
             Assert.Equal(("One", "One"), (Json.Str(Set(), "winner"), Json.Str(Set(), "deployed")));
         }
+
+        /// <summary>A resource's hash is kept while its archive is unchanged (Deploy.Hashes,
+        /// resource_hashes.json, 2026-11-03). Must live: the same bytes stay shared on the next
+        /// read, from what was kept. Must die: an archive written over is hashed again.</summary>
+        [Fact]
+        public void A_kept_hash_follows_an_archive_written_over()
+        {
+            var bytes = Archive(Bytes("the same"), (1, 101));
+            Cli("add", Mod("One", new Dictionary<string, byte[]> { [A + ".patch_0"] = bytes }));
+            Cli("add", Mod("Two", new Dictionary<string, byte[]> { [A + ".patch_0"] = bytes }));
+            bool Same() => Json.Bool(Json.List(StateDoc.Build(Library.Load(), Game), "conflicts").OfType<Dictionary<string, object>>().Single(), "same");
+            Assert.True(Same());
+            Assert.True(Same());
+            Assert.True(File.Exists(Path.Combine(Store.Home, "resource_hashes.json")));
+            var two = Library.Load().Mods.Single(m => m.Name == "Two");
+            File.WriteAllBytes(Directory.GetFiles(two.Path, A + ".patch_0", SearchOption.AllDirectories).Single(), Archive(Bytes("not the same"), (1, 101)));
+            Assert.False(Same());
+        }
+
+        /// <summary>The conflicts view lists every mod in a conflict, on or off, with its switch
+        /// (the user, 2026-11-03); the rest of the window marks a conflict only while the mods are
+        /// on. Must live: the mod turned off is in all_conflicts. Must die: not in conflicts.</summary>
+        [Fact]
+        public void A_mod_turned_off_is_still_in_the_conflicts_view()
+        {
+            Cli("add", Mod("One", new Dictionary<string, byte[]> { [A + ".patch_0"] = Archive(Bytes("one's own"), (1, 100), (1, 101)) }));
+            Cli("add", Mod("Two", new Dictionary<string, byte[]> { [A + ".patch_0"] = Archive(Bytes("two's own"), (1, 101), (2, 7)) }));
+            Cli("add", Mod("Three", new Dictionary<string, byte[]> { [A + ".patch_0"] = Archive(Bytes("three's own"), (1, 101)) }));
+            Cli("disable", Library.Load().Mods.Single(m => m.Name == "Three").Id);
+            var doc = StateDoc.Build(Library.Load(), Game);
+            List<Dictionary<string, object>> Sets(string key) => Json.List(doc, key).OfType<Dictionary<string, object>>().Where(c => !Json.Bool(c, "same")).ToList();
+            var all = Sets("all_conflicts").Single();
+            Assert.Equal(new[] { "One", "Two", "Three" }, Json.List(all, "mods").OfType<string>());
+            Assert.Equal("Two", Json.Str(all, "winner"));                      // the last one on, not Three
+            Assert.Equal(new[] { "One", "Two" }, Json.List(Sets("conflicts").Single(), "mods").OfType<string>());
+        }
     }
 }

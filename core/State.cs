@@ -316,12 +316,13 @@ namespace Hd2Mod
                 });
             }
             var clashes = new List<object>();
-            if (d != null)
+            var allClashes = new List<object>();
+            // the same mods are one entry, and the resources they ship identically another:
+            // those are shared, not fought over; winner: whose copy a deploy gives
+            void Sets(List<Deploy.Clash> found, List<object> into, Func<List<string>, string> winner)
             {
-                // the same mods are one entry, and the resources they ship identically another:
-                // those are shared, not fought over
                 var pairs = new List<(List<string> Mods, bool Same, bool Boot, long Count, List<Deploy.Clash> Some)>();
-                foreach (var c in Deploy.Clashes(d.All))
+                foreach (var c in found)
                 {
                     bool boot = c.Type == Deploy.LuaType && c.Id == LuaMods.BootId;
                     int i = pairs.FindIndex(p => p.Same == c.Same && p.Boot == boot && p.Mods.SequenceEqual(c.Mods));
@@ -337,9 +338,9 @@ namespace Hd2Mod
                 // game has now ("deployed"), which a choice changes only at the next deploy
                 var deployedFiles = Json.Obj(Store.Load("deployed.json"), "files");
                 foreach (var p in pairs.OrderByDescending(p => p.Count))      // stable, as Python's sorted
-                    clashes.Add(new Dictionary<string, object>
+                    into.Add(new Dictionary<string, object>
                     {
-                        ["mods"] = p.Mods.Cast<object>().ToList(), ["count"] = p.Count, ["winner"] = p.Mods[p.Mods.Count - 1],
+                        ["mods"] = p.Mods.Cast<object>().ToList(), ["count"] = p.Count, ["winner"] = winner(p.Mods),
                         ["deployed"] = Deploy.DeployedWinner(p.Some[0], deployedFiles),
                         ["same"] = p.Same,
                         ["resources"] = p.Some.Select(c => (object)new Dictionary<string, object>
@@ -347,6 +348,13 @@ namespace Hd2Mod
                             ["type"] = ResourceNames.Type(c.Type), ["id"] = c.Id.ToString("x16"), ["name"] = ResourceNames.Name(c.Id),
                         }).ToList(),
                     });
+            }
+            if (d != null)
+            {
+                Sets(Deploy.Clashes(d.All), clashes, ms => ms[ms.Count - 1]);
+                // every mod in a conflict, on or off (the conflicts view): the last one a deploy takes wins
+                var on = new HashSet<string>(d.All.Select(w => w.Mod));
+                Sets(Deploy.Clashes(Deploy.PlanAll(lib)), allClashes, ms => ms.LastOrDefault(on.Contains));
             }
             Dictionary<string, object> summary = null;
             if (d != null)
@@ -462,7 +470,7 @@ namespace Hd2Mod
             {
                 var owner = Json.Str(luaCheck, "boot_owner");
                 var entries = mods.OfType<Dictionary<string, object>>().ToList();
-                foreach (var c in clashes.OfType<Dictionary<string, object>>())
+                foreach (var c in clashes.Concat(allClashes).OfType<Dictionary<string, object>>())
                 {
                     var resources = Json.List(c, "resources").OfType<Dictionary<string, object>>().ToList();
                     if (resources.Count != 1 || Json.Str(resources[0], "type") != "lua" ||
@@ -484,7 +492,7 @@ namespace Hd2Mod
                 ["tool"] = "hd2-mod-cli", ["version"] = Version, ["game_dir"] = game, ["home"] = Store.Home, ["mods_dir"] = Store.ModsDir(),
                 ["summary"] = summary, ["links"] = links, ["saved_bytes"] = Json.Long(record, "saved_bytes"),
                 ["deploys"] = Json.Long(record, "deploys"), ["deletes"] = deletes.Cast<object>().ToList(),
-                ["mods"] = mods, ["conflicts"] = clashes, ["resource_names"] = ResourceNames.HaveNames, ["tags"] = lib.Tags.Cast<object>().ToList(),
+                ["mods"] = mods, ["conflicts"] = clashes, ["all_conflicts"] = allClashes, ["resource_names"] = ResourceNames.HaveNames, ["tags"] = lib.Tags.Cast<object>().ToList(),
                 // the player's groups (Groups): shown only, in the order they were made
                 ["groups"] = lib.Groups.Select(g => (object)new Dictionary<string, object> { ["id"] = g.Id, ["name"] = g.Name, ["parent"] = g.Parent }).ToList(),
                 ["lua_check"] = luaCheck,
