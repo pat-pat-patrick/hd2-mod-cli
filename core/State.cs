@@ -475,8 +475,9 @@ namespace Hd2Mod
                     while (parent[x] != x) x = parent[x] = parent[parent[x]];
                     return x;
                 }
-                // by name: an armour and its helmet are two archives of one name, one item to a player
-                string Arch((string Category, string Name) a) => a.Name.ToLowerInvariant();
+                // by category and name: an armour and the helmet of its name are two items (the
+                // user, 2026-11-03: they are separate things, not to be put together)
+                string Arch((string Category, string Name) a) => a.Category + "\u001d" + a.Name;
                 foreach (var c in found.Where(c => !c.Same))
                 {
                     var of = GameArchives.Of(c.Id, game);
