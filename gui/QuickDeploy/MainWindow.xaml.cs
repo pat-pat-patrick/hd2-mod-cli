@@ -4063,8 +4063,8 @@ namespace QuickDeploy
             if (open.Contains(m.Id))
                 foreach (var o in m.Options)
                 {
-                    Add(o.Name); Add(o.Enabled); Add(o.Icon); Add(o.Files); Add(o.Bytes); Add(o.Description);
-                    foreach (var s in o.Subs) { Add(s.Name); Add(s.Enabled); Add(s.Icon); Add(s.Files); Add(s.Bytes); Add(s.Description); }
+                    Add(o.Name); Add(o.Enabled); Add(o.Icon); Add(o.Files); Add(o.Bytes); Add(o.Description); Add(string.Join("|", o.Clashes));
+                    foreach (var s in o.Subs) { Add(s.Name); Add(s.Enabled); Add(s.Icon); Add(s.Files); Add(s.Bytes); Add(s.Description); Add(string.Join("|", s.Clashes)); }
                 }
             return sb.ToString();
         }
@@ -4596,7 +4596,7 @@ namespace QuickDeploy
                     var sub = o.Subs[j];
                     int sj = j;
                     string sref = (i + 1) + "." + (j + 1);
-                    cards.Children.Add(Card(sub.Name, sub.Icon, sub.Files, sub.Bytes, sub.Enabled, sub.Description, () =>
+                    cards.Children.Add(Card(sub.Name, sub.Icon, sub.Files, sub.Bytes, sub.Enabled, sub.Description, sub.Clashes, () =>
                     {
                         // one of a kind: the sub-options replace the same resources (the user, 2026-10-27)
                         bool was = sub.Enabled;
@@ -4617,7 +4617,7 @@ namespace QuickDeploy
                 foreach (var (o, i) in parts)
                 {
                     string oref = (i + 1).ToString();
-                    cards.Children.Add(Card(o.Name, o.Icon, o.Files, o.Bytes, o.Enabled, o.Description, () =>
+                    cards.Children.Add(Card(o.Name, o.Icon, o.Files, o.Bytes, o.Enabled, o.Description, o.Clashes, () =>
                     {
                         bool was = o.Enabled;
                         Change(m.Id, c => c.Options[i].Enabled = !was, "set", m.Id, oref, was ? "off" : "on");
@@ -4634,7 +4634,9 @@ namespace QuickDeploy
             return box;
         }
 
-        Button Card(string name, string icon, int files, long bytes, bool on, string description, Action act)
+        /// <summary>clashes: the enabled mods it conflicts with, said on the card before it is chosen
+        /// (the user, 2026-11-03).</summary>
+        Button Card(string name, string icon, int files, long bytes, bool on, string description, List<string> clashes, Action act)
         {
             // a picture when the mod has one; else only the words, all of them (the name and
             // the author's description wrap; nothing is cut or left to a tooltip)
@@ -4655,6 +4657,9 @@ namespace QuickDeploy
             if (!string.IsNullOrWhiteSpace(description))
                 col.Children.Add(new TextBlock { Text = description.Trim(), FontSize = 12, Foreground = B("Muted"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 2, hasPicture ? 0 : right, 4) });
             col.Children.Add(new TextBlock { Text = files > 0 ? Texts.F("card_meta", files, Texts.Size(bytes)) : Texts.Get("card_vanilla"), FontFamily = Mono, FontSize = 11, Foreground = B("Muted") });
+            if (clashes != null && clashes.Count > 0)
+                col.Children.Add(new TextBlock { Text = Texts.F("opt_clash", string.Join(Texts.Get("sep_list"), clashes)), FontSize = 12, Foreground = B("Yellow"),
+                                                 TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 4, 0, 0) });
             grid.Children.Add(col);
             if (on)
                 grid.Children.Add(new Border
@@ -6986,7 +6991,7 @@ namespace QuickDeploy
         /// game has now (the last deploy); when a choice has not been deployed yet, that one keeps
         /// tagKey and its solid frame, and the one chosen is framed in dashes and marked "in effect
         /// after deploy" (the user, 2026-11-03: a click must change the view itself).</summary>
-        UIElement WinnerRows(List<string> ids, string now, string tagKey, string inGame = null, bool switches = false)
+        UIElement WinnerRows(List<string> ids, string now, string tagKey, string inGame = null, bool switches = false, Func<ModRow, UIElement> below = null)
         {
             // by name, not in the load order: a click moved the mod, and the rows swapped places
             // under the pointer; what is in effect is what they are for (the user, 2026-11-03)
@@ -6996,6 +7001,8 @@ namespace QuickDeploy
             now = NowOf(ids, now);
             bool pending = inGame != null && inGame != now && mods.Any(x => x.Id == inGame);
             var rowsBox = new StackPanel();
+            // one height for every row when some have a line under the name
+            bool twoLines = below != null && mods.Any(x => below(x) != null);
             foreach (var x in mods)
             {
                 bool off = !x.Enabled;                        // shown with its switch (the conflicts view)
@@ -7031,12 +7038,15 @@ namespace QuickDeploy
                     DockPanel.SetDock(tag, Dock.Right);
                     line.Children.Add(tag);
                 }
-                line.Children.Add(new TextBlock { Text = x.Name, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 0, 0, 0),
-                                                  TextTrimming = TextTrimming.CharacterEllipsis, ToolTip = x.Name, Opacity = off ? 0.55 : 1 });
+                var named = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 0, 0, 0) };
+                named.Children.Add(new TextBlock { Text = x.Name, FontWeight = FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis, ToolTip = x.Name, Opacity = off ? 0.55 : 1 });
+                var under = below?.Invoke(x);
+                if (under != null) named.Children.Add(under);
+                line.Children.Add(named);
                 var row = new Border
                 {
                     BorderBrush = next ? Brushes.Transparent : B(solid ? "Yellow" : "Grid"), BorderThickness = new Thickness(1), Background = B("Ground900"),
-                    Padding = new Thickness(8, 6, 8, 6), Child = line, Cursor = wins || off ? Cursors.Arrow : Cursors.Hand, Tag = x.Id,
+                    Padding = new Thickness(8, 6, 8, 6), Child = line, Cursor = wins || off ? Cursors.Arrow : Cursors.Hand, Tag = x.Id, MinHeight = twoLines ? 58 : 0,
                 };
                 // the chosen one's frame in dashes, over the row (it takes no clicks)
                 var cell = new Grid { Margin = new Thickness(0, 0, 0, 6) };

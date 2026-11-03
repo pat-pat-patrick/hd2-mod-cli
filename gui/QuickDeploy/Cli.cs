@@ -24,6 +24,8 @@ namespace QuickDeploy
         public bool Enabled;
         public int Files;
         public long Bytes;
+        /// <summary>The enabled mods it conflicts with, chosen or not.</summary>
+        public List<string> Clashes = new List<string>();
     }
 
     class Option
@@ -33,6 +35,8 @@ namespace QuickDeploy
         public int Files;
         public long Bytes;
         public List<SubOption> Subs = new List<SubOption>();
+        /// <summary>The enabled mods its own folders conflict with, chosen or not.</summary>
+        public List<string> Clashes = new List<string>();
     }
 
     /// <summary>A mod's Lua, as the core read it from its archives (LuaMods).</summary>
@@ -194,6 +198,8 @@ namespace QuickDeploy
         public bool Same, ManagedBoot;
         /// <summary>The first of its resources: type, id, and name when HD2SDK's list knows it.</summary>
         public List<(string Type, string Id, string Name)> Resources = new List<(string, string, string)>();
+        /// <summary>The options (and sub-options, else -1) that bring it, by mod (the conflicts view only).</summary>
+        public List<(string Mod, int Option, int Sub)> From = new List<(string, int, int)>();
     }
 
     /// <summary>A deploy another program is in the middle of.</summary>
@@ -373,6 +379,7 @@ namespace QuickDeploy
                     {
                         Mods = List(c, "mods").OfType<string>().ToList(), Count = Int(c, "count"), Winner = Str(c, "winner"), Deployed = Str(c, "deployed"), Same = Bool(c, "same"), ManagedBoot = Bool(c, "managed_boot"),
                         Resources = List(c, "resources").OfType<Dictionary<string, object>>().Select(r => (Str(r, "type"), Str(r, "id"), Str(r, "name"))).ToList(),
+                        From = List(c, "from").OfType<Dictionary<string, object>>().Select(f => (Str(f, "mod"), Int(f, "option"), Int(f, "sub"))).ToList(),
                     });
             s.ResourceNames = Bool(d, "resource_names");
             if (d.TryGetValue("lua_check", out var lcp) && lcp is Dictionary<string, object> lcq && Bool(lcq, "pending")) s.LuaPending = true;
@@ -436,10 +443,12 @@ namespace QuickDeploy
                 foreach (var o in List(m, "options").OfType<Dictionary<string, object>>())
                 {
                     var opt = new Option { Name = Str(o, "name"), Description = Str(o, "description"), Enabled = Bool(o, "enabled"),
-                                           Icon = Str(o, "icon"), Files = Int(o, "files"), Bytes = Long(o, "bytes") };
+                                           Icon = Str(o, "icon"), Files = Int(o, "files"), Bytes = Long(o, "bytes"),
+                                           Clashes = List(o, "clashes").OfType<string>().ToList() };
                     foreach (var x in List(o, "subs").OfType<Dictionary<string, object>>())
                         opt.Subs.Add(new SubOption { Name = Str(x, "name"), Description = Str(x, "description"), Enabled = Bool(x, "enabled"),
-                                                     Icon = Str(x, "icon"), Files = Int(x, "files"), Bytes = Long(x, "bytes") });
+                                                     Icon = Str(x, "icon"), Files = Int(x, "files"), Bytes = Long(x, "bytes"),
+                                                     Clashes = List(x, "clashes").OfType<string>().ToList() });
                     row.Options.Add(opt);
                 }
                 foreach (var t in List(m, "tags")) if (t is string tag) row.Tags.Add(tag);

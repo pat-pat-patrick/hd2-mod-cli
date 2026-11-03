@@ -288,6 +288,26 @@ namespace Hd2Mod
             using (Loaders.Pass()) return BuildNow(lib, game, verify);
         }
 
+        /// <summary>The option (and sub-option, else -1) of a mod whose folder holds an archive;
+        /// null when it is in none (a mod without options).</summary>
+        static (int Option, int Sub)? OptionAt(Mod mod, string archive)
+        {
+            if (mod == null) return null;
+            Manifest man;
+            try { man = Manifest.Of(mod); }
+            catch (ModError) { return null; }
+            if (man == null) return null;
+            var dir = Paths.Norm(Path.GetDirectoryName(archive));
+            bool Holds(List<string> include) => include.Any(inc => string.Equals(Paths.Norm(Paths.Join(mod.Path, inc)), dir, StringComparison.OrdinalIgnoreCase));
+            for (int i = 0; i < man.Options.Count; i++)
+            {
+                for (int j = 0; j < man.Options[i].SubOptions.Count; j++)
+                    if (Holds(man.Options[i].SubOptions[j].Include)) return (i, j);
+                if (Holds(man.Options[i].Include)) return (i, -1);
+            }
+            return null;
+        }
+
         static Dictionary<string, object> BuildNow(Library lib, string game, bool verify)
         {
             var errors = new Dictionary<string, string>();
@@ -319,7 +339,9 @@ namespace Hd2Mod
             var allClashes = new List<object>();
             // the same mods are one entry, and the resources they ship identically another:
             // those are shared, not fought over; winner: whose copy a deploy gives
-            void Sets(List<Deploy.Clash> found, List<object> into, Func<List<string>, string> winner)
+            // which option of a mod brings a conflict: by the archives it comes from (from: an
+            // archive's mod), each mod's options and sub-options whose folder holds one
+            void Sets(List<Deploy.Clash> found, List<object> into, Func<List<string>, string> winner, Dictionary<string, string> from = null)
             {
                 var pairs = new List<(List<string> Mods, bool Same, bool Boot, long Count, List<Deploy.Clash> Some)>();
                 foreach (var c in found)
@@ -343,6 +365,11 @@ namespace Hd2Mod
                         ["mods"] = p.Mods.Cast<object>().ToList(), ["count"] = p.Count, ["winner"] = winner(p.Mods),
                         ["deployed"] = Deploy.DeployedWinner(p.Some[0], deployedFiles),
                         ["same"] = p.Same,
+                        ["from"] = from == null ? new List<object>() : p.Some.SelectMany(c => c.Sources).Distinct()
+                            .Select(src => from.TryGetValue(src, out var mod) ? (mod, OptionAt(lib.Mods.FirstOrDefault(x => x.Name == mod), src)) : ((string)null, ((int, int)?)null))
+                            .Where(x => x.Item2 != null).Distinct()
+                            .Select(x => (object)new Dictionary<string, object> { ["mod"] = x.Item1, ["option"] = (long)x.Item2.Value.Item1, ["sub"] = (long)x.Item2.Value.Item2 })
+                            .ToList(),
                         ["resources"] = p.Some.Select(c => (object)new Dictionary<string, object>
                         {
                             ["type"] = ResourceNames.Type(c.Type), ["id"] = c.Id.ToString("x16"), ["name"] = ResourceNames.Name(c.Id),
@@ -354,7 +381,10 @@ namespace Hd2Mod
                 Sets(Deploy.Clashes(d.All), clashes, ms => ms[ms.Count - 1]);
                 // every mod in a conflict, on or off (the conflicts view): the last one a deploy takes wins
                 var on = new HashSet<string>(d.All.Select(w => w.Mod));
-                Sets(Deploy.Clashes(Deploy.PlanAll(lib)), allClashes, ms => ms.LastOrDefault(on.Contains));
+                var everything = Deploy.PlanAll(lib);
+                var archiveOf = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var w in everything) archiveOf[w.Src] = w.Mod;
+                Sets(Deploy.Clashes(everything), allClashes, ms => ms.LastOrDefault(on.Contains), archiveOf);
             }
             Dictionary<string, object> summary = null;
             if (d != null)
@@ -387,6 +417,43 @@ namespace Hd2Mod
             var mods = new List<object>();
             int index = 0;
             var pluginHost = PluginHost.Make();             // what the plugins say of each mod (PluginFiles.Notes), in the manager's language
+            // every resource a deploy gives the game, with the mods and archives it comes from:
+            // what each option of a mod would conflict with, chosen or not (the user, 2026-11-03:
+            // a conflict often comes from an option, and another option avoids it)
+            var given = new Dictionary<(ulong, ulong), List<(string Mod, string Src)>>();
+            foreach (var w in d?.All ?? new List<Wanted>())
+            {
+                if (!Deploy.Patch.IsMatch(w.Name)) continue;
+                List<(ulong, ulong)> keys;
+                try { keys = Deploy.Resources(w.Src); }
+                catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { continue; }
+                foreach (var k in keys.Distinct())
+                {
+                    if (!given.TryGetValue(k, out var who)) given[k] = who = new List<(string, string)>();
+                    who.Add((w.Mod, w.Src));
+                }
+            }
+            // the enabled mods, other than this one, whose files replace a resource of these folders with other bytes
+            List<object> Clashing(Mod self, IEnumerable<string> includes)
+            {
+                var hit = new List<object>();
+                if (given.Count == 0) return hit;
+                foreach (var folder in includes.Select(x => Paths.Join(self.Path, x)).Where(Directory.Exists))
+                    foreach (var f in Deploy.List(folder).Where(x => Deploy.Patch.IsMatch(x)))
+                    {
+                        var src = Paths.Join(folder, f);
+                        List<(ulong, ulong)> keys;
+                        try { keys = Deploy.Resources(src); }
+                        catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { continue; }
+                        foreach (var k in keys.Distinct())
+                        {
+                            if (!given.TryGetValue(k, out var who)) continue;
+                            foreach (var (mod, other) in who)
+                                if (mod != self.Name && !hit.Contains(mod) && !Deploy.SameBytes(k, src, other)) hit.Add(mod);
+                        }
+                    }
+                return hit;
+            }
             foreach (var m in lib.Mods)
             {
                 index++;
@@ -415,12 +482,13 @@ namespace Hd2Mod
                             {
                                 ["name"] = c.Subs[j].Name, ["description"] = s.Description, ["enabled"] = c.Subs[j].Enabled,
                                 ["files"] = sn, ["bytes"] = sb, ["icon"] = Picture(m.Path, Or(s.IconPath, s.Image), s.Include),
+                                ["clashes"] = Clashing(m, s.Include),
                             });
                         }
                         options.Add(new Dictionary<string, object>
                         {
                             ["name"] = c.Name, ["description"] = o.Description, ["enabled"] = c.Enabled,
-                            ["files"] = n, ["bytes"] = b, ["subs"] = subs,
+                            ["files"] = n, ["bytes"] = b, ["subs"] = subs, ["clashes"] = Clashing(m, o.Include),
                             ["icon"] = o.Include.Count > 0 ? Picture(m.Path, Or(o.IconPath, o.Image), o.Include) : null,
                         });
                     }
@@ -461,6 +529,7 @@ namespace Hd2Mod
                     ["error"] = error,
                 });
             }
+            Deploy.SaveHashes();
             var deletes = d != null ? d.Deletes.Concat(d.Replaced).ToList() : new List<string>();
             deletes.Sort(string.CompareOrdinal);
             var luaCheck = LuaBlock(lib, mods);

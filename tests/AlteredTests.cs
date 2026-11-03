@@ -134,6 +134,30 @@ namespace Hd2Mod.Tests
             Assert.False(Same());
         }
 
+        /// <summary>A conflict often comes from an option, and another option avoids it (the user,
+        /// 2026-11-03). Must live: the sub-option chosen is named as where the conflict comes from,
+        /// and says whom it conflicts with. Must die: the other sub-option, which replaces something
+        /// else, conflicts with nothing.</summary>
+        [Fact]
+        public void A_conflict_names_the_option_it_comes_from()
+        {
+            Cli("add", Mod("One", new Dictionary<string, byte[]> { [A + ".patch_0"] = Archive(Bytes("one's own"), (1, 101)) }));
+            Cli("add", Mod("Two", new Dictionary<string, byte[]>
+            {
+                ["red/" + A + ".patch_0"] = Archive(Bytes("two's red"), (1, 101)),
+                ["blue/" + A + ".patch_0"] = Archive(Bytes("two's blue"), (1, 102)),
+            }, "{\"Name\": \"Two\", \"Options\": [{\"Name\": \"Colour\", \"SubOptions\": [" +
+               "{\"Name\": \"Red\", \"Include\": [\"red\"]}, {\"Name\": \"Blue\", \"Include\": [\"blue\"]}]}]}"));
+            var doc = StateDoc.Build(Library.Load(), Game);
+            var set = Json.List(doc, "all_conflicts").OfType<Dictionary<string, object>>().Single(c => !Json.Bool(c, "same"));
+            var from = Json.List(set, "from").OfType<Dictionary<string, object>>().Single();
+            Assert.Equal(("Two", 0L, 0L), (Json.Str(from, "mod"), Json.Long(from, "option"), Json.Long(from, "sub")));
+            var two = Json.List(doc, "mods").OfType<Dictionary<string, object>>().Single(m => Json.Str(m, "name") == "Two");
+            var subs = Json.List(Json.List(two, "options").OfType<Dictionary<string, object>>().Single(), "subs").OfType<Dictionary<string, object>>().ToList();
+            Assert.Equal(new[] { "One" }, Json.List(subs[0], "clashes").OfType<string>());
+            Assert.Empty(Json.List(subs[1], "clashes"));
+        }
+
         /// <summary>The conflicts view lists every mod in a conflict, on or off, with its switch
         /// (the user, 2026-11-03); the rest of the window marks a conflict only while the mods are
         /// on. Must live: the mod turned off is in all_conflicts. Must die: not in conflicts.</summary>

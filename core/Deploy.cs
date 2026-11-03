@@ -764,7 +764,17 @@ namespace Hd2Mod
                 }
         }
 
-        static void SaveHashes()
+        /// <summary>Whether one resource has the very same bytes in two archives (unread bytes
+        /// are never the same). The hashes are kept as Identical keeps them; SaveHashes writes
+        /// them down.</summary>
+        public static bool SameBytes((ulong, ulong) key, string a, string b)
+        {
+            LoadHashes();
+            var want = new HashSet<(ulong, ulong)> { key };
+            return Hashes(a, want).TryGetValue(key, out var x) && Hashes(b, want).TryGetValue(key, out var y) && x == y;
+        }
+
+        public static void SaveHashes()
         {
             if (!hashesDirty) return;
             hashesDirty = false;

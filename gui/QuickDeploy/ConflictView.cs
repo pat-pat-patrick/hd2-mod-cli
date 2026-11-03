@@ -69,7 +69,13 @@ namespace QuickDeploy
             {
                 var m = st.Mods.First(x => x.Id == id);
                 Add(m.Id); Add(m.Name); Add(m.Icon); Add(m.Enabled); Add(m.InProfile);
+                foreach (var o in m.Options)
+                {
+                    Add(o.Name); Add(o.Enabled); Add(string.Join("|", o.Clashes));
+                    foreach (var s in o.Subs) { Add(s.Name); Add(s.Enabled); Add(string.Join("|", s.Clashes)); }
+                }
             }
+            foreach (var f in c.From) { Add(f.Mod); Add(f.Option); Add(f.Sub); }
             Add(NowOf(ids, st.Mods.FirstOrDefault(x => x.Name == c.Winner)?.Id));
             Add(st.Mods.FirstOrDefault(x => x.Name == c.Deployed)?.Id);
             return sb.ToString();
@@ -81,19 +87,48 @@ namespace QuickDeploy
         UIElement ConflictCard(Clash c, List<string> ids)
         {
             var card = new StackPanel();
-            card.Children.Add(new TextBlock
+            // a set with at most one mod on conflicts with nothing now: its heading grey, and why
+            int on = ids.Count(id => st.Mods.First(x => x.Id == id).Enabled);
+            var heading = new TextBlock { FontSize = 14, FontWeight = FontWeights.SemiBold, Foreground = B(on > 1 ? "Yellow" : "Muted"), Margin = new Thickness(0, 0, 0, 10), TextWrapping = TextWrapping.Wrap };
+            heading.Inlines.Add(new System.Windows.Documents.Run(Texts.F("cf_set", c.Count, c.Mods.Count, c.Resources.Count > 0 ? TypeLabel(c.Resources[0].Type) : "")));
+            if (on <= 1)
+                heading.Inlines.Add(new System.Windows.Documents.Run("  ·  " + Texts.Get(on == 1 ? "cf_quiet_1" : "cf_quiet_0")) { FontWeight = FontWeights.Normal, FontSize = 13 });
+            card.Children.Add(heading);
+            // the option that brings it, under the mod's name: a click offers the others, each
+            // with what it would conflict with (the user, 2026-11-03: switching mods on and off,
+            // or choosing whose version wins, does not solve a conflict an option brings)
+            UIElement FromLine(ModRow m)
             {
-                Text = Texts.F("cf_set", c.Count, c.Mods.Count, c.Resources.Count > 0 ? TypeLabel(c.Resources[0].Type) : ""), FontSize = 14, FontWeight = FontWeights.SemiBold, Foreground = B("Yellow"),
-                Margin = new Thickness(0, 0, 0, 10),
-            });
+                var mine = c.From.Where(f => f.Mod == m.Name && f.Option >= 0 && f.Option < m.Options.Count).ToList();
+                if (mine.Count == 0) return null;
+                string Label((string Mod, int Option, int Sub) f) =>
+                    f.Sub >= 0 && f.Sub < m.Options[f.Option].Subs.Count ? m.Options[f.Option].Name + " › " + m.Options[f.Option].Subs[f.Sub].Name : m.Options[f.Option].Name;
+                var link = new Button { Template = Plain(), Cursor = System.Windows.Input.Cursors.Hand, FocusVisualStyle = null, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 2, 0, 0) };
+                var words = new TextBlock { FontSize = 12, Foreground = B("Muted"), TextTrimming = TextTrimming.CharacterEllipsis };
+                words.Inlines.Add(new System.Windows.Documents.Run(Texts.F("cf_from", string.Join(Texts.Get("sep_list"), mine.Select(Label).Distinct()))));
+                words.Inlines.Add(new System.Windows.Documents.Run("  ▾"));
+                link.Content = words;
+                link.MouseEnter += (s, e) => words.Foreground = B("Ink");
+                link.MouseLeave += (s, e) => words.Foreground = B("Muted");
+                link.Click += (s, e) =>
+                {
+                    var menu = OptionMenu(m, mine.Select(f => f.Option).Distinct().ToList());
+                    lastOptionMenu = menu;
+                    menu.PlacementTarget = link;
+                    menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+                    menu.IsOpen = true;
+                };
+                return link;
+            }
             var winner = st.Mods.FirstOrDefault(x => x.Name == c.Winner)?.Id;
             var inGame = st.Mods.FirstOrDefault(x => x.Name == c.Deployed)?.Id;     // whose copy the game has now
             // no bracket: each set is a card of its own (the user, 2026-11-03)
-            card.Children.Add(WinnerRows(ids, winner, "pick_now", inGame, true));
-            // which resources: the type, then the name or the id
+            card.Children.Add(WinnerRows(ids, winner, "pick_now", inGame, true, FromLine));
+            // which resources, by name when HD2SDK's list knows them; an id alone tells a player
+            // nothing and is left to the mod's details (the user, 2026-11-03: the view was cluttered)
             const int lines = 5;
             var list = new StackPanel { Margin = new Thickness(0, 4, 0, 0) };
-            foreach (var r in c.Resources.Take(lines))
+            foreach (var r in c.Resources.Where(x => x.Name != null).Take(lines))
             {
                 var dp = new DockPanel { Margin = new Thickness(0, 1, 0, 1) };
                 var type = new TextBlock { Text = TypeLabel(r.Type) + "  ·  ", FontSize = 12, Foreground = B("Muted") };
@@ -104,13 +139,60 @@ namespace QuickDeploy
                 dp.Children.Add(what);
                 list.Children.Add(dp);
             }
-            if (c.Count > Math.Min(lines, c.Resources.Count))
-                list.Children.Add(Small(Texts.F("clash_more", c.Count - Math.Min(lines, c.Resources.Count)), new Thickness(0, 2, 0, 0)));
+            if (list.Children.Count > 0 && c.Count > list.Children.Count)
+                list.Children.Add(Small(Texts.F("clash_more", c.Count - list.Children.Count), new Thickness(0, 2, 0, 0)));
             if (list.Children.Count > 0) card.Children.Add(list);
             return new Border
             {
                 BorderBrush = B("Grid"), BorderThickness = new Thickness(0, 0, 0, 1), Padding = new Thickness(20, 16, 20, 16), Child = card,
             };
+        }
+
+        /// <summary>A mod's options as a menu, these of them: an option with sub-options offers
+        /// each of them, one chosen; every option can be turned off. Each says what it would
+        /// conflict with among the enabled mods.</summary>
+        ContextMenu lastOptionMenu;     // for the measuring hook
+
+        ContextMenu OptionMenu(ModRow m, List<int> which)
+        {
+            var menu = new ContextMenu();
+            MenuItem Item(string name, List<string> clashes, bool chosen, Action act)
+            {
+                var head = new StackPanel { Orientation = Orientation.Horizontal };
+                head.Children.Add(new TextBlock { Text = name });
+                head.Children.Add(new TextBlock
+                {
+                    Text = "   " + (clashes.Count == 0 ? Texts.Get("cf_opt_free") : Texts.F("opt_clash", string.Join(Texts.Get("sep_list"), clashes))),
+                    Foreground = B(clashes.Count == 0 ? "Muted" : "Yellow"),
+                });
+                var it = new MenuItem { Header = head, IsCheckable = false, IsChecked = chosen };
+                it.Click += (s, e) => { if (!chosen) act(); };
+                return it;
+            }
+            foreach (var i in which)
+            {
+                var o = m.Options[i];
+                if (menu.Items.Count > 0) menu.Items.Add(new Separator());
+                if (o.Subs.Count > 0)
+                {
+                    menu.Items.Add(new MenuItem { Header = o.Name, IsEnabled = false });
+                    for (int k = 0; k < o.Subs.Count; k++)
+                    {
+                        int sk = k;
+                        menu.Items.Add(Item(o.Subs[k].Name, o.Subs[k].Clashes, o.Enabled && o.Subs[k].Enabled, () =>
+                            Change(m.Id, c => { c.Options[i].Enabled = true; for (int x = 0; x < c.Options[i].Subs.Count; x++) c.Options[i].Subs[x].Enabled = x == sk; },
+                                   "set", m.Id, (i + 1) + "." + (sk + 1), "on", "--only")));
+                    }
+                }
+                else menu.Items.Add(Item(o.Name, o.Clashes, o.Enabled, () => Change(m.Id, c => c.Options[i].Enabled = true, "set", m.Id, (i + 1).ToString(), "on")));
+                if (o.Enabled)
+                {
+                    var off = new MenuItem { Header = Texts.F("cf_opt_off", o.Name) };
+                    off.Click += (s, e) => Change(m.Id, c => c.Options[i].Enabled = false, "set", m.Id, (i + 1).ToString(), "off");
+                    menu.Items.Add(off);
+                }
+            }
+            return menu;
         }
 
         /// <summary>HD2QD_CLICK_TEST=conflictpick (measuring only): the conflicts view, then a click
@@ -120,6 +202,41 @@ namespace QuickDeploy
         /// clicks are raised here.</summary>
         void ConflictPickTest()
         {
+            // conflictmenu: the conflicts view, and the menu of the first option shown in it opened
+            if (Environment.GetEnvironmentVariable("HD2QD_CLICK_TEST") == "conflictmenu")
+            {
+                var m = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(4) };
+                m.Tick += (s, e) =>
+                {
+                    m.Stop();
+                    filter = "conflict";
+                    RenderNav();
+                    RenderList();
+                    UpdateLayout();
+                    IEnumerable<Button> Links(DependencyObject d)
+                    {
+                        foreach (var c in LogicalTreeHelper.GetChildren(d).OfType<DependencyObject>())
+                        {
+                            if (c is Button b && b.Content is TextBlock) yield return b;
+                            foreach (var r in Links(c)) yield return r;
+                        }
+                    }
+                    var which = int.TryParse(Environment.GetEnvironmentVariable("HD2QD_MENU_AT"), out var n) ? n : 0;
+                    var link = Links(List).Skip(which).FirstOrDefault();
+                    link?.BringIntoView();
+                    link?.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+                    // the menu as text, to HD2QD_WHEEL_OUT
+                    var said = new System.Text.StringBuilder();
+                    string Words(object x) => x is TextBlock t ? t.Text : x is Panel p ? string.Join("", p.Children.OfType<TextBlock>().Select(t => t.Text)) : x?.ToString();
+                    said.AppendLine("open " + (lastOptionMenu?.IsOpen == true));
+                    foreach (var it in lastOptionMenu?.Items.Cast<object>() ?? Enumerable.Empty<object>())
+                        said.AppendLine(it is Separator ? "--" : it is MenuItem mi ? (mi.IsChecked ? "(*) " : "    ") + Words(mi.Header) + (mi.IsEnabled ? "" : "  [title]") : "?");
+                    var path = Environment.GetEnvironmentVariable("HD2QD_WHEEL_OUT");
+                    if (path != null) System.IO.File.WriteAllText(path, said.ToString());
+                };
+                m.Start();
+                return;
+            }
             if (Environment.GetEnvironmentVariable("HD2QD_CLICK_TEST") != "conflictpick") return;
             var out_ = new System.Text.StringBuilder();
             IEnumerable<T> Find<T>(DependencyObject d, Func<T, bool> so) where T : DependencyObject
