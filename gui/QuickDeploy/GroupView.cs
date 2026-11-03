@@ -75,8 +75,12 @@ namespace QuickDeploy
         {
             ViewGroups.IsChecked = groupView;
             ViewOrder.IsChecked = !groupView;
-            ListScroll.Visibility = groupView ? Visibility.Collapsed : Visibility.Visible;
-            GroupScroll.Visibility = groupView ? Visibility.Visible : Visibility.Collapsed;
+            // the conflicts are a view of their own in the list's place (ConflictView): groups or
+            // order mean nothing there, so their switch is not shown
+            bool conflicts = filter == "conflict";
+            ((FrameworkElement)((FrameworkElement)ViewGroups.Parent).Parent).Visibility = conflicts ? Visibility.Collapsed : Visibility.Visible;
+            ListScroll.Visibility = groupView && !conflicts ? Visibility.Collapsed : Visibility.Visible;
+            GroupScroll.Visibility = groupView && !conflicts ? Visibility.Visible : Visibility.Collapsed;
         }
 
         /// <summary>The groups of the mod chosen in the load order, opened.</summary>

@@ -268,6 +268,14 @@ namespace QuickDeploy
         void ClickTest()
         {
             var page = Environment.GetEnvironmentVariable("HD2QD_CLICK_TEST") ?? "";
+            if (page.StartsWith("filter:"))
+            {
+                // "filter:conflict" (pictures only): the library's filter chosen 3 s after the start
+                var tf = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+                tf.Tick += (s, e) => { tf.Stop(); filter = page.Substring(7); if (st != null) { RenderNav(); RenderList(); } };
+                tf.Start();
+                return;
+            }
             if (page.StartsWith("page:"))
             {
                 // "page:settings" (pictures only): that page shown 3 s after the start;
@@ -4004,6 +4012,8 @@ namespace QuickDeploy
                 ProfileBtn.Content = head;
             }
             ShowView();
+            // the conflicts are a view of their own: who competes with whom (ConflictView)
+            if (filter == "conflict") { RenderConflicts(); return; }
             ListHint.Text = Texts.Get(groupView ? "g_hint" : Texts.TopWins ? "list_hint_top" : "list_hint");
             if (groupView) { RenderGroups(); return; }
             // a row is built again only when what it shows changed; the others stay put
