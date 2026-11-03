@@ -83,7 +83,6 @@ namespace QuickDeploy
             }
             foreach (var f in c.From) { Add(f.Mod); Add(f.Option); Add(f.Sub); }
             Add(c.Now);
-            Add(showPotential);
             Add(NowOf(ids, st.Mods.FirstOrDefault(x => x.Name == c.Winner)?.Id));
             Add(st.Mods.FirstOrDefault(x => x.Name == c.Deployed)?.Id);
             return sb.ToString();
@@ -116,8 +115,7 @@ namespace QuickDeploy
             var (title, named) = CardTitle(c);
             card.Children.Add(new TextBlock { Text = title, FontSize = 14, FontWeight = FontWeights.SemiBold, Foreground = B(clashing ? "Yellow" : "Muted"), TextWrapping = TextWrapping.Wrap });
             var types = c.Groups.GroupBy(g => TypeLabel(g.Type)).Select(g => (Type: g.Key, Count: g.Sum(x => x.Count))).ToList();
-            // how many mods: the ones listed (the tick off leaves out those not enabled)
-            var why = Texts.F("cf_why", showPotential ? c.Mods.Count : ids.Count(id => ById(id)?.Enabled == true), c.Count, types.Count == 1 ? types[0].Type : string.Join("  ·  ", types.Select(t => t.Type + " ×" + t.Count)));
+            var why = Texts.F("cf_why", c.Mods.Count, c.Count, types.Count == 1 ? types[0].Type : string.Join("  ·  ", types.Select(t => t.Type + " ×" + t.Count)));
             if (!clashing) why += "  ·  " + Texts.Get(state == "options" ? "cf_quiet_options" : state == "one_on" ? "cf_quiet_1" : "cf_quiet_0");
             card.Children.Add(new TextBlock { Text = why, FontSize = 12, Foreground = B("Muted"), Margin = new Thickness(0, 3, 0, 10), TextWrapping = TextWrapping.Wrap });
             // the option that brings it, under the mod's name: a click offers the others, each
@@ -165,9 +163,9 @@ namespace QuickDeploy
             var winner = clashing ? st.Mods.FirstOrDefault(x => x.Name == c.Winner)?.Id : null;
             var inGame = clashing ? st.Mods.FirstOrDefault(x => x.Name == c.Deployed)?.Id : null;     // whose copy the game has now
             // no bracket: each set is a card of its own (the user, 2026-11-03)
-            // the tick off: the mods not enabled are left out too, as it says (the user, 2026-11-04)
-            var rows = showPotential ? ids : ids.Where(id => ById(id)?.Enabled == true).ToList();
-            card.Children.Add(WinnerRows(rows, winner, "pick_now", inGame, true, FromLine, clashing));
+            // every mod of the set, on or off, whatever the tick: it hides sets, never a set's rows
+            // (the user, 2026-11-04)
+            card.Children.Add(WinnerRows(ids, winner, "pick_now", inGame, true, FromLine, clashing));
             // under the mods, only the named resources the heading does not say already ("贴图 ·
             // <its name>"); the item's own ones repeated it (the user, 2026-11-03). An id alone tells
             // a player nothing and is left to the mod's details
