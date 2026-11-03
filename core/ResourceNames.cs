@@ -41,14 +41,22 @@ namespace Hd2Mod
 
         static Dictionary<ulong, string> names;
         static string namesFrom;
+        static DateTime namesChecked;
 
-        /// <summary>HD2SDK's friendlynames.txt: in HD2SDK_HASHLISTS when that is set, else in the
-        /// newest Blender's add-on folder. Null when HD2SDK is not installed.</summary>
+        /// <summary>The list the Resource names plugin downloads from HD2SDK's own repository
+        /// into the settings folder (the user, 2026-11-03: the player fetches it, nothing of it
+        /// ships with this program).</summary>
+        public static string Downloaded => Store.PathOf(Path.Combine("resource_names", "friendlynames.txt"));
+
+        /// <summary>HD2SDK's friendlynames.txt: in HD2SDK_HASHLISTS when that is set, else the one
+        /// the Resource names plugin downloaded, else in the newest Blender's add-on folder. Null
+        /// when there is none.</summary>
         public static string ListFile()
         {
             if (ListOverride != null) return File.Exists(ListOverride) ? ListOverride : null;
             var env = Environment.GetEnvironmentVariable("HD2SDK_HASHLISTS");
             if (!string.IsNullOrEmpty(env) && File.Exists(Path.Combine(env, "friendlynames.txt"))) return Path.Combine(env, "friendlynames.txt");
+            if (File.Exists(Downloaded)) return Downloaded;
             try
             {
                 var blender = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Blender Foundation", "Blender");
@@ -68,13 +76,18 @@ namespace Hd2Mod
         /// <summary>The resource's name in HD2SDK's list ("Laser Sight W/ Flashlight", or a path), else null.</summary>
         public static string Name(ulong id) => Load().TryGetValue(id, out var n) ? n : null;
 
-        /// <summary>The list, read once per file (lines "decimal-id name").</summary>
+        /// <summary>The list, read once per file (lines "decimal-id name"); looked for again at
+        /// most every two seconds, and read again when another file is found or it changed (a
+        /// list just downloaded is used at the next state read).</summary>
         static Dictionary<ulong, string> Load()
         {
-            // the folders are searched once per process; a test's own list replaces them
-            var key = ListOverride ?? "";
-            if (names != null && namesFrom == key) return names;
+            if (names != null && ListOverride == null && DateTime.UtcNow - namesChecked < TimeSpan.FromSeconds(2)) return names;
             var file = ListFile();
+            namesChecked = ListOverride != null ? DateTime.MinValue : DateTime.UtcNow;     // a test's list is never kept past it
+            string key;
+            try { key = file == null ? "" : file + ":" + File.GetLastWriteTimeUtc(file).Ticks; }
+            catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { key = ""; }
+            if (names != null && namesFrom == key) return names;
             var d = new Dictionary<ulong, string>();
             if (file != null)
                 try

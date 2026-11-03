@@ -134,6 +134,26 @@ namespace Hd2Mod.Tests
             Assert.False(Same());
         }
 
+        /// <summary>The name list the Resource names plugin downloads into the settings folder is
+        /// read before HD2SDK's in Blender, and a new download is used at the next read (the user,
+        /// 2026-11-03: the player fetches it from HD2SDK's repository). Must live: its name. Must
+        /// die: after a download without that resource, no name.</summary>
+        [Fact]
+        public void The_downloaded_name_list_is_read_and_followed()
+        {
+            var list = ResourceNames.Downloaded;
+            Directory.CreateDirectory(Path.GetDirectoryName(list));
+            File.WriteAllText(list, "101 Helmet One\n102 Cape Two\n");
+            Assert.Equal(list, ResourceNames.ListFile());
+            System.Threading.Thread.Sleep(2100);                               // past the two seconds a list is kept
+            Assert.Equal("Helmet One", ResourceNames.Name(101));
+            File.WriteAllText(list, "102 Cape Two\n");
+            File.SetLastWriteTimeUtc(list, System.DateTime.UtcNow.AddSeconds(5));
+            System.Threading.Thread.Sleep(2100);
+            Assert.Null(ResourceNames.Name(101));
+            Assert.Equal("Cape Two", ResourceNames.Name(102));
+        }
+
         /// <summary>A conflict often comes from an option, and another option avoids it (the user,
         /// 2026-11-03). Must live: the sub-option chosen is named as where the conflict comes from,
         /// and says whom it conflicts with. Must die: the other sub-option, which replaces something
