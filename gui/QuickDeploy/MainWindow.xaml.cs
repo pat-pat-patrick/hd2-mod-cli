@@ -2410,7 +2410,16 @@ namespace QuickDeploy
                 row.Child = dp;
                 btn.Template = Plain();
                 btn.Content = row;
-                btn.Click += (s, e) => { filter = key; RenderNav(); FollowList(); RenderList(); };
+                btn.Click += (s, e) =>
+                {
+                    bool order = OrderShown;
+                    filter = key;
+                    RenderNav();
+                    FollowList();
+                    RenderList();
+                    // into or out of the conflicts: the same mod's details change (OrderShown)
+                    if (OrderShown != order) RenderDetail();
+                };
                 Nav.Children.Add(btn);
             }
 
@@ -4848,9 +4857,10 @@ namespace QuickDeploy
             }
             if (!string.IsNullOrEmpty(m.Source) && m.Source != m.Path) Fact("d_source", m.Source, true, true);
             Detail.Children.Add(facts);
-            // in the groups the options are chosen in the preview (Space), not here: a long list of
-            // them kept the details scrolling (the user, 2026-10-27)
-            if (groupView && m.Options.Count > 0)
+            // where the list cannot open a mod's options in place (the groups, the conflicts) they are
+            // chosen in the preview (Space), not here: a long list of them kept the details scrolling
+            // (the user, 2026-10-27)
+            if (!OrderShown && m.Options.Count > 0)
             {
                 var choose = new Button { Content = Texts.Get("pv_open"), Style = (Style)FindResource("Ghost"), MinHeight = 36, Margin = new Thickness(0, 12, 0, 0), HorizontalAlignment = HorizontalAlignment.Stretch };
                 choose.Click += (s, e) => { if (preview == null) OpenPreview(); else preview.Activate(); };
@@ -5174,7 +5184,7 @@ namespace QuickDeploy
                 ProfileItems(menu, many);
                 // the order's ends only where the order is shown: in the groups which one wins is
                 // chosen in a conflict's card
-                if (!groupView)
+                if (OrderShown)
                 {
                     var up = new MenuItem { Header = Texts.F("many_top", many.Count) };
                     up.Click += (s, e) => Run(To(Texts.TopWins ? "--bottom" : "--top"));
@@ -5219,7 +5229,7 @@ namespace QuickDeploy
             menu.Items.Add(ModGroupMenu(new List<ModRow> { m }));
             // the top and bottom of the screen, as the list is shown
             bool topWins = Texts.TopWins;
-            if (!groupView)
+            if (OrderShown)
             {
                 Item(topWins ? "top_wins_top" : "top", () => Run("move", m.Id, topWins ? "--bottom" : "--top"));
                 Item(topWins ? "top_wins_bottom" : "bottom", () => Run("move", m.Id, topWins ? "--top" : "--bottom"));

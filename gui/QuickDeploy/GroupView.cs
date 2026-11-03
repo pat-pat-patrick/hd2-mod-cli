@@ -83,6 +83,12 @@ namespace QuickDeploy
             RenderDetail();
         }
 
+        /// <summary>Whether the load order is on screen: its view chosen, and not the conflicts, which
+        /// have no order. What depends on it (opening options in place, moving to the top or bottom)
+        /// follows the view shown, not the choice the library's other views keep (the user,
+        /// 2026-11-04: the conflicts' details had the options button or not by that choice).</summary>
+        bool OrderShown => !groupView && filter != "conflict";
+
         /// <summary>The switch and which of the two is on show.</summary>
         void ShowView()
         {

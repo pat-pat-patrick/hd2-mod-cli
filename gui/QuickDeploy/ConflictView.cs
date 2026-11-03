@@ -299,6 +299,37 @@ namespace QuickDeploy
                 m.Start();
                 return;
             }
+            // optionsbutton: for each view (groups, order) and list (all, conflicts), with a mod that
+            // has options chosen, whether the details offer the options button and the mod's menu
+            // the order's ends; to HD2QD_WHEEL_OUT
+            if (Environment.GetEnvironmentVariable("HD2QD_CLICK_TEST") == "optionsbutton")
+            {
+                var m = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(4) };
+                m.Tick += (s, e) =>
+                {
+                    m.Stop();
+                    var said = new System.Text.StringBuilder();
+                    var mod = st.Mods.First(x => x.Options.Count > 0 && x.InConflict);
+                    foreach (var view in new[] { true, false })
+                        foreach (var list in new[] { "all", "conflict" })
+                        {
+                            groupView = view;
+                            filter = list;
+                            selectedId = mod.Id;
+                            RenderNav();
+                            RenderList();
+                            RenderDetail();
+                            bool button = Detail.Children.OfType<Button>().Any(b => (b.Content as string) == Texts.Get("pv_open"));
+                            var menu = Menu(mod);
+                            bool ends = menu.Items.OfType<MenuItem>().Any(i => (i.Header as string) == Texts.Get(Texts.TopWins ? "top_wins_top" : "top"));
+                            said.AppendLine((view ? "groups" : "order") + " / " + list + ": options button " + button + ", top/bottom " + ends);
+                        }
+                    var path = Environment.GetEnvironmentVariable("HD2QD_WHEEL_OUT");
+                    if (path != null) System.IO.File.WriteAllText(path, said.ToString());
+                };
+                m.Start();
+                return;
+            }
             if (Environment.GetEnvironmentVariable("HD2QD_CLICK_TEST") != "conflictpick") return;
             var out_ = new System.Text.StringBuilder();
             IEnumerable<T> Find<T>(DependencyObject d, Func<T, bool> so) where T : DependencyObject
