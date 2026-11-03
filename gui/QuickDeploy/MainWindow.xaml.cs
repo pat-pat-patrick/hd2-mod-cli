@@ -7035,19 +7035,7 @@ namespace QuickDeploy
                 pic.Opacity = off ? 0.55 : 1;
                 DockPanel.SetDock(pic, Dock.Left);
                 line.Children.Add(pic);
-                Button use = null;
-                if (!wins && !off)
-                {
-                    // the choice: on the line pointed at, or the one chosen
-                    use = new Button
-                    {
-                        Content = Texts.Get(tagKey == "pick_runs_now" ? "pick_run_this" : "pick_use_this"), Style = (Style)FindResource("Ghost"), MinHeight = 26, Padding = new Thickness(10, 0, 10, 0),
-                        VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0), Tag = "pick",
-                        Visibility = x.Id == selectedId ? Visibility.Visible : Visibility.Hidden,
-                    };
-                    DockPanel.SetDock(use, Dock.Right);
-                    line.Children.Add(use);
-                }
+                // the tag at the right edge, the choice left of it: pointing at a line moves nothing
                 if (solid || next)
                 {
                     var tag = new Border
@@ -7058,6 +7046,19 @@ namespace QuickDeploy
                     };
                     DockPanel.SetDock(tag, Dock.Right);
                     line.Children.Add(tag);
+                }
+                Button use = null;
+                if (!wins && !off)
+                {
+                    // the choice: on the line pointed at, or the one chosen
+                    use = new Button
+                    {
+                        Content = Texts.Get(tagKey == "pick_runs_now" ? "pick_run_this" : "pick_use_this"), Style = (Style)FindResource("Ghost"), MinHeight = 26, Padding = new Thickness(10, 0, 10, 0),
+                        VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0), Tag = "pick",
+                        Visibility = x.Id == selectedId ? Visibility.Visible : Visibility.Collapsed,
+                    };
+                    DockPanel.SetDock(use, Dock.Right);
+                    line.Children.Add(use);
                 }
                 var named = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 0, 0, 0) };
                 named.Children.Add(new TextBlock { Text = x.Name, FontWeight = FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis, ToolTip = x.Name, Opacity = off ? 0.55 : 1 });
@@ -7078,7 +7079,7 @@ namespace QuickDeploy
                 var id = x.Id;
                 var rest = row.BorderBrush;
                 row.MouseEnter += (s, e) => { if (!solid && !next) row.BorderBrush = B("Muted"); if (use != null) use.Visibility = Visibility.Visible; };
-                row.MouseLeave += (s, e) => { row.BorderBrush = rest; if (use != null && id != selectedId) use.Visibility = Visibility.Hidden; };
+                row.MouseLeave += (s, e) => { row.BorderBrush = rest; if (use != null && id != selectedId) use.Visibility = Visibility.Collapsed; };
                 // a click on the line: that mod in the details
                 row.MouseLeftButtonUp += (s, e) =>
                 {
