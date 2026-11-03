@@ -422,11 +422,14 @@ namespace Hd2Mod
         {
             var man = Read(mod.Path);
             if (man != null && man.Options.Count > 0) return man;
-            if (mod.Layout.Count == 0) return man;
+            // no layout from another manager either: its folders as options, when its patch
+            // files are in several (FolderLayout)
+            var layout = mod.Layout.Count > 0 ? mod.Layout : FolderLayout.Of(mod.Path);
+            if (layout.Count == 0) return man;
             return new Manifest
             {
                 Name = man?.Name ?? mod.Name, Description = man?.Description ?? "", IconPath = man?.IconPath,
-                Guid = man?.Guid, Options = mod.Layout,
+                Guid = man?.Guid, Options = layout,
             };
         }
 

@@ -88,7 +88,7 @@ namespace Hd2Mod
         }
 
         /// <summary>os.walk with its folders sorted: a folder, then each subfolder in name order.</summary>
-        static void Walk(string folder, List<string> found)
+        internal static void Walk(string folder, List<string> found)
         {
             if (Files(folder).Any(f => Patch.IsMatch(f))) found.Add(folder);
             var dirs = Directory.EnumerateDirectories(folder).Select(System.IO.Path.GetFileName).ToList();
