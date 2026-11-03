@@ -328,11 +328,14 @@ namespace Hd2Mod
                     }
                 }
                 // which resources they are (the user, 2026-10-25): the first ones of each pair,
-                // with the type and, when HD2SDK's list is installed, the name
+                // with the type and, when HD2SDK's list is installed, the name; and whose copy the
+                // game has now ("deployed"), which a choice changes only at the next deploy
+                var deployedFiles = Json.Obj(Store.Load("deployed.json"), "files");
                 foreach (var p in pairs.OrderByDescending(p => p.Count))      // stable, as Python's sorted
                     clashes.Add(new Dictionary<string, object>
                     {
                         ["mods"] = p.Mods.Cast<object>().ToList(), ["count"] = p.Count, ["winner"] = p.Mods[p.Mods.Count - 1],
+                        ["deployed"] = Deploy.DeployedWinner(p.Some[0], deployedFiles),
                         ["same"] = p.Same,
                         ["resources"] = p.Some.Select(c => (object)new Dictionary<string, object>
                         {

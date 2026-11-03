@@ -797,6 +797,28 @@ namespace Hd2Mod
             public ulong Type, Id;
             public List<string> Mods = new List<string>();
             public bool Same;
+            /// <summary>The library files that ship it (for which of them the game has now: DeployedWinner).</summary>
+            public List<string> Sources = new List<string>();
+        }
+
+        /// <summary>The mod whose copy of a shared resource the game folder holds now: of the
+        /// files the last deploy put there from the clash's sources, the one that loads last (the
+        /// highest patch number); null when none of them is deployed. It differs from the load
+        /// order's winner (the last mod) between a choice and the deploy that applies it.</summary>
+        public static string DeployedWinner(Clash c, Dictionary<string, object> deployedFiles)
+        {
+            if (deployedFiles == null || c.Sources.Count == 0) return null;
+            var sources = new HashSet<string>(c.Sources, StringComparer.OrdinalIgnoreCase);
+            string best = null;
+            int bestN = -1;
+            foreach (var kv in deployedFiles)
+            {
+                if (!(kv.Value is Dictionary<string, object> r) || !sources.Contains(Json.Str(r, "src") ?? "")) continue;
+                var at = kv.Key.LastIndexOf(".patch_", StringComparison.Ordinal);
+                if (at < 0 || !int.TryParse(kv.Key.Substring(at + 7), out var n)) continue;
+                if (n > bestN) { bestN = n; best = Json.Str(r, "mod"); }
+            }
+            return best;
         }
 
         /// <summary>Resources that more than one mod ships, in the order they were first seen.
@@ -824,7 +846,7 @@ namespace Hd2Mod
             }
             var shared = order.Where(k => seen[k].Count > 1).ToList();
             var same = Identical(shared, from);
-            return shared.Select(k => new Clash { Type = k.Item1, Id = k.Item2, Mods = seen[k], Same = same.Contains(k) }).ToList();
+            return shared.Select(k => new Clash { Type = k.Item1, Id = k.Item2, Mods = seen[k], Same = same.Contains(k), Sources = from[k] }).ToList();
         }
 
         /// <summary>Of the resources two mods have in common, the ones whose bytes are the same

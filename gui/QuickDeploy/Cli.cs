@@ -186,6 +186,8 @@ namespace QuickDeploy
         public List<string> Mods = new List<string>();
         public int Count;
         public string Winner;
+        /// <summary>Whose copy the game has now (the last deploy); null when none is deployed.</summary>
+        public string Deployed;
         /// <summary>Every mod ships the very same bytes: shared, not fought over.</summary>
         public bool Same, ManagedBoot;
         /// <summary>The first of its resources: type, id, and name when HD2SDK's list knows it.</summary>
@@ -364,7 +366,7 @@ namespace QuickDeploy
             foreach (var c in List(d, "conflicts").OfType<Dictionary<string, object>>())
                 s.Clashes.Add(new Clash
                 {
-                    Mods = List(c, "mods").OfType<string>().ToList(), Count = Int(c, "count"), Winner = Str(c, "winner"), Same = Bool(c, "same"), ManagedBoot = Bool(c, "managed_boot"),
+                    Mods = List(c, "mods").OfType<string>().ToList(), Count = Int(c, "count"), Winner = Str(c, "winner"), Deployed = Str(c, "deployed"), Same = Bool(c, "same"), ManagedBoot = Bool(c, "managed_boot"),
                     Resources = List(c, "resources").OfType<Dictionary<string, object>>().Select(r => (Str(r, "type"), Str(r, "id"), Str(r, "name"))).ToList(),
                 });
             s.ResourceNames = Bool(d, "resource_names");

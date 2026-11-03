@@ -92,4 +92,28 @@ namespace Hd2Mod.Tests
             Assert.Empty(Altered());
         }
     }
+
+    /// <summary>Whose copy of a shared resource the game has now, against the load order's winner:
+    /// they part when another mod is chosen, and meet again at the deploy (the user, 2026-11-03:
+    /// the conflicts view must show a choice not yet deployed).</summary>
+    public class DeployedWinners : Fixture
+    {
+        Dictionary<string, object> Set() =>
+            Json.List(StateDoc.Build(Library.Load(), Game), "conflicts").OfType<Dictionary<string, object>>().Single(c => !Json.Bool(c, "same"));
+
+        [Fact]
+        public void The_game_keeps_its_winner_until_the_deploy()
+        {
+            Cli("add", Mod("One", new Dictionary<string, byte[]> { [A + ".patch_0"] = Archive(Bytes("one's own"), (1, 100), (1, 101)) }));
+            Cli("add", Mod("Two", new Dictionary<string, byte[]> { [A + ".patch_0"] = Archive(Bytes("two's own"), (1, 101), (2, 7)) }));
+            Assert.Null(Json.Str(Set(), "deployed"));                          // nothing deployed yet
+            Cli("deploy");
+            Assert.Equal(("Two", "Two"), (Json.Str(Set(), "winner"), Json.Str(Set(), "deployed")));
+            var ids = Library.Load().Mods.ToDictionary(m => m.Name, m => m.Id);
+            Cli("move", ids["One"], "--after", ids["Two"]);                    // One chosen: not deployed yet
+            Assert.Equal(("One", "Two"), (Json.Str(Set(), "winner"), Json.Str(Set(), "deployed")));
+            Cli("deploy");
+            Assert.Equal(("One", "One"), (Json.Str(Set(), "winner"), Json.Str(Set(), "deployed")));
+        }
+    }
 }

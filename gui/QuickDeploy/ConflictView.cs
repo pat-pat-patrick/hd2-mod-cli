@@ -42,6 +42,7 @@ namespace QuickDeploy
             });
             var ids = c.Mods.Select(n => st.Mods.FirstOrDefault(x => x.Name == n)?.Id).Where(id => id != null).ToList();
             var winner = st.Mods.FirstOrDefault(x => x.Name == c.Winner)?.Id;
+            var inGame = st.Mods.FirstOrDefault(x => x.Name == c.Deployed)?.Id;     // whose copy the game has now
             // the bracket runs from the middle of the first name's row to the middle of the last's:
             // a row is 42 high (a 28 picture, 6 above and below, its border) and 6 apart
             var joined = new Grid();
@@ -53,7 +54,7 @@ namespace QuickDeploy
                 Margin = new Thickness(0, 21, 0, 27),
             };
             joined.Children.Add(bracket);
-            var names = WinnerRows(ids, winner, "pick_now");
+            var names = WinnerRows(ids, winner, "pick_now", inGame);
             Grid.SetColumn((UIElement)names, 1);
             joined.Children.Add(names);
             card.Children.Add(joined);

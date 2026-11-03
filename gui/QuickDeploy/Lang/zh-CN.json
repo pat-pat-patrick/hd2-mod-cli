@@ -577,6 +577,7 @@
   "pick_wins_label": "选择要生效的 mod：",
   "pick_runs_label": "选择要运行的 mod：",
   "pick_now": "当前生效",
+  "pick_after_deploy": "部署后生效",
   "pick_runs_now": "当前运行",
   "pv_close": "按空格键或 Esc 关闭",
   "pv_on": "已启用",
