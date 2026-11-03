@@ -287,6 +287,21 @@ namespace Hd2Mod.Tests
             Cli("list");                                                          // still the manager's
         }
 
+        /// <summary>A window plugin with an Icon has a button in the title bar, shown unless the
+        /// player takes it away (the user, 2026-11-03: the mod console needs one).</summary>
+        [Fact]
+        public void A_plugin_with_an_icon_is_pinned_until_taken_away()
+        {
+            AddSample();
+            var t = PluginFiles.All().Single().Type;
+            Assert.Equal("", PluginFiles.Icon(t));
+            Assert.True(PluginFiles.Pinned("HD2QD.Sample.dll"));
+            PluginFiles.Pin("HD2QD.Sample.dll", false);
+            Assert.False(PluginFiles.Pinned("hd2qd.sample.dll"));
+            PluginFiles.Pin("HD2QD.Sample.dll", true);
+            Assert.True(PluginFiles.Pinned("HD2QD.Sample.dll"));
+        }
+
         [Fact]
         public void A_plugins_start_runs_with_the_host()
         {

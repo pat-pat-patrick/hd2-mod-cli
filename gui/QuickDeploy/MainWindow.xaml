@@ -42,6 +42,9 @@
                  Edge's extensions do: Puzzle (EA86) and Setting (E713), from Segoe Fluent Icons
                  (Windows 11) or Segoe MDL2 Assets (Windows 10), both in every Windows, at 20,
                  one of the font's sizes for a crisp glyph -->
+            <!-- the window plugins with an icon, each a button of its own (PinnedPlugins; the
+                 user, 2026-11-03: the mod console needs a button on the main window) -->
+            <StackPanel x:Name="PinnedBox" Orientation="Horizontal" VerticalAlignment="Center"/>
             <!-- the plugins page (the user, 2026-11-02: the license plugin out of the
                  settings): only when a plugin sits beside the program -->
             <Button x:Name="PluginsBtn" Width="38" Height="38" VerticalAlignment="Center" Margin="0,0,12,0" Cursor="Hand"
@@ -51,7 +54,7 @@
                          Foreground="{StaticResource Ink}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
             </Button>
             <!-- the settings page: the language, the explaining lines, where this comes from -->
-            <Button x:Name="SettingsBtn" Width="38" Height="38" VerticalAlignment="Center" Margin="0,0,28,0" Cursor="Hand"
+            <Button x:Name="SettingsBtn" Width="38" Height="38" VerticalAlignment="Center" Margin="0" Cursor="Hand"
                     Style="{StaticResource Ghost}" Padding="0" Click="Settings_Click"
                     WindowChrome.IsHitTestVisibleInChrome="True">
               <!-- the glyph's own 20 x 20 box, so the dot sits at its corner whatever the font's line height -->
@@ -65,12 +68,8 @@
                        HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-4,-4,0"/>
               </Grid>
             </Button>
-            <!-- what is deployed as hard links now. What they have saved over all deploys adds
-                 up to a number too big for a caption, so it lives on the storage page -->
-            <StackPanel HorizontalAlignment="Right">
-              <TextBlock x:Name="StatLinksLabel" FontSize="12" Foreground="{StaticResource Muted}" HorizontalAlignment="Right"/>
-              <TextBlock x:Name="StatLinks" FontFamily="{StaticResource Mono}" FontSize="16" FontWeight="Bold" Foreground="{StaticResource Blue}" HorizontalAlignment="Right"/>
-            </StackPanel>
+            <!-- what is deployed as hard links is on the storage page only (the user, 2026-11-03:
+                 the caption had no room for the plugins' buttons, and the numbers did little there) -->
           </StackPanel>
           </DockPanel>
           <!-- the pages, in the middle of the window (the user, 2026-10-24). They are used

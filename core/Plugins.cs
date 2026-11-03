@@ -151,6 +151,26 @@ namespace Hd2Mod
         public static string Summary(Type t, string lang) => t?.GetMethod("Summary")?.Invoke(null, new object[] { lang }) as string;
         public static string Version(Type t) => t?.Assembly.GetName().Version?.ToString(3);
 
+        /// <summary>A window plugin's Icon (optional, Api 2): one character of Segoe Fluent Icons /
+        /// Segoe MDL2 Assets. A plugin with one gets a button in the window's title bar, which the
+        /// player can take away (Pinned).</summary>
+        public static string Icon(Type t) =>
+            Kind(t) == "window" && t?.GetField("Icon")?.GetValue(null) is string s && s.Length > 0 ? s : null;
+
+        /// <summary>Whether a plugin with an Icon shows its button in the title bar: yes unless the
+        /// player took it away (gui.json "unpinned_plugins").</summary>
+        public static bool Pinned(string file) =>
+            !Json.List(Store.Load("gui.json"), "unpinned_plugins").OfType<string>().Contains(file, StringComparer.OrdinalIgnoreCase);
+
+        public static void Pin(string file, bool on)
+        {
+            var d = Store.Load("gui.json");
+            var off = Json.List(d, "unpinned_plugins").OfType<string>().Where(f => !string.Equals(f, file, StringComparison.OrdinalIgnoreCase)).ToList();
+            if (!on) off.Add(file);
+            d["unpinned_plugins"] = off.Cast<object>().ToList();
+            Store.Save("gui.json", d);
+        }
+
         /// <summary>A plugin's static method, by name, with what it threw (not the reflection's wrapper).</summary>
         public static object Call(Type t, string method, params object[] args)
         {

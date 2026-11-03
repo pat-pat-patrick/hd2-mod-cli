@@ -155,7 +155,6 @@ namespace QuickDeploy
         void Words()
         {
             TitleText.Text = Texts.Get("title");
-            StatLinksLabel.Text = Texts.Get("stat_links");
             AddBtn.Content = Texts.Get("add");
             UpdatesBtn.Content = Texts.Get(checking ? "up_checking_btn" : "up_check");
             RefreshBtn.Content = Texts.Get("refresh");
@@ -197,6 +196,7 @@ namespace QuickDeploy
             if (StoragePage.Visibility == Visibility.Visible) RenderStorage();
             if (SettingsPage.Visibility == Visibility.Visible) RenderSettings();
             if (PluginsPage.Visibility == Visibility.Visible) RenderPlugins();
+            PinnedPlugins();                    // their names, in this language
             Refresh();                          // what the plugins say of each mod, in this language
             RefreshListSoon(true);              // the official list's translations for it
         }
@@ -2299,7 +2299,6 @@ namespace QuickDeploy
             // only the missing game folder is said under the title: the counts were noise there (the user, 2026-10-25)
             SummaryText.Text = st.GameDir == null ? Texts.Get("no_game") : "";
             SummaryText.Visibility = st.GameDir == null ? Visibility.Visible : Visibility.Collapsed;
-            StatLinks.Text = Texts.F("stat_links_v", Texts.N(st.LinkedFiles), Texts.Size(st.LinkedBytes));
             DeployBtn.Content = st.Pending > 0 ? Texts.F("deploy_n", st.Pending) : Texts.Get("deploy");
             DeployBtn.IsEnabled = st.Deploying == null && !fromSaved;   // two at once would undo each other; a saved list is not the library yet
             // what was just done comes first (a download leaves changes to deploy: the Deploy

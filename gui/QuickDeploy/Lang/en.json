@@ -914,6 +914,7 @@
   "cancel": "Cancel",
   "plugins": "Plugins",
   "plugin_open": "Open",
+  "plugin_pin": "Show in the title bar",
   "plugin_broken": "This plugin cannot be loaded: the file is damaged.",
   "plugin_api": "This plugin is for another version of this program.",
   "plugin_no_game": "Choose the game folder first.",

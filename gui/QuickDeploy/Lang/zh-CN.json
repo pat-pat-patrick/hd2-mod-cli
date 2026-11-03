@@ -890,6 +890,7 @@
   "cancel": "取消",
   "plugins": "插件",
   "plugin_open": "打开",
+  "plugin_pin": "显示在标题栏",
   "plugin_broken": "无法加载此插件：文件已损坏。",
   "plugin_api": "此插件适用于本程序的其他版本。",
   "plugin_no_game": "请先选择游戏文件夹。",

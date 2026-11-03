@@ -11,6 +11,7 @@ namespace Hd2Qd.Sample
     {
         public const int Api = 2;
         public const string Kind = "window";
+        public const string Icon = "\uE9E9";
 
         /// <summary>Its words, one table per language tag; anything else is English.</summary>
         static readonly Dictionary<string, Dictionary<string, string>> Words = new Dictionary<string, Dictionary<string, string>>

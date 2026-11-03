@@ -87,7 +87,28 @@ namespace QuickDeploy
                 {
                     var summary = PluginFiles.Summary(type, Texts.Lang);
                     if (summary != null) card.Children.Add(Small(summary, new Thickness(0, 6, 0, 0)));
-                    if (PluginFiles.Kind(type) == "window") card.Children.Add(OpenButton(type));
+                    if (PluginFiles.Kind(type) == "window")
+                    {
+                        var row = new StackPanel { Orientation = Orientation.Horizontal };
+                        row.Children.Add(OpenButton(type));
+                        // a plugin with an icon has a button in the title bar, which can be taken away
+                        if (PluginFiles.Icon(type) != null)
+                        {
+                            var pin = new CheckBox
+                            {
+                                Style = (Style)FindResource("Switch"), IsChecked = PluginFiles.Pinned(file),
+                                VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(24, 12, 0, 0),
+                            };
+                            var f = file;
+                            pin.Click += (s, e) => { PluginFiles.Pin(f, pin.IsChecked == true); PinnedPlugins(); };
+                            row.Children.Add(pin);
+                            row.Children.Add(new TextBlock
+                            {
+                                Text = Texts.Get("plugin_pin"), Foreground = B("Ink"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 12, 0, 0),
+                            });
+                        }
+                        card.Children.Add(row);
+                    }
                 }
                 if (!first) PluginsBox.Children.Add(new Border { Height = 16 });
                 PluginsBox.Children.Add(Card(card));
@@ -186,6 +207,40 @@ namespace QuickDeploy
             }
         }
 
+        /// <summary>The title bar's plugin buttons, left of the plugins page's: each added window
+        /// plugin with an Icon that the player has not taken away, its title as the tip.</summary>
+        void PinnedPlugins()
+        {
+            PinnedBox.Children.Clear();
+            var game = Store.GameDir(null, false);
+            foreach (var (file, type, _) in PluginFiles.All())
+            {
+                var icon = type == null ? null : PluginFiles.Icon(type);
+                if (icon == null || !PluginFiles.Pinned(file)) continue;
+                var title = PluginFiles.Title(type, Texts.Lang) ?? file;
+                var b = new Button
+                {
+                    Width = 38, Height = 38, Margin = new Thickness(0, 0, 12, 0), Padding = new Thickness(0), Cursor = System.Windows.Input.Cursors.Hand,
+                    Style = (Style)FindResource("Ghost"), VerticalAlignment = VerticalAlignment.Center,
+                    ToolTip = game == null ? title + "\n" + Texts.Get("plugin_no_game") : title, IsEnabled = game != null,
+                    Content = new TextBlock
+                    {
+                        Text = icon, FontFamily = new System.Windows.Media.FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"), FontSize = 20,
+                        Foreground = B("Ink"), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
+                    },
+                };
+                ToolTipService.SetShowOnDisabled(b, true);
+                System.Windows.Shell.WindowChrome.SetIsHitTestVisibleInChrome(b, true);
+                var t = type;
+                b.Click += (s, e) =>
+                {
+                    try { PluginFiles.Call(t, "Open", this, PluginHostHere()); }
+                    catch (Exception x) when (!(x is OutOfMemoryException)) { Dialog.Tell(this, Texts.F("failed", x.Message)); }
+                };
+                PinnedBox.Children.Add(b);
+            }
+        }
+
         /// <summary>A window plugin's Open, with the host; the game's data folder is needed.</summary>
         UIElement OpenButton(Type type)
         {
@@ -231,6 +286,7 @@ namespace QuickDeploy
         /// renewed, a cache read); the state read again when one changed something.</summary>
         async void PluginsAtStart()
         {
+            PinnedPlugins();
             RefreshListSoon(true);
             var host = PluginHostHere();
             bool changed;
@@ -279,8 +335,9 @@ namespace QuickDeploy
                 { Dialog.Tell(this, Texts.F("failed", e.Message)); }
             }
             if (added.Count == 0) return;
-            Foot(Texts.F("plugin_added", string.Join("、", added)), "Blue");
+            Foot(Texts.F("plugin_added", string.Join(Texts.Sep, added)), "Blue");
             RenderPlugins();
+            PinnedPlugins();
             Refresh();                      // the license plugin changes what the mod rows say
         }
 
@@ -292,6 +349,7 @@ namespace QuickDeploy
             { Dialog.Tell(this, Texts.F("failed", e.Message)); return; }
             Foot(Texts.F("plugin_removed", title), "Blue");
             RenderPlugins();
+            PinnedPlugins();
             Refresh();
         }
 
