@@ -115,7 +115,36 @@ namespace Hd2Mod
             return Planned(order, new Dictionary<string, string>());
         }
 
-        static List<Wanted> Planned(List<Mod> mods, Dictionary<string, string> errors)
+        /// <summary>Every mod's files under every option and sub-option, chosen or not, on or off:
+        /// the conflicts view lists what conflicts now and what could, so a mod whose option was
+        /// changed to one that does not conflict stays in it (the user, 2026-11-03: it vanished,
+        /// which was strange; the view is for every conflict and every possible one).</summary>
+        public static List<Wanted> PlanEvery(Library lib)
+        {
+            var chosen = Loaders.Chosen(lib);
+            var order = lib.Mods.Where(m => Loaders.KindOf(m) == null).ToList();
+            order.AddRange(Loaders.HelpersFor(lib, chosen));
+            if (chosen != null) order.Add(chosen);
+            return Planned(order, new Dictionary<string, string>(), EveryFolder);
+        }
+
+        /// <summary>Every folder a mod could deploy: the root without options; else every option's
+        /// folders and every sub-option's.</summary>
+        public static List<string> EveryFolder(Mod mod)
+        {
+            var options = Manifest.Of(mod)?.Options ?? new List<ManifestOption>();
+            if (options.Count == 0) return IncludedFolders(mod);
+            var out_ = new List<string>();
+            foreach (var o in options)
+            {
+                foreach (var inc in o.Include) out_.Add(Paths.Norm(Paths.Join(mod.Path, inc)));
+                foreach (var s in o.SubOptions)
+                    foreach (var inc in s.Include) out_.Add(Paths.Norm(Paths.Join(mod.Path, inc)));
+            }
+            return out_.Distinct(StringComparer.OrdinalIgnoreCase).Where(Directory.Exists).ToList();
+        }
+
+        static List<Wanted> Planned(List<Mod> mods, Dictionary<string, string> errors, Func<Mod, List<string>> foldersOf = null)
         {
             var counters = new Dictionary<string, int>();
             var out_ = new List<Wanted>();
@@ -128,7 +157,7 @@ namespace Hd2Mod
                 {
                     try
                     {
-                        folders = IncludedFolders(mod);
+                        folders = (foldersOf ?? IncludedFolders)(mod);
                         var missing = folders.FirstOrDefault(f => !Directory.Exists(f));
                         if (missing != null) problem = "an included folder is missing: " + missing;
                     }

@@ -378,7 +378,11 @@ namespace Hd2Mod
                     }).ToList();
             }
 
-            void Sets(List<Deploy.Clash> found, List<object> into, Func<List<string>, string> winner, Dictionary<string, string> from = null)
+            // now: for a set of every option's files (the conflicts view), whether it conflicts with
+            // the options chosen and the mods on ("conflict", or why not: "options", "one_on",
+            // "none_on"), and whose copy a deploy gives
+            void Sets(List<Deploy.Clash> found, List<object> into, Func<List<string>, string> winner, Dictionary<string, string> from = null,
+                      Func<List<string>, List<Deploy.Clash>, (string State, string Winner)> now = null)
             {
                 var pairs = new List<(List<string> Mods, bool Same, bool Boot, long Count, List<Deploy.Clash> Some, List<Deploy.Clash> All)>();
                 foreach (var c in found)
@@ -400,7 +404,9 @@ namespace Hd2Mod
                 foreach (var p in pairs.OrderByDescending(p => p.Count))      // stable, as Python's sorted
                     into.Add(new Dictionary<string, object>
                     {
-                        ["mods"] = p.Mods.Cast<object>().ToList(), ["count"] = p.Count, ["winner"] = winner(p.Mods),
+                        ["mods"] = p.Mods.Cast<object>().ToList(), ["count"] = p.Count,
+                        ["winner"] = now != null ? now(p.Mods, p.All).Winner : winner(p.Mods),
+                        ["now"] = now?.Invoke(p.Mods, p.All).State,
                         ["deployed"] = Deploy.DeployedWinner(p.Some[0], deployedFiles),
                         ["same"] = p.Same,
                         ["from"] = from == null ? new List<object>() : p.Some.SelectMany(c => c.Sources).Distinct()
@@ -422,10 +428,23 @@ namespace Hd2Mod
                 Sets(Deploy.Clashes(d.All), clashes, ms => ms[ms.Count - 1]);
                 // every mod in a conflict, on or off (the conflicts view): the last one a deploy takes wins
                 var on = new HashSet<string>(d.All.Select(w => w.Mod));
-                var everything = Deploy.PlanAll(lib);
+                // every option's files, chosen or not: what conflicts now and what could
+                var everything = Deploy.PlanEvery(lib);
                 var archiveOf = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
                 foreach (var w in everything) archiveOf[w.Src] = w.Mod;
-                Sets(Deploy.Clashes(everything), allClashes, ms => ms.LastOrDefault(on.Contains), archiveOf);
+                // who gives each resource now: the mods on, with their chosen options, in deploy order
+                var givenNow = new Dictionary<(ulong, ulong), List<string>>();
+                foreach (var c in Deploy.Clashes(d.All).Where(c => !c.Same)) givenNow[(c.Type, c.Id)] = c.Mods;
+                var onCount = new HashSet<string>(d.All.Select(w => w.Mod));
+                (string, string) Now(List<string> mods, List<Deploy.Clash> all)
+                {
+                    foreach (var c in all)
+                        if (!c.Same && givenNow.TryGetValue((c.Type, c.Id), out var who) && who.Count(mods.Contains) > 1)
+                            return ("conflict", who.Last(mods.Contains));
+                    int onHere = mods.Count(onCount.Contains);
+                    return (onHere > 1 ? "options" : onHere == 1 ? "one_on" : "none_on", null);
+                }
+                Sets(Deploy.Clashes(everything), allClashes, ms => ms.LastOrDefault(on.Contains), archiveOf, Now);
             }
             Dictionary<string, object> summary = null;
             if (d != null)

@@ -6940,7 +6940,7 @@ namespace QuickDeploy
         /// game has now (the last deploy); when a choice has not been deployed yet, that one keeps
         /// tagKey and its solid frame, and the one chosen is framed in dashes and marked "in effect
         /// after deploy" (the user, 2026-11-03: a click must change the view itself).</summary>
-        UIElement WinnerRows(List<string> ids, string now, string tagKey, string inGame = null, bool switches = false, Func<ModRow, UIElement> below = null)
+        UIElement WinnerRows(List<string> ids, string now, string tagKey, string inGame = null, bool switches = false, Func<ModRow, UIElement> below = null, bool choose = true)
         {
             // by name, not in the load order: a click moved the mod, and the rows swapped places
             // under the pointer; what is in effect is what they are for (the user, 2026-11-03)
@@ -6989,7 +6989,7 @@ namespace QuickDeploy
                     line.Children.Add(tag);
                 }
                 Button use = null;
-                if (!wins && !off)
+                if (choose && !wins && !off)
                 {
                     // the choice: on the line pointed at, or the one chosen
                     use = new Button

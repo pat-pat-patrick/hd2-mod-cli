@@ -76,6 +76,7 @@ namespace QuickDeploy
                 }
             }
             foreach (var f in c.From) { Add(f.Mod); Add(f.Option); Add(f.Sub); }
+            Add(c.Now);
             Add(NowOf(ids, st.Mods.FirstOrDefault(x => x.Name == c.Winner)?.Id));
             Add(st.Mods.FirstOrDefault(x => x.Name == c.Deployed)?.Id);
             return sb.ToString();
@@ -87,12 +88,19 @@ namespace QuickDeploy
         UIElement ConflictCard(Clash c, List<string> ids)
         {
             var card = new StackPanel();
-            // a set with at most one mod on conflicts with nothing now: its heading grey, and why
-            int on = ids.Count(id => st.Mods.First(x => x.Id == id).Enabled);
-            var heading = new TextBlock { FontSize = 14, FontWeight = FontWeights.SemiBold, Foreground = B(on > 1 ? "Yellow" : "Muted"), Margin = new Thickness(0, 0, 0, 10), TextWrapping = TextWrapping.Wrap };
+            // a set stays when it conflicts no more (every option counts, chosen or not: the user,
+            // 2026-11-03): its heading grey, and why. A switch just turned (not read yet): by the
+            // mods on, as the state will say
+            var mods = ids.Select(ById).Where(x => x != null).ToList();
+            int on = mods.Count(x => x.Enabled);
+            var state = mods.Any(x => x.Assumed != null) ? (on > 1 ? (c.Now == "options" ? "options" : "conflict") : on == 1 ? "one_on" : "none_on")
+                      : c.Now ?? (on > 1 ? "conflict" : on == 1 ? "one_on" : "none_on");
+            bool clashing = state == "conflict";
+            var heading = new TextBlock { FontSize = 14, FontWeight = FontWeights.SemiBold, Foreground = B(clashing ? "Yellow" : "Muted"), Margin = new Thickness(0, 0, 0, 10), TextWrapping = TextWrapping.Wrap };
             heading.Inlines.Add(new System.Windows.Documents.Run(Texts.F("cf_set", c.Count, c.Mods.Count, c.Resources.Count > 0 ? TypeLabel(c.Resources[0].Type) : "")));
-            if (on <= 1)
-                heading.Inlines.Add(new System.Windows.Documents.Run("  ·  " + Texts.Get(on == 1 ? "cf_quiet_1" : "cf_quiet_0")) { FontWeight = FontWeights.Normal, FontSize = 13 });
+            if (!clashing)
+                heading.Inlines.Add(new System.Windows.Documents.Run("  ·  " + Texts.Get(state == "options" ? "cf_quiet_options" : state == "one_on" ? "cf_quiet_1" : "cf_quiet_0"))
+                                    { FontWeight = FontWeights.Normal, FontSize = 13 });
             card.Children.Add(heading);
             // the option that brings it, under the mod's name: a click offers the others, each
             // with what it would conflict with (the user, 2026-11-03: switching mods on and off,
@@ -101,8 +109,14 @@ namespace QuickDeploy
             {
                 var mine = c.From.Where(f => f.Mod == m.Name && f.Option >= 0 && f.Option < m.Options.Count).ToList();
                 if (mine.Count == 0) return null;
-                string Label((string Mod, int Option, int Sub) f) =>
-                    f.Sub >= 0 && f.Sub < m.Options[f.Option].Subs.Count ? m.Options[f.Option].Name + " › " + m.Options[f.Option].Subs[f.Sub].Name : m.Options[f.Option].Name;
+                // the option as it is chosen now (any of its choices may be the one in the set)
+                string Label((string Mod, int Option, int Sub) f)
+                {
+                    var o = m.Options[f.Option];
+                    if (!o.Enabled) return o.Name + Texts.Get("cf_opt_closed");
+                    var sub = o.Subs.FirstOrDefault(x => x.Enabled);
+                    return sub != null ? o.Name + " › " + sub.Name : o.Name;
+                }
                 var link = new Button { Template = Plain(), Cursor = System.Windows.Input.Cursors.Hand, FocusVisualStyle = null, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 2, 0, 0) };
                 // the arrow the Filter and Labels buttons have (Caret), not a character (the user,
                 // 2026-11-03: the small triangle was hard to see)
@@ -129,10 +143,11 @@ namespace QuickDeploy
                 };
                 return link;
             }
-            var winner = st.Mods.FirstOrDefault(x => x.Name == c.Winner)?.Id;
-            var inGame = st.Mods.FirstOrDefault(x => x.Name == c.Deployed)?.Id;     // whose copy the game has now
+            // whose version: only while they conflict
+            var winner = clashing ? st.Mods.FirstOrDefault(x => x.Name == c.Winner)?.Id : null;
+            var inGame = clashing ? st.Mods.FirstOrDefault(x => x.Name == c.Deployed)?.Id : null;     // whose copy the game has now
             // no bracket: each set is a card of its own (the user, 2026-11-03)
-            card.Children.Add(WinnerRows(ids, winner, "pick_now", inGame, true, FromLine));
+            card.Children.Add(WinnerRows(ids, winner, "pick_now", inGame, true, FromLine, clashing));
             // which resources, by name when HD2SDK's list knows them; an id alone tells a player
             // nothing and is left to the mod's details (the user, 2026-11-03: the view was cluttered)
             // one line for each kind of them, with how many ("模型 ×16 · 护甲：O-3 Free Spirit")

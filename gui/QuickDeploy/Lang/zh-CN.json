@@ -114,6 +114,8 @@
   "cf_none": "没有冲突：没有两个 MOD 用不同的文件替换同一个资源。",
   "cf_quiet_1": "只有 1 个已启用，目前不冲突",
   "cf_quiet_0": "都未启用，目前不冲突",
+  "cf_quiet_options": "所选选项不冲突",
+  "cf_opt_closed": "（已关闭）",
   "cf_from": "选项：{0}",
   "cf_opt_off": "关闭“{0}”",
   "cf_opt_free": "无冲突",

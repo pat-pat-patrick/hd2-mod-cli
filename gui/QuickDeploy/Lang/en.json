@@ -122,6 +122,8 @@
   "cf_none": "No conflicts: no two mods replace the same resource with different files.",
   "cf_quiet_1": "only one is on: no conflict now",
   "cf_quiet_0": "none is on: no conflict now",
+  "cf_quiet_options": "the options chosen do not conflict",
+  "cf_opt_closed": " (off)",
   "cf_from": "Option: {0}",
   "cf_opt_off": "Turn {0} off",
   "cf_opt_free": "no conflict",

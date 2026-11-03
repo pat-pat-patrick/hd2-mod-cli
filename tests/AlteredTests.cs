@@ -204,6 +204,34 @@ namespace Hd2Mod.Tests
             Assert.Empty(Json.List(subs[1], "clashes"));
         }
 
+        /// <summary>The conflicts view keeps a set whose conflict an option avoids (the user,
+        /// 2026-11-03: a mod vanished from it once its option was changed). Must live: Blue chosen,
+        /// the set is there, "options". Must die: Red chosen, it says "conflict", and the deploy's
+        /// own sets have it too.</summary>
+        [Fact]
+        public void A_conflict_an_option_avoids_stays_in_the_view()
+        {
+            Cli("add", Mod("One", new Dictionary<string, byte[]> { [A + ".patch_0"] = Archive(Bytes("one's own"), (1, 101)) }));
+            Cli("add", Mod("Two", new Dictionary<string, byte[]>
+            {
+                ["red/" + A + ".patch_0"] = Archive(Bytes("two's red"), (1, 101)),
+                ["blue/" + A + ".patch_0"] = Archive(Bytes("two's blue"), (1, 102)),
+            }, "{\"Name\": \"Two\", \"Options\": [{\"Name\": \"Colour\", \"SubOptions\": [" +
+               "{\"Name\": \"Red\", \"Include\": [\"red\"]}, {\"Name\": \"Blue\", \"Include\": [\"blue\"]}]}]}"));
+            Dictionary<string, object> Doc() => StateDoc.Build(Library.Load(), Game);
+            List<Dictionary<string, object>> Sets(Dictionary<string, object> d, string key) =>
+                Json.List(d, key).OfType<Dictionary<string, object>>().Where(c => !Json.Bool(c, "same")).ToList();
+            var two = Library.Load().Mods.Single(m => m.Name == "Two").Id;
+            Cli("set", two, "1.2", "on");                                      // Blue: nothing shared now
+            var doc = Doc();
+            Assert.Equal(("options", null), (Json.Str(Sets(doc, "all_conflicts").Single(), "now"), Json.Str(Sets(doc, "all_conflicts").Single(), "winner")));
+            Assert.Empty(Sets(doc, "conflicts"));
+            Cli("set", two, "1.1", "on");                                      // Red: they conflict
+            doc = Doc();
+            Assert.Equal(("conflict", "Two"), (Json.Str(Sets(doc, "all_conflicts").Single(), "now"), Json.Str(Sets(doc, "all_conflicts").Single(), "winner")));
+            Assert.Single(Sets(doc, "conflicts"));
+        }
+
         /// <summary>The conflicts view lists every mod in a conflict, on or off, with its switch
         /// (the user, 2026-11-03); the rest of the window marks a conflict only while the mods are
         /// on. Must live: the mod turned off is in all_conflicts. Must die: not in conflicts.</summary>

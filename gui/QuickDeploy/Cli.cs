@@ -196,6 +196,9 @@ namespace QuickDeploy
         public string Winner;
         /// <summary>Whose copy the game has now (the last deploy); null when none is deployed.</summary>
         public string Deployed;
+        /// <summary>The conflicts view's sets (every option): "conflict" now, or why not: "options"
+        /// (the options chosen do not), "one_on", "none_on"; null for the deploy's own sets.</summary>
+        public string Now;
         /// <summary>Every mod ships the very same bytes: shared, not fought over.</summary>
         public bool Same, ManagedBoot;
         /// <summary>The first of its resources: type, id, and name when HD2SDK's list knows it.</summary>
@@ -389,7 +392,7 @@ namespace QuickDeploy
                 foreach (var c in List(d, key).OfType<Dictionary<string, object>>())
                     into.Add(new Clash
                     {
-                        Mods = List(c, "mods").OfType<string>().ToList(), Count = Int(c, "count"), Winner = Str(c, "winner"), Deployed = Str(c, "deployed"), Same = Bool(c, "same"), ManagedBoot = Bool(c, "managed_boot"),
+                        Mods = List(c, "mods").OfType<string>().ToList(), Count = Int(c, "count"), Winner = Str(c, "winner"), Deployed = Str(c, "deployed"), Now = Str(c, "now"), Same = Bool(c, "same"), ManagedBoot = Bool(c, "managed_boot"),
                         Resources = List(c, "resources").OfType<Dictionary<string, object>>().Select(r => (Str(r, "type"), Str(r, "id"), Str(r, "name"), Archives(r, "archives"))).ToList(),
                         From = List(c, "from").OfType<Dictionary<string, object>>().Select(f => (Str(f, "mod"), Int(f, "option"), Int(f, "sub"))).ToList(),
                         Groups = List(c, "groups").OfType<Dictionary<string, object>>()
