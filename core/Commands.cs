@@ -169,8 +169,8 @@ namespace Hd2Mod
             Cmd("which", new Spec { Help = "which mod a patch file or archive comes from", Positionals = new[] { "what" }, Run = Which }),
             Cmd("state", new Spec { Help = "everything about the library and the game folder, as JSON (for a window)",
                                     Flags = new[] { "--verify" }, Run = State }),
-            Cmd("report", new Spec { Help = "a zip to send with a question: the state, the deploy history, Boot Mod Loader's log and the crash dumps' names (never the dumps, never the sign-in; your user folder written as %USERPROFILE%); on the desktop unless --out",
-                                     Values = new[] { "--out" }, Run = ReportCmd }),
+            Cmd("report", new Spec { Help = "a zip to send with a question: the state, the deploy history, Boot Mod Loader's log and the crash dumps' names (never the dumps, never the sign-in; your user folder written as %USERPROFILE%); on the desktop unless --out. --upload KIND sends it to the mods' author and says its id (KIND: crash_start, crash_mission, mod_not_working, manager, other), --note what happened",
+                                     Values = new[] { "--out", "--upload", "--note" }, Run = ReportCmd }),
             Cmd("conflicts", new Spec { Help = "resources that more than one mod ships (the last in the order wins)",
                                         Flags = new[] { "-v", "--verbose" }, Run = Conflicts }),
         };
@@ -1564,9 +1564,15 @@ namespace Hd2Mod
 
         static void ReportCmd(Args a, TextWriter o)
         {
+            var kind = a.Value("--upload");
+            if (kind != null && !Report.Kinds.Contains(kind)) throw new ModError("--upload takes one of: " + string.Join(", ", Report.Kinds));
+            if (kind == null && a.Value("--note") != null) throw new ModError("--note goes with --upload");
             var (path, summary) = Report.Write(Library.Load(), Store.GameDir(null, false), a.Value("--out"));
             o.WriteLine("report written: " + path);
             o.Write(summary);
+            if (kind == null) return;
+            try { o.WriteLine("uploaded: " + Report.Upload(path, kind, a.Value("--note"))); }
+            catch (Report.UploadFailed e) { throw new ModError("upload failed (" + e.Message + "); the report is still at " + path); }
         }
     }
 }

@@ -39,6 +39,7 @@ namespace Hd2Mod.Tests
             PluginFiles.OfficialLocaleJson = KeptLocale;
             PluginFiles.ListUrl = null;                                       // never GitHub
             PluginFiles.Downloads = "http://127.0.0.1:1";
+            Report.UploadUrl = "http://127.0.0.1:1";                         // never the author's server
         }
 
         protected static readonly System.Func<string> KeptList = PluginFiles.OfficialJson;
