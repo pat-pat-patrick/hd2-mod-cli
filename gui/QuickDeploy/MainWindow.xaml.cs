@@ -6992,13 +6992,8 @@ namespace QuickDeploy
             // under the pointer; what is in effect is what they are for (the user, 2026-11-03)
             var mods = ids.Select(id => st.Mods.FirstOrDefault(x => x.Id == id)).Where(x => x != null)
                           .OrderBy(x => x.Name, StringComparer.CurrentCultureIgnoreCase).ThenBy(x => x.Id, StringComparer.Ordinal).ToList();
-            // a choice just clicked is drawn at once, until the state it was made in is read again
             var key = string.Join("|", ids.OrderBy(x => x, StringComparer.Ordinal));
-            if (picksNow.TryGetValue(key, out var pick))
-            {
-                if (pick.Under == st) now = pick.Id;
-                else picksNow.Remove(key);
-            }
+            now = NowOf(ids, now);
             bool pending = inGame != null && inGame != now && mods.Any(x => x.Id == inGame);
             var rowsBox = new StackPanel();
             foreach (var x in mods)
@@ -7070,6 +7065,23 @@ namespace QuickDeploy
 
         // the choices clicked in WinnerRows, by the mods of the set, with the state they were made in
         readonly Dictionary<string, (string Id, State Under)> picksNow = new Dictionary<string, (string, State)>();
+
+        /// <summary>Whose version of a set's resources a deploy uses, as the window has it now: a
+        /// choice just clicked, until the state it was made in is read again; with a switch just
+        /// turned (not read yet), the last mod on in the load order; else the state's.</summary>
+        string NowOf(List<string> ids, string stated)
+        {
+            var key = string.Join("|", ids.OrderBy(x => x, StringComparer.Ordinal));
+            if (picksNow.TryGetValue(key, out var pick))
+            {
+                if (pick.Under == st) return pick.Id;
+                picksNow.Remove(key);
+            }
+            var mods = ids.Select(ById).Where(x => x != null).ToList();
+            if (mods.Any(x => x.Assumed != null))
+                return mods.Where(x => x.Enabled).OrderBy(x => x.Index).LastOrDefault()?.Id;
+            return stated;
+        }
 
         /// <summary>A resource type as the conflicts name it: in words for the common ones, else the engine's name.</summary>
         static string TypeLabel(string type) => Texts.Has("rt_" + type) ? Texts.Get("rt_" + type) : type;
