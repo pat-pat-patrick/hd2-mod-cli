@@ -520,6 +520,17 @@ namespace Hd2Mod
                 }
             var links = new Dictionary<string, object> { ["files"] = lf, ["bytes"] = lb, ["copies"] = cf, ["copy_bytes"] = cb };
             var record = Store.Load("deployed.json");
+            // a deploy made before the library was kept with it (undo-changes, 2026-11-04): while
+            // nothing is left to deploy, the library is what the game has, and is kept as that
+            // deploy's (the user, 2026-11-04: the button never came, the last deploy being older)
+            if (d != null && Json.Obj(record, "library") == null && Json.Obj(record, "files") != null
+                && d.Writes.Count == 0 && d.Moves.Count == 0 && d.Deletes.Count == 0 && d.Replaced.Count == 0)
+            {
+                record["library"] = lib.Snapshot();
+                record["names"] = lib.Mods.ToDictionary(m => m.Id, m => (object)m.Name);
+                try { Store.Save("deployed.json", record); }
+                catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { }
+            }
             var mods = new List<object>();
             int index = 0;
             var pluginHost = PluginHost.Make();             // what the plugins say of each mod (PluginFiles.Notes), in the manager's language

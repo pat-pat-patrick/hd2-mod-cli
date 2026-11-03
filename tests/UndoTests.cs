@@ -71,6 +71,30 @@ namespace Hd2Mod.Tests
             Assert.Equal("undo_profile", Refused("undo-changes"));
         }
 
+        /// <summary>A deploy made before the library was kept with it: while nothing is left to
+        /// deploy, a state read keeps the library as that deploy's (the user, 2026-11-04: the
+        /// button never came). Must live: kept, then a change can be undone. Must die: with a
+        /// change not deployed, nothing is kept (the library is not what the game has).</summary>
+        [Fact]
+        public void An_older_deploy_gets_the_library_once_nothing_is_left_to_deploy()
+        {
+            ThreeModsDeployed();
+            var r = Store.Load("deployed.json");
+            r.Remove("library");
+            r.Remove("names");
+            Store.Save("deployed.json", r);
+            Cli("disable", IdOf("One"));
+            Assert.False(CanUndo());
+            Assert.Null(Json.Obj(Store.Load("deployed.json"), "library"));    // One off, not deployed: not the game's
+            Cli("enable", IdOf("One"));
+            Assert.False(CanUndo());
+            Assert.NotNull(Json.Obj(Store.Load("deployed.json"), "library")); // as the game has it again: kept
+            Cli("move", IdOf("Three"), "--top");
+            Assert.True(CanUndo());
+            Cli("undo-changes");
+            Assert.Equal(new[] { "One", "Two", "Three" }, Library.Load().Mods.Select(m => m.Name));
+        }
+
         /// <summary>A deploy after the changes is the new point to go back to.</summary>
         [Fact]
         public void A_new_deploy_is_the_new_point()
