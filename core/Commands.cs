@@ -166,6 +166,7 @@ namespace Hd2Mod
                                            "what is not the file the library holds (--deep reads the bytes of the copies)",
                                     Flags = new[] { "--deep" }, Run = CheckCmd }),
             Cmd("purge", new Spec { Help = "delete every patch file from the game: vanilla", Flags = new[] { "--yes" }, Run = Purge }),
+            Cmd("undo-changes", new Spec { Help = "the library back to how the last deploy took it: which mods are on, their order and their options (a mod added since is turned off; a removed one does not come back)", Run = UndoChanges }),
             Cmd("which", new Spec { Help = "which mod a patch file or archive comes from", Positionals = new[] { "what" }, Run = Which }),
             Cmd("state", new Spec { Help = "everything about the library and the game folder, as JSON (for a window)",
                                     Flags = new[] { "--verify" }, Run = State }),
@@ -1525,6 +1526,14 @@ namespace Hd2Mod
             var g = Store.GameDir();
             if (!a.Flag("--yes")) throw new ModError("this deletes every patch file in " + Paths.Join(g, "data") + ": add --yes");
             o.WriteLine("deleted " + Deploy.Purge(g) + " files: the game is vanilla");
+        }
+
+        static void UndoChanges(Args a, TextWriter o)
+        {
+            var (changed, gone) = Library.UndoSinceDeploy();
+            if (!changed) { o.WriteLine("nothing to undo: the library is as the last deploy took it"); return; }
+            o.WriteLine("the library is back to the last deploy");
+            if (gone.Count > 0) o.WriteLine("removed since, not brought back: " + string.Join(", ", gone));
         }
 
         static void Which(Args a, TextWriter o)

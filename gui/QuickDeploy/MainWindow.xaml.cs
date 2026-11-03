@@ -2481,6 +2481,19 @@ namespace QuickDeploy
             };
             purge.Click += Purge_Click;
             card.Children.Add(purge);
+            // every change since the last deploy taken back (the user, 2026-11-04): only while
+            // there is one
+            if (st.CanUndo)
+            {
+                var undo = new Button
+                {
+                    Content = new TextBlock { Text = Texts.Get("undo_changes"), TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center },
+                    Style = (Style)FindResource("Ghost"), MinHeight = 36, Margin = new Thickness(0, 8, 0, 0), HorizontalAlignment = HorizontalAlignment.Stretch,
+                    ToolTip = Texts.Get("undo_changes_tip"),
+                };
+                undo.Click += Undo_Click;
+                card.Children.Add(undo);
+            }
             Nav.Children.Add(new Border { BorderBrush = B("Grid"), BorderThickness = new Thickness(1), Background = B("Ground700"), Padding = new Thickness(12), Child = card });
             LuaSide();
         }
@@ -7237,6 +7250,17 @@ namespace QuickDeploy
             if (!File.Exists(file)) { OpenFolder(IOPath.GetDirectoryName(file)); return; }
             try { Process.Start("explorer.exe", "/select," + Cli.Quote(file)); }
             catch (System.ComponentModel.Win32Exception) { }
+        }
+
+        void Undo_Click(object sender, RoutedEventArgs e)
+        {
+            if (!Dialog.Ask(this, Texts.Get("undo_changes_ask"), Texts.Get("undo_changes_do"))) return;
+            _ = Act(() => Cli.Call(() =>
+            {
+                var (changed, gone) = Library.UndoSinceDeploy();
+                if (!changed) return Texts.Get("undo_changes_none");
+                return gone.Count == 0 ? Texts.Get("undo_changes_done") : Texts.F("undo_changes_gone", string.Join(Texts.Get("sep_list"), gone));
+            }), true);
         }
 
         void Purge_Click(object sender, RoutedEventArgs e)

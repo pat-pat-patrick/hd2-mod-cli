@@ -264,6 +264,8 @@ namespace QuickDeploy
         public List<Clash> Clashes = new List<Clash>();
         /// <summary>The same over every mod, on or off (the conflicts view).</summary>
         public List<Clash> AllClashes = new List<Clash>();
+        /// <summary>The library differs from how the last deploy took it, and can go back to it.</summary>
+        public bool CanUndo;
         /// <summary>Whether resources can be named (HD2SDK's list was found).</summary>
         public bool ResourceNames;
         // (Lua is set again when a read is still waiting for the scripts)
@@ -354,7 +356,7 @@ namespace QuickDeploy
         {
             var d = (Dictionary<string, object>)Json.Parse(json);
             var s = new State { GameDir = Str(d, "game_dir"), Home = Str(d, "home"), Version = Str(d, "version"), ModsDir = Str(d, "mods_dir"),
-                                SavedBytes = Long(d, "saved_bytes"), Deploys = Int(d, "deploys"),
+                                SavedBytes = Long(d, "saved_bytes"), Deploys = Int(d, "deploys"), CanUndo = Bool(d, "can_undo"),
                                 ProfilesOn = Bool(d, "profiles_on"), Profile = Str(d, "profile"), LoaderChoice = Str(d, "loader_choice"), LoaderHelpers = List(d, "loader_helpers").OfType<string>().ToList() };
             if (d.TryGetValue("profiles", out var pl) && pl is List<object> names) s.Profiles = names.OfType<string>().ToList();
             if (d.TryGetValue("summary", out var sm) && sm is Dictionary<string, object> sum)

@@ -471,6 +471,10 @@ namespace Hd2Mod
             Store.Save("deployed.json", new Dictionary<string, object>
             {
                 ["game_dir"] = game, ["saved_bytes"] = r.SavedBytes, ["deploys"] = Json.Long(before, "deploys") + 1, ["files"] = files,
+                // the library as this deploy took it, and each mod's name then: undo-changes goes
+                // back to it, and says which removed mods it cannot bring back
+                ["library"] = lib.Snapshot(),
+                ["names"] = lib.Mods.ToDictionary(m => m.Id, m => (object)m.Name),
             });
             // when, and which mods: after a crash, what was in the game then (the user, 2026-10-26)
             try { LuaMods.Record(d.All.Select(w => w.Mod)); }

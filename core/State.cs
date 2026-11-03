@@ -669,6 +669,9 @@ namespace Hd2Mod
             {
                 ["tool"] = "hd2-mod-cli", ["version"] = Version, ["game_dir"] = game, ["home"] = Store.Home, ["mods_dir"] = Store.ModsDir(),
                 ["summary"] = summary, ["links"] = links, ["saved_bytes"] = Json.Long(record, "saved_bytes"),
+                // the library differs from how the last deploy took it, and can go back (undo-changes)
+                ["can_undo"] = Json.Obj(record, "library") is Dictionary<string, object> snap && !lib.Matches(snap)
+                               && (lib.ProfilesOn ? Json.Str(snap, "profile") == lib.Active : Json.Str(snap, "profile") == null),
                 ["deploys"] = Json.Long(record, "deploys"), ["deletes"] = deletes.Cast<object>().ToList(),
                 ["mods"] = mods, ["conflicts"] = clashes, ["all_conflicts"] = allClashes, ["resource_names"] = ResourceNames.HaveNames, ["tags"] = lib.Tags.Cast<object>().ToList(),
                 // the player's groups (Groups): shown only, in the order they were made

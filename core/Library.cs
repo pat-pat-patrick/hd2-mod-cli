@@ -310,6 +310,74 @@ namespace Hd2Mod
                 ["name"] = o.Name, ["enabled"] = o.Enabled,
                 ["subs"] = o.Subs.Select(s => (object)new Dictionary<string, object> { ["name"] = s.Name, ["enabled"] = s.Enabled }).ToList(),
             }).ToList();
+
+        // -- the library as a deploy took it (the user, 2026-11-04: a button to undo every change
+        //    made since the last deploy) --
+
+        /// <summary>What decides a deploy, as the deploy record keeps it (deployed.json "library"):
+        /// the profile in use, the order, which mods are on, and each mod's options.</summary>
+        public Dictionary<string, object> Snapshot() => new Dictionary<string, object>
+        {
+            ["profile"] = ProfilesOn ? Active : null,
+            ["order"] = Mods.Select(m => (object)m.Id).ToList(),
+            ["on"] = Mods.Where(m => m.Enabled).Select(m => (object)m.Id).ToList(),
+            ["options"] = Mods.Where(m => m.Options.Count > 0).ToDictionary(m => m.Id, m => (object)OptionsJson(m.Options)),
+        };
+
+        /// <summary>Whether going back to the snapshot would change nothing: Restore on a copy gives
+        /// the library as it is. A mod removed since is not counted (it cannot come back), so
+        /// after an undo there is nothing left to undo. False for another profile in use.</summary>
+        public bool Matches(Dictionary<string, object> snapshot)
+        {
+            if (snapshot == null) return false;
+            var copy = new Library
+            {
+                ProfilesOn = ProfilesOn, Active = Active,
+                Mods = Mods.Select(m => new Mod { Id = m.Id, Name = m.Name, Enabled = m.Enabled, Options = m.Options }).ToList(),
+            };
+            try { copy.Restore(snapshot, null); }
+            catch (ModError) { return false; }
+            return Json.Write(copy.Snapshot()) == Json.Write(Snapshot());
+        }
+
+        /// <summary>The saved library back to how the last deploy took it (undo-changes, the
+        /// window's button): whether anything changed, and the mods removed since, by name.</summary>
+        public static (bool Changed, List<string> Gone) UndoSinceDeploy()
+        {
+            var record = Store.Load("deployed.json");
+            var snapshot = Json.Obj(record, "library");
+            if (snapshot == null) throw new ModError("the last deploy kept no record of the library (deploy once with this version)", "undo_none");
+            var lib = Load();
+            if (lib.Matches(snapshot)) return (false, new List<string>());
+            var names = (Json.Obj(record, "names") ?? new Dictionary<string, object>()).ToDictionary(kv => kv.Key, kv => kv.Value as string);
+            var gone = lib.Restore(snapshot, names);
+            lib.Save();
+            return (true, gone);
+        }
+
+        /// <summary>The library back to the snapshot: the mods it had in its order, on or off and
+        /// with their options as they were; a mod added since goes after them, off. The names of
+        /// the mods the snapshot had that the library no longer has (removed: not brought back).</summary>
+        public List<string> Restore(Dictionary<string, object> snapshot, Dictionary<string, string> namesOf)
+        {
+            var profile = Json.Str(snapshot, "profile");
+            if (ProfilesOn ? profile != Active : profile != null)
+                throw new ModError("the last deploy was made with another profile in use: switch to it first", "undo_profile");
+            var order = Json.List(snapshot, "order").OfType<string>().ToList();
+            var on = new HashSet<string>(Json.List(snapshot, "on").OfType<string>());
+            var options = Json.Obj(snapshot, "options") ?? new Dictionary<string, object>();
+            var byId = Mods.ToDictionary(m => m.Id);
+            var then = order.Where(byId.ContainsKey).Select(id => byId[id]).ToList();
+            var since = Mods.Where(m => !order.Contains(m.Id)).ToList();
+            foreach (var m in then)
+            {
+                m.Enabled = on.Contains(m.Id);
+                m.Options = options.TryGetValue(m.Id, out var o) && o is List<object> list ? ReadOptions(list) : new List<OptionChoice>();
+            }
+            foreach (var m in since) m.Enabled = false;
+            Mods = then.Concat(since).ToList();
+            return order.Where(id => !byId.ContainsKey(id)).Select(id => namesOf != null && namesOf.TryGetValue(id, out var n) ? n : id).ToList();
+        }
     }
 
     public class ManifestOption
