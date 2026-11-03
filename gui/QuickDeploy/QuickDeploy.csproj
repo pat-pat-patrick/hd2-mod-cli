@@ -65,6 +65,12 @@
     <Compile Include="..\..\private\gui\*.cs" Link="private\gui\%(Filename)%(Extension)" />
   </ItemGroup>
 
+  <!-- the window's words, one file per language (Texts.cs); our own builds' words beside their part -->
+  <ItemGroup>
+    <EmbeddedResource Include="Lang\*.json" LogicalName="Lang.%(Filename).json" />
+    <EmbeddedResource Include="..\..\private\gui\Lang\*.json" LogicalName="Ours.Lang.%(Filename).json" />
+  </ItemGroup>
+
   <ItemGroup>
     <Reference Include="System.IO.Compression" />
     <Reference Include="System.IO.Compression.FileSystem" />

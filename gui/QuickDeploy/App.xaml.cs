@@ -30,6 +30,7 @@ namespace QuickDeploy
         /// <summary>One window: a start while it runs brings it forward and ends.</summary>
         protected override void OnStartup(StartupEventArgs e)
         {
+            Hd2Mod.PluginHost.Lang = () => Texts.Lang;      // plugins answer in the window's language
 #if HAS_NEXUS
             StartLink = e.Args.FirstOrDefault(a => a.StartsWith("nxm://", StringComparison.OrdinalIgnoreCase));
 #endif

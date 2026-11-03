@@ -93,9 +93,9 @@ namespace Hd2Mod
             Cmd("group-put", new Spec { Help = "put mods --in a group, or back to the --top (no group)",
                                         Positionals = new[] { "mods" }, Many = true, Values = new[] { "--in" }, Flags = new[] { "--top" },
                                         OneOf = new[] { "--in", "--top" }, Run = GroupPut }),
-            Cmd("plugins", new Spec { Help = "the plugins added (HD2QD.*.dll in the settings folder's plugins folder): each one's file, version and title, or why it cannot be used",
+            Cmd("plugins", new Spec { Help = "the plugins added (HD2QD.*.dll in the settings folder's plugins folder): each one's file, version and title, or why it cannot be used; then the official plugins not added",
                                       Run = PluginsCmd }),
-            Cmd("plugin-add", new Spec { Help = "add a plugin (HD2QD.<name>.dll) to the settings folder, over one of the same name; a plugin runs as this program does, so add only plugins from a source you trust",
+            Cmd("plugin-add", new Spec { Help = "add a plugin (HD2QD.<name>.dll) to the settings folder, over one of the same name, from a file or, by its name, an official plugin's release; a plugin runs as this program does, so add only plugins from a source you trust",
                                          Positionals = new[] { "path" }, Run = PluginAddCmd }),
             Cmd("plugin-remove", new Spec { Help = "remove an added plugin (HD2QD.AssetCheck.dll, or AssetCheck)", Positionals = new[] { "plugin" }, Run = PluginRemoveCmd }),
 #if HAS_NEXUS
@@ -1039,7 +1039,7 @@ namespace Hd2Mod
             ManagerLog.Info("run: " + ManagerLog.Line(argv) + " (" + file + ")");
             try
             {
-                var r = PluginFiles.Call(type, "Run", argv[0], argv.Skip(1).ToArray(), output, PluginHost.Make(false));
+                var r = PluginFiles.Call(type, "Run", argv[0], argv.Skip(1).ToArray(), output, PluginHost.Make());
                 return r is int n ? n : 0;
             }
             catch (Exception e) when (!(e is OutOfMemoryException))
@@ -1054,17 +1054,34 @@ namespace Hd2Mod
         static void PluginsCmd(Args a, TextWriter o)
         {
             var all = PluginFiles.All();
-            if (all.Count == 0) { o.WriteLine("no plugin has been added (" + PluginFiles.Dir + ")"); return; }
+            if (all.Count == 0) o.WriteLine("no plugin has been added (" + PluginFiles.Dir + ")");
             foreach (var (file, type, why) in all)
-                o.WriteLine("  " + file + (type != null ? " " + PluginFiles.Version(type) + "  " + PluginFiles.Title(type, false)
+                o.WriteLine("  " + file + (type != null ? " " + PluginFiles.Version(type) + "  " + PluginFiles.Title(type, "en")
                                            : "  cannot be used: " + (why == "api" ? "for another version of this program" : "damaged")));
-            o.WriteLine("folder: " + PluginFiles.Dir);
+            if (all.Count > 0) o.WriteLine("folder: " + PluginFiles.Dir);
+            var (_, listWhy) = PluginFiles.RefreshList();
+            if (listWhy != null)
+                o.WriteLine("the official plugin list could not be read from " + PluginFiles.ListUrl + " ("
+                            + (listWhy == "offline" ? "GitHub cannot be reached" : listWhy == "missing" ? "not published" : listWhy == "busy" ? "too many requests for now"
+                               : listWhy == "not_list" ? "what came back is not a plugin list" : "GitHub answered with an error")
+                            + ")" + (PluginFiles.OfficialJson() != null ? "; the copy read before is shown" : ""));
+            var available = PluginFiles.Available(Library.Load());
+            if (available.Count == 0) return;
+            o.WriteLine("official plugins not added (plugin-add NAME):");
+            foreach (var (p, mods) in available)
+                o.WriteLine("  " + p.File + "  " + p.Title + "  " + (p.Latest is var v && v != null ? "released " + v.Value.Version : "not released yet")
+                            + (mods.Count > 0 ? "  needed by " + string.Join(", ", mods) : ""));
         }
 
         static void PluginAddCmd(Args a, TextWriter o)
         {
             var path = Paths.Abs(a.Pos["path"]);
-            if (!File.Exists(path)) throw new ModError("no such file: " + path);
+            // not a file: an official plugin by its name, downloaded from its release
+            if (!File.Exists(path))
+            {
+                var official = PluginFiles.OfficialNamed(a.Pos["path"]) ?? throw new ModError("no such file, and no official plugin of that name: " + a.Pos["path"]);
+                path = PluginFiles.Fetch(official);
+            }
             var (file, version, replaced) = PluginFiles.Install(path);
             o.WriteLine("added " + file + " " + version + (replaced != null ? " (replaces " + replaced + ")" : "") + " to " + PluginFiles.Dir);
         }
@@ -1455,6 +1472,14 @@ namespace Hd2Mod
             foreach (var f in c.Missing) o.WriteLine("  missing  " + f);
             foreach (var f in c.Extra) o.WriteLine("  spare    " + f);
             foreach (var f in c.Changed) o.WriteLine("  differs  " + f);
+            // what another program changed since the last deploy
+            foreach (var (f, mod, how) in c.Altered)
+                o.WriteLine("  " + (how == "library" ? "changed in the library by another program (a deploy does not undo it)"
+                                    : how == "game" ? "changed in the game folder by another program (a deploy puts the library's back)"
+                                    : "added by another program (a deploy deletes it)") + ": " + f + (mod != null ? " (" + mod + ")" : ""));
+            int inLibrary = c.Altered.Count(x => x.How == "library");
+            if (inLibrary > 0)
+                o.WriteLine(inLibrary + " file(s) changed in the library itself: a deploy keeps them; install the mod again for its original files");
             if (c.Ok) { o.WriteLine("the game folder is exactly what the library asks for"); return; }
             o.WriteLine(c.Missing.Count + " missing, " + c.Extra.Count + " that no mod wants, " + c.Changed.Count + " that differ");
             if (c.Wrong.Count > 0)

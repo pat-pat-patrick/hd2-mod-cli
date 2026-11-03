@@ -20,7 +20,7 @@ namespace QuickDeploy
         /// the library and this page read again.</summary>
         Dictionary<string, object> PluginHostHere()
         {
-            var host = PluginHost.Make(Texts.Zh);
+            var host = PluginHost.Make();
             host["window"] = (Func<string, FrameworkElement, Window>)((title, content) => new ChromeWindow(this, title, content));
             host["ask"] = (Func<string, string, bool>)((text, action) => Dialog.Ask(this, text, action));
             host["tell"] = (Action<string>)(text => Dialog.Tell(this, text));
@@ -47,10 +47,10 @@ namespace QuickDeploy
             PluginsBox.Children.Add(top);
             PluginsBox.Children.Add(Texts.Hints ? Small(Texts.Get("plugins_intro"), new Thickness(0, 4, 0, 20)) : new Border { Height = 16 });
             var all = PluginFiles.All();
-            List<(string Plugin, string En, string Zh, List<string> Mods)> needed;
-            try { needed = PluginFiles.Needed(Library.Load()); }
-            catch (Exception e) when (e is ModError || e is System.IO.IOException) { needed = new List<(string, string, string, List<string>)>(); }
-            if (all.Count == 0 && needed.Count == 0) PluginsBox.Children.Add(Small(Texts.Get("plugins_none"), new Thickness(0, 0, 0, 0)));
+            List<(OfficialPlugin Plugin, List<string> Mods)> available;
+            try { available = PluginFiles.Available(Library.Load()); }
+            catch (Exception e) when (e is ModError || e is System.IO.IOException) { available = new List<(OfficialPlugin, List<string>)>(); }
+            if (all.Count == 0) PluginsBox.Children.Add(Small(Texts.Get("plugins_none"), new Thickness(0, 0, 0, 0)));
             var host = all.Count > 0 ? PluginHostHere() : null;
             bool first = true;
             foreach (var (file, type, why) in all)
@@ -64,11 +64,11 @@ namespace QuickDeploy
                     FontSize = 12, Foreground = B("Muted"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(16, 0, 0, 0),
                 });
                 var remove = new Button { Content = Texts.Get("plugin_remove"), Style = (Style)FindResource("Ghost"), MinHeight = 32, Padding = new Thickness(12, 0, 12, 0), Margin = new Thickness(12, 0, 0, 0) };
-                remove.Click += (s, e) => RemovePlugin(file, type != null ? PluginFiles.Title(type, Texts.Zh) ?? file : file);
+                remove.Click += (s, e) => RemovePlugin(file, type != null ? PluginFiles.Title(type, Texts.Lang) ?? file : file);
                 right.Children.Add(remove);
                 DockPanel.SetDock(right, Dock.Right);
                 head.Children.Add(right);
-                var title = Heading(type != null ? PluginFiles.Title(type, Texts.Zh) ?? file : file);
+                var title = Heading(type != null ? PluginFiles.Title(type, Texts.Lang) ?? file : file);
                 title.VerticalAlignment = VerticalAlignment.Center;          // level with the version and Remove
                 head.Children.Add(title);
                 card.Children.Add(head);
@@ -85,7 +85,7 @@ namespace QuickDeploy
                 }
                 else
                 {
-                    var summary = PluginFiles.Summary(type, Texts.Zh);
+                    var summary = PluginFiles.Summary(type, Texts.Lang);
                     if (summary != null) card.Children.Add(Small(summary, new Thickness(0, 6, 0, 0)));
                     if (PluginFiles.Kind(type) == "window") card.Children.Add(OpenButton(type));
                 }
@@ -93,16 +93,96 @@ namespace QuickDeploy
                 PluginsBox.Children.Add(Card(card));
                 first = false;
             }
-            // official plugins the library's mods need and that are not added: said here, where
-            // their rows point
-            foreach (var n in needed)
+            // the official plugins not added (the user, 2026-11-03: a page that shows only what
+            // is added does not say what can be added), those the library's mods need first. The
+            // list is read from GitHub (RefreshListSoon); until it has been read once, what is
+            // happening is said instead
+            bool neverRead = PluginFiles.OfficialJson() == null;
+            if (available.Count == 0 && !neverRead) return;
+            var section = new TextBlock { Text = Texts.Get("plugins_official"), FontSize = 18, FontWeight = FontWeights.Bold, Margin = new Thickness(0, 28, 0, 12) };
+            PluginsBox.Children.Add(section);
+            if (neverRead)
+            {
+                section.Margin = new Thickness(0, 28, 0, 0);
+                PluginsBox.Children.Add(Small(listWhy == null ? Texts.Get("plugins_list_reading") : Texts.F("plugins_list_failed", Texts.Get("plugins_list_" + listWhy)),
+                                              new Thickness(0, 4, 0, 0)));
+                return;
+            }
+            // not released: said once under the heading when it holds for all, else on each card
+            bool noneReleased = available.All(a => a.Plugin.Latest == null);
+            if (noneReleased)
+            {
+                section.Margin = new Thickness(0, 28, 0, 0);
+                PluginsBox.Children.Add(Small(Texts.Get("plugins_unreleased"), new Thickness(0, 4, 0, 12)));
+            }
+            first = true;
+            foreach (var (p, mods) in available)
             {
                 var card = new StackPanel();
-                card.Children.Add(Heading(Texts.Zh ? n.Zh : n.En));
-                card.Children.Add(Line(Texts.F("plugin_needed", n.Plugin), "Yellow", Texts.F("plugin_needed_mods", string.Join("、", n.Mods))));
+                var head = new DockPanel();
+                var latest = p.Latest;
+                var file = new TextBlock
+                {
+                    Text = System.IO.Path.GetFileNameWithoutExtension(p.File) + (latest != null ? " " + latest.Value.Version : ""),
+                    FontSize = 12, Foreground = B("Muted"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(16, 0, 0, 0),
+                };
+                DockPanel.SetDock(file, Dock.Right);
+                head.Children.Add(file);
+                var title = Heading(p.TitleIn(Texts.Lang));
+                title.VerticalAlignment = VerticalAlignment.Center;
+                head.Children.Add(title);
+                card.Children.Add(head);
+                var summary = p.SummaryIn(Texts.Lang);
+                if (summary != null) card.Children.Add(Small(summary, new Thickness(0, 6, 0, 0)));
+                if (mods.Count > 0)
+                    card.Children.Add(Line(Texts.Get("plugin_needed"), "Yellow", Texts.F("plugin_needed_mods", string.Join("、", mods))));
+                var get = new Button
+                {
+                    Content = Texts.Get(latest != null ? "plugin_get" : "plugin_from_file"), Style = (Style)FindResource(latest != null ? "Primary" : "Ghost"),
+                    MinHeight = 36, MinWidth = 96, Padding = new Thickness(16, 0, 16, 0), Margin = new Thickness(0, 12, 0, 0), HorizontalAlignment = HorizontalAlignment.Left,
+                };
+                var plugin = p;
+                if (latest != null) get.Click += (s, e) => FetchPlugin(plugin, (Button)s);
+                else get.Click += (s, e) => PickPlugin(plugin.File);
+                if (latest == null && !noneReleased)
+                {
+                    var row = new StackPanel { Orientation = Orientation.Horizontal };
+                    row.Children.Add(get);
+                    row.Children.Add(new TextBlock
+                    {
+                        Text = Texts.Get("plugin_unreleased"), FontSize = 12, Foreground = B("Muted"),
+                        VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(12, 0, 0, 9),
+                    });
+                    card.Children.Add(row);
+                }
+                else card.Children.Add(get);
                 if (!first) PluginsBox.Children.Add(new Border { Height = 16 });
                 PluginsBox.Children.Add(Card(card));
                 first = false;
+            }
+        }
+
+        /// <summary>An official plugin's newest release downloaded in the background (checked
+        /// against the list's SHA-256), then added as a chosen file is: the player agrees first.</summary>
+        async void FetchPlugin(OfficialPlugin p, Button button)
+        {
+            button.IsEnabled = false;
+            Foot(Texts.F("plugin_fetching", p.TitleIn(Texts.Lang)), "Blue");
+            string path;
+            try { path = await Task.Run(() => PluginFiles.Fetch(p)); }
+            catch (Exception e) when (e is ModError || e is System.IO.IOException || e is UnauthorizedAccessException)
+            {
+                button.IsEnabled = true;
+                Foot(Texts.F("failed", e.Message), "Red");
+                return;
+            }
+            try { AddPlugins(new[] { path }); }
+            finally
+            {
+                try { System.IO.Directory.Delete(System.IO.Path.GetDirectoryName(path), true); }
+                catch (Exception e) when (e is System.IO.IOException || e is UnauthorizedAccessException) { }
+                button.IsEnabled = true;
+                FootState();
             }
         }
 
@@ -125,10 +205,33 @@ namespace QuickDeploy
             return open;
         }
 
+        /// <summary>Why the official list could not be read the last time (PluginFiles.RefreshList), else null.</summary>
+        string listWhy, listLang;
+        DateTime listAsked;
+
+        /// <summary>The official list read again from GitHub in the background: at the window's
+        /// start, and when the Plugins page opens if it was not read in the last five minutes.
+        /// The rows (a plugin a mod needs) and the page follow what changed.</summary>
+        async void RefreshListSoon(bool now)
+        {
+            // another language since: its translations are read now
+            if (!now && DateTime.UtcNow - listAsked < TimeSpan.FromMinutes(5) && listLang == Texts.Lang) return;
+            listAsked = DateTime.UtcNow;
+            var lang = listLang = Texts.Lang;
+            (bool Changed, string Why) r;
+            try { r = await Task.Run(() => PluginFiles.RefreshList(lang)); }
+            catch (Exception e) when (e is System.IO.IOException || e is UnauthorizedAccessException) { r = (false, "error"); }
+            bool whyChanged = r.Why != listWhy;
+            listWhy = r.Why;
+            if (r.Changed) Refresh();
+            if ((r.Changed || whyChanged) && PluginsPage.Visibility == Visibility.Visible) RenderPlugins();
+        }
+
         /// <summary>At the window's start, in the background: each plugin's Start (a license
         /// renewed, a cache read); the state read again when one changed something.</summary>
         async void PluginsAtStart()
         {
+            RefreshListSoon(true);
             var host = PluginHostHere();
             bool changed;
             try { changed = await Task.Run(() => PluginFiles.Start(host)); }
@@ -138,13 +241,17 @@ namespace QuickDeploy
 
         /// <summary>What the plugins say on a mod's row: (text, tip, colour), in the window's language.</summary>
         static IEnumerable<(string Text, string Tip, string Colour)> NotesOf(ModRow m) =>
-            m.Notes.Select(n => (Texts.Zh && n.TextZh != null ? n.TextZh : n.Text, Texts.Zh && n.TipZh != null ? n.TipZh : n.Tip, n.Colour ?? "Yellow"));
+            m.Notes.Where(n => n.Key != null || n.Text != null).Select(n => n.Key != null
+                ? (Texts.F("note_" + n.Key, (n.Args ?? new List<object>()).ToArray()), Texts.F("note_" + n.Key + "_tip", (n.Args ?? new List<object>()).ToArray()), n.Colour ?? "Yellow")
+                : (n.Text, n.Tip, n.Colour ?? "Yellow"));
 
-        void PickPlugin()
+        /// <summary>The file picker for plugins; only: the one file an official plugin is.</summary>
+        void PickPlugin(string only = null)
         {
             var pick = new Microsoft.Win32.OpenFileDialog
             {
-                Title = Texts.Get("plugin_add_title"), Filter = Texts.Get("plugin_filter") + "|HD2QD.*.dll", CheckFileExists = true, Multiselect = true,
+                Title = only != null ? Texts.F("plugin_add_one_title", only) : Texts.Get("plugin_add_title"),
+                Filter = only != null ? only + "|" + only : Texts.Get("plugin_filter") + "|HD2QD.*.dll", CheckFileExists = true, Multiselect = only == null,
             };
             if (pick.ShowDialog(this) == true) AddPlugins(pick.FileNames);
         }

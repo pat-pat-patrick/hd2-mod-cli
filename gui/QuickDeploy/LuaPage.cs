@@ -391,7 +391,7 @@ namespace QuickDeploy
         {
             var kinds = KindsWith(lu.NeedsWhy == "name" ? LoaderCaps.ChefNames : LoaderCaps.ChefMods);
             if (!kinds.Contains("chef")) kinds.Insert(0, "chef");
-            return kinds.Count == 1 ? Texts.Get("lp_needs_chef") : string.Join(Texts.Zh ? " 或 " : " or ", kinds.Select(k => LoaderLabel(k, null)));
+            return kinds.Count == 1 ? Texts.Get("lp_needs_chef") : string.Join(Texts.Get("sep_or"), kinds.Select(k => LoaderLabel(k, null)));
         }
 
         /// <summary>The kinds of the library's loaders that have a capability (LoaderCaps).</summary>
@@ -431,7 +431,7 @@ namespace QuickDeploy
                 Cell(headRow, new TextBlock { Text = Texts.Get(key), Foreground = B("Muted"), FontSize = 12, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 12, 0) }, col);
             table.Children.Add(new Border { BorderBrush = B("Grid"), BorderThickness = new Thickness(0, 0, 0, 1), Background = B("Ground900"), Child = headRow });
 
-            var sep = Texts.Zh ? "；" : "; ";
+            var sep = Texts.Get("sep_clause");
             string Name(ModRow x) => LoaderLabel(x.LoaderKind, x.Lu?.LoaderVersion) ?? x.Name;
             string Short(string kind) => LoaderLabel(kind, null);
             List<string> Caps(ModRow x) => x.Lu?.Caps ?? new List<string>();

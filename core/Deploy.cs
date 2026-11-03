@@ -514,6 +514,14 @@ namespace Hd2Mod
             /// library looking deployed while the game runs something else (the user,
             /// 2026-10-25).</summary>
             public List<string> Wrong = new List<string>();
+            /// <summary>Files another program changed since the last deploy (the user,
+            /// 2026-11-03: a sound fix kept by this manager and lost by others): How is
+            /// "library", a hard link written in place, so the library's own file changed with
+            /// it and a deploy does not undo it; "game", the game's copy changed or replaced, which
+            /// a deploy puts back; "added", a patch file this program did not put there, which a
+            /// deploy deletes (Mod null). Only from size and time, against the last deploy's
+            /// record: nothing is read.</summary>
+            public List<(string Name, string Mod, string How)> Altered = new List<(string, string, string)>();
             public bool Ok => Missing.Count == 0 && Extra.Count == 0 && Changed.Count == 0;
             /// <summary>Nothing the deploy is wrong about.</summary>
             public bool Trustworthy => Wrong.Count == 0;
@@ -532,7 +540,8 @@ namespace Hd2Mod
             var data = Data(game);
             if (!Directory.Exists(data)) return r;
             var want = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var w in Plan(lib, new Dictionary<string, string>())) want[w.Name] = w.Src;
+            var modOf = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var w in Plan(lib, new Dictionary<string, string>())) { want[w.Name] = w.Src; modOf[w.Name] = w.Mod; }
             var onDisk = new HashSet<string>(Files(data).Where(f => Managed.IsMatch(f)), StringComparer.OrdinalIgnoreCase);
             foreach (var name in want.Keys.Where(n => !onDisk.Contains(n)).OrderBy(n => n, StringComparer.Ordinal)) r.Missing.Add(name);
             foreach (var name in onDisk.Where(n => !want.ContainsKey(n)).OrderBy(n => n, StringComparer.Ordinal)) r.Extra.Add(name);
@@ -547,6 +556,7 @@ namespace Hd2Mod
                 if (deep && !SameContent(dst, src)) { r.Changed.Add(name); continue; }
                 r.Copies++;
             }
+            Altered(r, data, want, modOf, onDisk, plan);
             // what the plan is already on its way to fix is not worth saying: only the files it
             // means to leave alone have to be right
             if (plan != null)
@@ -557,6 +567,38 @@ namespace Hd2Mod
                 r.Wrong.Sort(StringComparer.Ordinal);
             }
             return r;
+        }
+
+        /// <summary>CheckResult.Altered, from the last deploy's record of each file's size and time.
+        /// No record (never deployed here): nothing to compare with, nothing said.</summary>
+        static void Altered(CheckResult r, string data, Dictionary<string, string> want, Dictionary<string, string> modOf,
+                            HashSet<string> onDisk, Diff plan)
+        {
+            var files = Json.Obj(Store.Load("deployed.json"), "files");
+            if (files == null || files.Count == 0) return;
+            var keep = plan == null ? null : new HashSet<string>(plan.Keep.Select(w => w.Name), StringComparer.OrdinalIgnoreCase);
+            foreach (var name in want.Keys.Where(onDisk.Contains).OrderBy(n => n, StringComparer.Ordinal))
+            {
+                var rec = Record(files, name);
+                var src = want[name];
+                if (rec == null || Json.Str(rec, "src") != src || !File.Exists(src)) continue;
+                var dst = Paths.Join(data, name);
+                List<object> disk, source;
+                try { disk = Stamp(dst); source = Stamp(src); }
+                catch (IOException) { continue; }
+                bool sourceSame = rec.TryGetValue("source", out var rs) && SameStamp(rs, source);
+                if (Native.SameFile(dst, src) == true)
+                {
+                    // one file under two names, changed since: the library's file is what changed
+                    if (!sourceSame) r.Altered.Add((name, modOf[name], "library"));
+                }
+                // the game's copy changed while the library's did not; one a deploy keeps (the
+                // same bytes) is nothing to say
+                else if (sourceSame && rec.TryGetValue("disk", out var rd) && !SameStamp(rd, disk) && (keep == null || !keep.Contains(name)))
+                    r.Altered.Add((name, modOf[name], "game"));
+            }
+            foreach (var name in r.Extra)
+                if (Record(files, name) == null) r.Altered.Add((name, null, "added"));
         }
 
         /// <summary>A deploy another program is in the middle of. While one runs, the game

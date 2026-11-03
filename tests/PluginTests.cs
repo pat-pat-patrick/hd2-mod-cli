@@ -14,7 +14,82 @@ namespace Hd2Mod.Tests
     {
         static string Sample => Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "HD2QD.Sample.dll");
 
-        public Plugins() => PluginFiles.Folder = null;      // the settings folder's plugins\, as the program has it
+        public Plugins()
+        {
+            PluginFiles.Folder = null;      // the settings folder's plugins\, as the program has it
+            PluginFiles.OfficialJson = () => OfficialList;
+            PluginFiles.OfficialLocaleJson = lang => lang == "zh-CN" ? ZhList : null;
+            PluginFiles.Downloads = "http://127.0.0.1:1";
+        }
+
+        /// <summary>An official list naming the sample (released or not) and one a mod asks for.</summary>
+        static string OfficialList = List(null);
+
+        static string List(string sampleVersions) => @"{""format"": 1, ""plugins"": [
+            {""file"": ""HD2QD.Sample.dll"", ""title"": ""Sample plugin"", ""summary"": ""A sample."", ""author"": ""someone"",
+             ""repository"": ""someone/sample"", ""asset"": ""HD2QD.Sample.dll"", ""api"": 2, ""versions"": [" + (sampleVersions ?? "") + @"]},
+            {""file"": ""HD2QD.License.dll"", ""title"": ""Member licenses"", ""repository"": ""someone/license"",
+             ""api"": 2, ""wanted_by_file"": ""hd2_license.json"", ""versions"": []},
+            {""file"": ""HD2QD.Later.dll"", ""title"": ""For a later manager"", ""repository"": ""someone/later"", ""api"": 3, ""versions"": []}]}";
+
+        /// <summary>The Chinese translations of that list (locales/zh-CN.json): a title only for the sample.</summary>
+        const string ZhList = @"{""HD2QD.Sample.dll"": {""title"": ""示例插件""}, ""HD2QD.License.dll"": {""title"": ""会员授权"", ""summary"": ""登录。""}}";
+
+        /// <summary>Answers on a port of its own, one connection each: the bytes for a path, else 404.</summary>
+        static string ServeMany(int answers, Dictionary<string, byte[]> files)
+        {
+            var l = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+            l.Start();
+            System.Threading.Tasks.Task.Run(() =>
+            {
+                for (int i = 0; i < answers; i++)
+                    using (var c = l.AcceptTcpClient())
+                    using (var s = c.GetStream())
+                    {
+                        var head = new System.Text.StringBuilder();
+                        var b = new byte[1];
+                        while (!head.ToString().EndsWith("\r\n\r\n") && s.Read(b, 0, 1) == 1) head.Append((char)b[0]);
+                        var found = files.TryGetValue(head.ToString().Split(' ')[1], out var body);
+                        body = body ?? new byte[0];
+                        var h = System.Text.Encoding.ASCII.GetBytes("HTTP/1.1 " + (found ? "200 OK" : "404 Not Found") + "\r\nContent-Length: " + body.Length + "\r\nConnection: close\r\n\r\n");
+                        s.Write(h, 0, h.Length);
+                        s.Write(body, 0, body.Length);
+                    }
+                l.Stop();
+            });
+            return "http://127.0.0.1:" + ((System.Net.IPEndPoint)l.LocalEndpoint).Port;
+        }
+
+        static string Sha(string path)
+        {
+            using (var h = System.Security.Cryptography.SHA256.Create())
+                return BitConverter.ToString(h.ComputeHash(File.ReadAllBytes(path))).Replace("-", "").ToLowerInvariant();
+        }
+
+        /// <summary>One answer on a port of its own: these bytes, whatever is asked; the path asked.</summary>
+        static (string Base, System.Threading.Tasks.Task<string> Asked) Serve(byte[] body)
+        {
+            var l = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+            l.Start();
+            var url = "http://127.0.0.1:" + ((System.Net.IPEndPoint)l.LocalEndpoint).Port;
+            var asked = System.Threading.Tasks.Task.Run(() =>
+            {
+                var head = new System.Text.StringBuilder();
+                using (var c = l.AcceptTcpClient())
+                using (var s = c.GetStream())
+                {
+                    var b = new byte[1];
+                    while (!head.ToString().EndsWith("\r\n\r\n") && s.Read(b, 0, 1) == 1) head.Append((char)b[0]);
+                    var h = System.Text.Encoding.ASCII.GetBytes("HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: " + body.Length + "\r\nConnection: close\r\n\r\n");
+                    s.Write(h, 0, h.Length);
+                    s.Write(body, 0, body.Length);
+                    s.Flush();
+                }
+                l.Stop();
+                return head.ToString().Split(' ')[1];
+            });
+            return (url, asked);
+        }
 
         void AddSample() => Assert.Contains("added HD2QD.Sample.dll 1.0.0 to", Cli("plugin-add", Sample));
 
@@ -29,7 +104,9 @@ namespace Hd2Mod.Tests
             Assert.True(File.Exists(Path.Combine(Store.Home, "plugins", "HD2QD.Sample.dll")));
             var p = PluginFiles.All().Single();
             Assert.NotNull(p.Type);
-            Assert.Equal("Sample plugin", PluginFiles.Title(p.Type, false));
+            Assert.Equal("Sample plugin", PluginFiles.Title(p.Type, "en"));
+            Assert.Equal("示例插件", PluginFiles.Title(p.Type, "zh-CN"));
+            Assert.Equal("Sample plugin", PluginFiles.Title(p.Type, "pt-BR"));    // a language it does not have: English
             Assert.Equal("window", PluginFiles.Kind(p.Type));
             Assert.Contains("HD2QD.Sample.dll 1.0.0  Sample plugin", Cli("plugins"));
             Assert.Equal(("HD2QD.Sample.dll", "1.0.0", "1.0.0"), PluginFiles.Install(Sample));
@@ -72,26 +149,129 @@ namespace Hd2Mod.Tests
             AddSample();
             var note = Json.List(Row("Noted"), "notes").Cast<Dictionary<string, object>>().Single();
             Assert.Equal("Sampled", Json.Str(note, "text"));
-            Assert.Equal("已采样", Json.Str(note, "text_zh"));
             Assert.Equal("HD2QD.Sample.dll", Json.Str(note, "plugin"));
+            PluginHost.Lang = () => "zh-CN";                                     // the window in Chinese: the plugin answers in it
+            Assert.Equal("已采样", Json.Str(Json.List(Row("Noted"), "notes").Cast<Dictionary<string, object>>().Single(), "text"));
             Assert.Empty(Json.List(Row("Failing"), "notes"));
         }
 
         /// <summary>A mod that ships a file an official plugin reads (hd2_license.json) says it
-        /// needs that plugin while it is not added.</summary>
+        /// needs that plugin while it is not added; the Plugins page lists it first.</summary>
         [Fact]
         public void A_mod_says_which_official_plugin_it_needs()
         {
             var licensed = Mod("Licensed", Files(("hd2_license.json", "{}"), (A + ".patch_0", "a")));
             Cli("add", licensed, "--name", "Licensed");
-            var note = PluginFiles.Notes(licensed, PluginHost.Make(false)).Single();
+            PluginHost.Lang = () => "zh-CN";
+            var note = PluginFiles.Notes(licensed, PluginHost.Make()).Single();
             Assert.True(Json.Bool(note, "needs"));
             Assert.Equal("HD2QD.License.dll", Json.Str(note, "plugin"));
-            Assert.Equal("需要“会员授权”插件", Json.Str(note, "text_zh"));
-            var needed = PluginFiles.Needed(Library.Load()).Single();
-            Assert.Equal("HD2QD.License.dll", needed.Plugin);
-            Assert.Equal(new[] { "Licensed" }, needed.Mods);
+            Assert.Equal("needs_plugin", Json.Str(note, "key"));                 // the manager's own words: the window words them
+            Assert.Equal(new object[] { "会员授权", "HD2QD.License.dll" }, Json.List(note, "args"));
+            var first = PluginFiles.Available(Library.Load()).First();
+            Assert.Equal("HD2QD.License.dll", first.Plugin.File);
+            Assert.Equal(new[] { "Licensed" }, first.Mods);
         }
+
+        /// <summary>The official plugins not added are listed (the user, 2026-11-03: the page
+        /// said nothing of what can be added); one for another Api is not; an added one leaves
+        /// the list, and comes back when it is removed.</summary>
+        [Fact]
+        public void The_official_plugins_not_added_are_listed()
+        {
+            Assert.Equal(new[] { "HD2QD.Sample.dll", "HD2QD.License.dll" }, PluginFiles.Available(Library.Load()).Select(p => p.Plugin.File));
+            var said = Cli("plugins");
+            Assert.Contains("official plugins not added", said);
+            Assert.Contains("HD2QD.Sample.dll  Sample plugin  not released yet", said);
+            Assert.DoesNotContain("HD2QD.Later.dll", said);
+            AddSample();
+            Assert.Equal(new[] { "HD2QD.License.dll" }, PluginFiles.Available(Library.Load()).Select(p => p.Plugin.File));
+            Cli("plugin-remove", "Sample");
+            Assert.Equal(2, PluginFiles.Available(Library.Load()).Count);
+        }
+
+        /// <summary>The official list is read from its repository, not carried by the program (the
+        /// user, 2026-11-03: "列表不能内置"), and kept: offline, or when what comes back is not
+        /// a list, the copy read before stays.</summary>
+        [Fact]
+        public void The_official_list_is_read_from_its_repository_and_kept()
+        {
+            PluginFiles.OfficialJson = KeptList;
+            Assert.Empty(PluginFiles.Official());                                 // never read: nothing to show
+            Assert.Equal((false, "offline"), PluginFiles.RefreshList());
+            Assert.Contains("the official plugin list could not be read", Cli("plugins"));
+
+            var (url, asked) = Serve(System.Text.Encoding.UTF8.GetBytes(OfficialList));
+            PluginFiles.ListUrl = url + "/pat-pat-patrick/hd2qd-plugins/main/plugins.json";
+            Assert.Equal((true, (string)null), PluginFiles.RefreshList());
+            Assert.Equal("/pat-pat-patrick/hd2qd-plugins/main/plugins.json", asked.Result);
+            Assert.Equal(new[] { "HD2QD.Sample.dll", "HD2QD.License.dll" }, PluginFiles.Official().Select(p => p.File));
+            Assert.True(File.Exists(Path.Combine(Store.Home, "official_plugins.json")));
+
+            PluginFiles.ListUrl = null;
+            Assert.Equal((false, "offline"), PluginFiles.RefreshList());
+            Assert.Equal(2, PluginFiles.Official().Count);
+            var (url2, _) = Serve(System.Text.Encoding.UTF8.GetBytes("<html>not found</html>"));
+            PluginFiles.ListUrl = url2 + "/plugins.json";
+            Assert.Equal((false, "not_list"), PluginFiles.RefreshList());
+            Assert.Equal(2, PluginFiles.Official().Count);
+            Assert.Contains("HD2QD.Sample.dll  Sample plugin  not released yet", Cli("plugins"));
+        }
+
+        /// <summary>A language's translations are one file beside the list (the user, 2026-11-03:
+        /// a field per language would not scale): read with it, each field falling back to
+        /// English, and gone again when the file is.</summary>
+        [Fact]
+        public void The_translations_are_a_file_of_their_own()
+        {
+            PluginFiles.OfficialJson = KeptList;
+            PluginFiles.OfficialLocaleJson = KeptLocale;
+            var u8 = System.Text.Encoding.UTF8;
+            var url = ServeMany(2, new Dictionary<string, byte[]>
+            {
+                ["/l/plugins.json"] = u8.GetBytes(OfficialList), ["/l/locales/zh-CN.json"] = u8.GetBytes(ZhList),
+            });
+            PluginFiles.ListUrl = url + "/l/plugins.json";
+            Assert.Equal((true, (string)null), PluginFiles.RefreshList("zh-CN"));
+            var sample = PluginFiles.OfficialNamed("Sample");
+            Assert.Equal("示例插件", sample.TitleIn("zh-CN"));
+            Assert.Equal("A sample.", sample.SummaryIn("zh-CN"));                 // not translated: English
+            Assert.Equal("Sample plugin", sample.TitleIn("de"));                  // no such language: English
+            Assert.Equal("Sample plugin", sample.TitleIn("en"));
+            Assert.Equal("登录。", PluginFiles.OfficialNamed("License").SummaryIn("zh-CN"));
+
+            url = ServeMany(2, new Dictionary<string, byte[]> { ["/l/plugins.json"] = u8.GetBytes(OfficialList) });
+            PluginFiles.ListUrl = url + "/l/plugins.json";
+            Assert.Equal((true, (string)null), PluginFiles.RefreshList("zh-CN"));   // the translations withdrawn
+            Assert.Equal("Sample plugin", PluginFiles.OfficialNamed("Sample").TitleIn("zh-CN"));
+        }
+
+        /// <summary>plugin-add by an official plugin's name downloads its newest release from its
+        /// repository and adds it only when the bytes are the ones the list names.</summary>
+        [Fact]
+        public void An_official_plugin_is_downloaded_and_checked()
+        {
+            CliCode(1, "plugin-add", "Sample");                                  // not released
+            Assert.Empty(PluginFiles.All());
+
+            OfficialList = List(@"{""version"": ""0.9.0"", ""tag"": ""v0.9.0"", ""sha256"": ""00""}, {""version"": ""1.0.0"", ""tag"": ""v1.0.0"", ""sha256"": """ + Sha(Sample) + @"""}");
+            try
+            {
+                var (url, asked) = Serve(File.ReadAllBytes(Sample));
+                PluginFiles.Downloads = url;
+                Assert.Contains("added HD2QD.Sample.dll 1.0.0 to", Cli("plugin-add", "Sample"));
+                Assert.Equal("/someone/sample/releases/download/v1.0.0/HD2QD.Sample.dll", asked.Result);
+                Cli("plugin-remove", "Sample");
+
+                var (url2, _) = Serve(Encoding("not the plugin"));                  // other bytes: refused
+                PluginFiles.Downloads = url2;
+                Assert.Equal("plugin_sha", Assert.Throws<ModError>(() => PluginFiles.Fetch(PluginFiles.OfficialNamed("Sample"))).Kind);
+                Assert.Empty(PluginFiles.All());
+            }
+            finally { OfficialList = List(null); }
+        }
+
+        static byte[] Encoding(string s) => System.Text.Encoding.UTF8.GetBytes(s);
 
         /// <summary>A plugin's commands run from the manager's command line; a name the manager has
         /// stays the manager's; what the plugin throws is a refusal.</summary>
@@ -110,9 +290,9 @@ namespace Hd2Mod.Tests
         [Fact]
         public void A_plugins_start_runs_with_the_host()
         {
-            Assert.False(PluginFiles.Start(PluginHost.Make(false)));               // none added
+            Assert.False(PluginFiles.Start(PluginHost.Make()));                    // none added
             AddSample();
-            Assert.True(PluginFiles.Start(PluginHost.Make(false)));
+            Assert.True(PluginFiles.Start(PluginHost.Make()));
             Assert.True(File.Exists(Path.Combine(Store.Home, "sample_started.txt")));
         }
 
@@ -123,9 +303,11 @@ namespace Hd2Mod.Tests
         {
             var a = Mod("Alpha", Files((A + ".patch_0", "a")));
             Cli("add", a, "--name", "Alpha");
-            var h = PluginHost.Make(true);
+            PluginHost.Lang = () => "pt-BR";
+            var h = PluginHost.Make();
             Assert.Equal(Store.Home, h["home"]);
-            Assert.Equal(true, h["zh"]);
+            Assert.Equal("pt-BR", h["lang"]);
+            Assert.False(h.ContainsKey("zh"));
             Assert.Equal(Data, h["data"]);
             var mods = ((Func<List<Dictionary<string, object>>>)h["mods"])();
             Assert.Equal("Alpha", Json.Str(mods.Single(), "name"));

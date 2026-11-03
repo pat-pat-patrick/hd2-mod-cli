@@ -170,18 +170,22 @@ namespace QuickDeploy
             PageStorage.Content = Texts.Get("page_storage");
             PageTags.Content = Texts.Get("page_tags");
             PageDownload.Visibility = HasNexus ? Visibility.Visible : Visibility.Collapsed;
+#if HAS_NEXUS
             SearchHint.Text = Texts.Get("search_hint");
+#else
+            SearchHint.Text = Texts.Get("search_hint_plain");
+#endif
             SettingsBtn.ToolTip = Texts.Get("settings");
             PluginsBtn.ToolTip = Texts.Get("plugins");
             FilterWords();
             ListHint.Visibility = Texts.Hints ? Visibility.Visible : Visibility.Collapsed;
         }
 
-        /// <summary>The whole window in the other language at once, kept for the next start.</summary>
-        void Language(bool zh)
+        /// <summary>The whole window in another language at once (a language tag), kept for the next start.</summary>
+        void Language(string tag)
         {
-            if (zh == Texts.Zh) { Words(); return; }
-            Texts.Choose(zh);
+            if (tag == Texts.Lang) { Words(); return; }
+            Texts.Choose(tag);
             Words();
             rows.Clear();                       // every row's words, built again
             List.Children.Clear();
@@ -193,6 +197,8 @@ namespace QuickDeploy
             if (StoragePage.Visibility == Visibility.Visible) RenderStorage();
             if (SettingsPage.Visibility == Visibility.Visible) RenderSettings();
             if (PluginsPage.Visibility == Visibility.Visible) RenderPlugins();
+            Refresh();                          // what the plugins say of each mod, in this language
+            RefreshListSoon(true);              // the official list's translations for it
         }
 
         // ---------------------------------------------------------------- start, state, commands
@@ -1608,6 +1614,11 @@ namespace QuickDeploy
             // a download on its way: the list is free meanwhile, and a state read must not hide it
             else if (fetchLine != null) Foot(fetchLine, "Blue");
             else if (lastDone != null) Foot(Texts.F("done", lastDone), "Blue");
+            // another program changed the game folder since the last deploy (the user,
+            // 2026-11-03): the rows say which mods and how
+            else if (st.Check.AlteredMods > 0 || st.Check.Added > 0)
+                Foot(string.Join(Texts.Get("sep_sentence"), new[] { st.Check.AlteredMods > 0 ? Texts.F("altered_foot", st.Check.AlteredMods) : null,
+                                              st.Check.Added > 0 ? Texts.F("added_foot", st.Check.Added) : null }.Where(t => t != null)), "Yellow");
             else if (st.Pending == 0) Foot(Texts.Get("synced"), "Blue");
             else Foot(Texts.F("pending", st.Written, st.Moved, st.Deleted, Texts.Size(st.CopiedBytes)), "Yellow");
             if (DateTime.Now - doneAt > TimeSpan.FromSeconds(10)) doneLine = null;
@@ -1863,7 +1874,7 @@ namespace QuickDeploy
                     else if (b.LuaJitBytecode) why = Texts.F("lua_kind_bytecode", b.Script);
                     else why = Texts.F("lua_broken_uses", b.Script, string.Join(Texts.Sep, b.Jit.Select(j => Texts.Get("lua_lib_" + j))));
                     var tb = new DockPanel();
-                    var cannot = new TextBlock { Text = Texts.Get("lua_broken") + (Texts.Zh ? "" : " "), FontSize = 12, Foreground = B("Red"), FontWeight = FontWeights.SemiBold };
+                    var cannot = new TextBlock { Text = Texts.Get("lua_broken") + Texts.Get("sep_sentence"), FontSize = 12, Foreground = B("Red"), FontWeight = FontWeights.SemiBold };
                     DockPanel.SetDock(cannot, Dock.Left);
                     tb.Children.Add(cannot);
                     tb.Children.Add(Selectable.Text(why, 12));
@@ -1897,8 +1908,8 @@ namespace QuickDeploy
                 if (code > 0) clauses.Add(Texts.Get(code > 1 ? "lua_clause_code_n" : "lua_clause_code"));
                 if (bytecode) clauses.Add(Texts.Get("lua_clause_bytecode"));
                 if (used.Count > 0) clauses.Add(Texts.F("lua_clause_libs", string.Join(sep, used.Select(j => Texts.Get("lua_lib_" + j)))));
-                string lacks = Texts.Zh ? string.Join("，", clauses)
-                             : clauses.Count == 1 ? clauses[0] : string.Join(", ", clauses.Take(clauses.Count - 1)) + " and " + clauses.Last();
+                string lacks = clauses.Count == 1 ? clauses[0]
+                             : string.Join(Texts.Get("join"), clauses.Take(clauses.Count - 1)) + Texts.Get("join_last") + clauses.Last();
                 var basis = new List<string>();
                 // each loader in the library, as far as it is known what it gives, only for the libraries
                 var known = st.Mods.Where(x => x.Lu?.Loader == "bml" || x.Lu?.Loader == "chef").Select(x => LoaderLabel(x.Lu.Loader, x.Lu.LoaderVersion)).Distinct().ToList();
@@ -1910,7 +1921,7 @@ namespace QuickDeploy
                     foreach (var x in st.Mods.Where(x => x.Lu?.Boot == "other"))
                         basis.Add(Texts.F("lua_basis_unknown", x.Name));
                 }
-                box.Children.Add(Small(string.Join(Texts.Zh ? "" : " ", basis), new Thickness(0, 6, 0, 0)));   // Chinese sentences take no space between them
+                box.Children.Add(Small(string.Join(Texts.Get("sep_sentence"), basis), new Thickness(0, 6, 0, 0)));   // as the language puts sentences together
             }
             // a translation pack, and the packs of a mod
             if (lu.PackOfName != null)
@@ -2831,7 +2842,7 @@ namespace QuickDeploy
             if (page == "lua") RenderLua();
             if (page == "tags") RenderTags();
             if (page == "settings") { RenderSettings(); SettingsPage.ScrollToTop(); }
-            if (page == "plugins") { RenderPlugins(); PluginsPage.ScrollToTop(); }
+            if (page == "plugins") { RenderPlugins(); PluginsPage.ScrollToTop(); RefreshListSoon(false); }
         }
 
         void Page_Click(object sender, RoutedEventArgs e) =>
@@ -5479,6 +5490,13 @@ namespace QuickDeploy
             return grid;
         }
 
+        /// <summary>The words for a mod with no recorded source: a build without Nexus Mods names GitHub only.</summary>
+#if HAS_NEXUS
+        const string NoSource = "up_no_source";
+#else
+        const string NoSource = "up_no_source_plain";
+#endif
+
         UIElement UpdatePanel(ModRow m)
         {
             var box = new StackPanel();
@@ -5508,7 +5526,7 @@ namespace QuickDeploy
             var u = Checked(m);
             string text, colour = "Muted";
             bool apply = false;
-            if (u == null) text = m.Channel == null ? Texts.Get("up_no_source") : Texts.Hints ? Texts.Get("up_not_checked") : "";
+            if (u == null) text = m.Channel == null ? Texts.Get(NoSource) : Texts.Hints ? Texts.Get("up_not_checked") : "";
             else switch (u.Status)
             {
                 case "update":
@@ -5523,7 +5541,7 @@ namespace QuickDeploy
                     break;
                 case "current": text = Texts.Get("up_current"); colour = "Blue"; break;
                 case "skipped": text = Texts.F("up_skipped", u.Latest ?? "?"); break;
-                case "no_source": text = Texts.Get("up_no_source"); break;
+                case "no_source": text = Texts.Get(NoSource); break;
                 case "no_check":
 #if !HAS_NEXUS
                     // a mod from Nexus Mods: it is this build that does not ask, not the site
@@ -6750,13 +6768,14 @@ namespace QuickDeploy
             // the language
             body.Children.Add(Label("set_lang", new Thickness(0, 20, 0, 6)));
             var langs = new Border { BorderBrush = B("Grid"), BorderThickness = new Thickness(1), HorizontalAlignment = HorizontalAlignment.Left };
+            // every language the window has a file for, each in its own name
             var pair = new StackPanel { Orientation = Orientation.Horizontal };
-            var zh = new RadioButton { Style = (Style)FindResource("Segment"), GroupName = "setlang", Content = "中文", MinWidth = 96, IsChecked = Texts.Zh };
-            var en = new RadioButton { Style = (Style)FindResource("Segment"), GroupName = "setlang", Content = "English", MinWidth = 96, IsChecked = !Texts.Zh };
-            zh.Click += (s, e2) => Language(true);
-            en.Click += (s, e2) => Language(false);
-            pair.Children.Add(zh);
-            pair.Children.Add(en);
+            foreach (var (tag, name) in Texts.Languages)
+            {
+                var one = new RadioButton { Style = (Style)FindResource("Segment"), GroupName = "setlang", Content = name, MinWidth = 96, IsChecked = tag == Texts.Lang };
+                one.Click += (s, e2) => Language(tag);
+                pair.Children.Add(one);
+            }
             langs.Child = pair;
             body.Children.Add(langs);
 

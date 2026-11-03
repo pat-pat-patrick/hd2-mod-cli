@@ -96,7 +96,10 @@ namespace QuickDeploy
     /// <summary>A plugin's word on a mod's row, in both languages (PluginFiles.Notes).</summary>
     class Note
     {
-        public string Plugin, Text, TextZh, Tip, TipZh, Colour;
+        /// <summary>A plugin's words (Text, Tip, in the window's language), or the manager's own by
+        /// Key and Args, worded by the window (Texts "note_" + Key).</summary>
+        public string Plugin, Text, Tip, Colour, Key;
+        public List<object> Args;
         /// <summary>An official plugin the mod needs and that is not added.</summary>
         public bool Needs;
     }
@@ -204,6 +207,9 @@ namespace QuickDeploy
         /// <summary>Of those, the ones a deploy would leave alone: the record is wrong about
         /// them, and nothing else the window says about them is true.</summary>
         public int Wrong;
+        /// <summary>Since the last deploy, another program changed files of this many mods
+        /// (their rows say how), and added this many patch files a deploy deletes.</summary>
+        public int AlteredMods, Added;
     }
 
     /// <summary>A folder an older version of a mod was unpacked into, that no mod uses now.</summary>
@@ -349,7 +355,8 @@ namespace QuickDeploy
                 {
                     Ok = Bool(ch, "ok"), Missing = Int(ch, "missing_n"), Extra = Int(ch, "extra_n"),
                     Changed = Int(ch, "changed_n"), Copies = Int(ch, "copies"), Checked = Int(ch, "checked"),
-                    Wrong = Int(ch, "wrong_n"),
+                    Wrong = Int(ch, "wrong_n"), Added = Int(ch, "added_n"),
+                    AlteredMods = List(ch, "altered").OfType<Dictionary<string, object>>().Select(x => Str(x, "mod")).Where(m => m != null).Distinct().Count(),
                 };
             s.KeepPrevious = Bool(d, "keep_previous");
             foreach (var l in List(d, "leftovers").OfType<Dictionary<string, object>>())
@@ -414,7 +421,7 @@ namespace QuickDeploy
                     ShownVersion = Str(m, "shown_version"), VersionFrom = Str(m, "version_from"), DeployBytes = Long(m, "deploy_bytes"),
                     Notes = List(m, "notes").OfType<Dictionary<string, object>>().Select(n => new Note
                     {
-                        Plugin = Str(n, "plugin"), Text = Str(n, "text"), TextZh = Str(n, "text_zh"), Tip = Str(n, "tip"), TipZh = Str(n, "tip_zh"),
+                        Plugin = Str(n, "plugin"), Text = Str(n, "text"), Tip = Str(n, "tip"), Key = Str(n, "key"), Args = List(n, "args").ToList(),
                         Colour = Str(n, "colour"), Needs = n.TryGetValue("needs", out var nd) && nd is bool nb && nb,
                     }).ToList(),
                     LibraryBytes = Long(m, "library_bytes"),

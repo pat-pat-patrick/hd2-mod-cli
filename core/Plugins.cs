@@ -9,12 +9,12 @@ namespace Hd2Mod
 {
     /// <summary>Plugins: HD2QD.*.dll in the settings folder's plugins\, each with a class Plugin
     /// that says its Api, its Kind ("panel": drawn in the manager's window; "window": a window of
-    /// its own, opened by Open(owner, host)), its Title(zh) and its Summary(zh). None ships with
+    /// its own, opened by Open(owner, host)), its Title(lang) and its Summary(lang). None ships with
     /// the program: the player adds them (the user, 2026-11-02), so they outlast a new copy of the
     /// program. They share no types with the manager (the core is compiled into each program), so
     /// they are called by name, with strings, numbers, delegates and Json shapes. Each file is
     /// read once a process, and again after it is added or removed.</summary>
-    public static class PluginFiles
+    public static partial class PluginFiles
     {
         /// <summary>Set by tests; else Dir.</summary>
         public static string Folder;
@@ -139,12 +139,16 @@ namespace Hd2Mod
             return found;
         }
 
-        /// <summary>The Api every plugin speaks; a plugin of another one is refused.</summary>
-        public const int Api = 1;
+        /// <summary>The Api every plugin speaks; a plugin of another one is refused. 2 (2026-11-03):
+        /// the language is a language tag ("en", "zh-CN", "pt-BR"), never a Chinese-or-not switch
+        /// (the user: "哪有本地化这么写的"), so a plugin can speak any number of languages.</summary>
+        public const int Api = 2;
 
         public static string Kind(Type t) => t?.GetField("Kind")?.GetValue(null) as string;
-        public static string Title(Type t, bool zh) => t?.GetMethod("Title")?.Invoke(null, new object[] { zh }) as string;
-        public static string Summary(Type t, bool zh) => t?.GetMethod("Summary")?.Invoke(null, new object[] { zh }) as string;
+        /// <summary>A plugin's title and summary in lang (a language tag): the plugin's own best
+        /// match for it, English when it has none.</summary>
+        public static string Title(Type t, string lang) => t?.GetMethod("Title")?.Invoke(null, new object[] { lang }) as string;
+        public static string Summary(Type t, string lang) => t?.GetMethod("Summary")?.Invoke(null, new object[] { lang }) as string;
         public static string Version(Type t) => t?.Assembly.GetName().Version?.ToString(3);
 
         /// <summary>A plugin's static method, by name, with what it threw (not the reflection's wrapper).</summary>
@@ -163,18 +167,12 @@ namespace Hd2Mod
 
         // ------------------------------------------------------------ what plugins add to the manager
 
-        /// <summary>Official plugins a mod asks for by a file it ships: while the plugin is not
-        /// added, the mod's row says it needs it (the user, 2026-11-02: a plugin is added when
-        /// it is needed). Until the official list carries this, it is kept here.</summary>
-        static readonly (string File, string Plugin, string En, string Zh)[] Asks =
-        {
-            ("hd2_license.json", "HD2QD.License.dll", "Member licenses", "会员授权"),
-        };
-
-        /// <summary>What is said on a mod's row: each added plugin's ModNote(modFolder, host), and
-        /// for an official plugin the mod asks for that is not added, that it is needed. Each note
-        /// is {plugin, text, text_zh, tip, tip_zh, colour ("Yellow", "Blue", "Muted"), needs?}.
-        /// A plugin that fails says nothing (it is logged): a row never breaks on a plugin.</summary>
+        /// <summary>What is said on a mod's row: each added plugin's ModNote(modFolder, host), in
+        /// the host's language, as {plugin, text, tip, colour ("Yellow", "Blue", "Muted")}; and for
+        /// an official plugin the mod asks for that is not added, that it is needed, as the
+        /// manager's own words: {plugin, key "needs_plugin", args [title in that language, file],
+        /// colour, needs}, which the window words. A plugin that fails says nothing (it is
+        /// logged): a row never breaks on a plugin.</summary>
         public static List<Dictionary<string, object>> Notes(string modFolder, Dictionary<string, object> host)
         {
             var notes = new List<Dictionary<string, object>>();
@@ -193,30 +191,15 @@ namespace Hd2Mod
                 }
                 catch (Exception e) { ManagerLog.Warn("plugin " + file + ": ModNote: " + e.Message); }
             }
-            foreach (var ask in Asks)
-                if (!added.Contains(ask.Plugin) && File.Exists(Path.Combine(modFolder, ask.File)))
+            // an official plugin the mod asks for by a file it ships (the list's wanted_by_file)
+            foreach (var ask in Official().Where(p => p.WantedBy != null))
+                if (!added.Contains(ask.File) && File.Exists(Path.Combine(modFolder, ask.WantedBy)))
                     notes.Add(new Dictionary<string, object>
                     {
-                        ["plugin"] = ask.Plugin, ["needs"] = true, ["colour"] = "Yellow",
-                        ["text"] = "Needs the " + ask.En + " plugin", ["text_zh"] = "需要“" + ask.Zh + "”插件",
-                        ["tip"] = "Add " + ask.Plugin + " on the Plugins page (the jigsaw piece beside the gear).",
-                        ["tip_zh"] = "请在“插件”页（齿轮旁的拼图按钮）添加 " + ask.Plugin + "。",
+                        ["plugin"] = ask.File, ["needs"] = true, ["colour"] = "Yellow", ["key"] = "needs_plugin",
+                        ["args"] = new List<object> { ask.TitleIn(host.TryGetValue("lang", out var l) ? l as string : null), ask.File },
                     });
             return notes;
-        }
-
-        /// <summary>The official plugins the library's mods ask for and that are not added: each
-        /// with its titles and the mods that ask.</summary>
-        public static List<(string Plugin, string En, string Zh, List<string> Mods)> Needed(Library lib)
-        {
-            var added = new HashSet<string>(All().Select(p => p.File), StringComparer.OrdinalIgnoreCase);
-            var out_ = new List<(string, string, string, List<string>)>();
-            foreach (var ask in Asks.Where(a => !added.Contains(a.Plugin)))
-            {
-                var mods = lib.Mods.Where(m => Directory.Exists(m.Path) && File.Exists(Path.Combine(m.Path, ask.File))).Select(m => m.Name).ToList();
-                if (mods.Count > 0) out_.Add((ask.Plugin, ask.En, ask.Zh, mods));
-            }
-            return out_;
         }
 
         /// <summary>The command-line commands the added plugins offer (their Commands: rows of
@@ -253,7 +236,8 @@ namespace Hd2Mod
 
     /// <summary>What the manager hands a plugin (every call takes this host): home, its settings
     /// folder (a plugin keeps its own files there); appdata, the player's roaming AppData (the
-    /// game's saves\); zh, the language; data, the game's data folder (null without a game
+    /// game's saves\); lang, the language the manager shows, a language tag ("en", "zh-CN"),
+    /// which a plugin answers in, or in English when it does not have it; data, the game's data folder (null without a game
     /// folder); mods, a Func of the enabled mods in load order, each {name, archives: [patch
     /// archives]} (the last to load wins a resource two ship); library, a Func of every mod in
     /// the library, each {name, path, enabled, settings: [the settings window's lists its Lua
@@ -268,12 +252,16 @@ namespace Hd2Mod
             AppDataOverride ?? (Environment.GetEnvironmentVariable("HD2QD_APPDATA") is string said && said.Length > 0 ? said
             : Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData));
 
-        public static Dictionary<string, object> Make(bool zh)
+        /// <summary>The language the manager shows, a language tag: the window says its own; the
+        /// command line speaks English.</summary>
+        public static Func<string> Lang = () => "en";
+
+        public static Dictionary<string, object> Make()
         {
             var game = Store.GameDir(null, false);
             return new Dictionary<string, object>
             {
-                ["api"] = (long)PluginFiles.Api, ["home"] = Store.Home, ["appdata"] = AppData, ["zh"] = zh,
+                ["api"] = (long)PluginFiles.Api, ["home"] = Store.Home, ["appdata"] = AppData, ["lang"] = Lang(),
                 ["data"] = game != null ? Paths.Join(game, "data") : null,
                 ["mods"] = (Func<List<Dictionary<string, object>>>)(() => Mods(Library.Load())),
                 ["library"] = (Func<List<Dictionary<string, object>>>)(() => LibraryMods(Library.Load())),

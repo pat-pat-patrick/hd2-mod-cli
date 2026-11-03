@@ -53,9 +53,8 @@ namespace Hd2Mod
 
         /// <summary>Whether the game folder is exactly what the library asks for, for the
         /// window's own line: names and file ids only, no bytes read.</summary>
-        static Dictionary<string, object> CheckBlock(Library lib, string game, Diff plan)
+        static Dictionary<string, object> CheckBlock(Deploy.CheckResult c)
         {
-            var c = Deploy.Check(lib, game, plan);
             return new Dictionary<string, object>
             {
                 ["ok"] = c.Ok, ["checked"] = (long)c.Checked, ["copies"] = (long)c.Copies,
@@ -64,7 +63,23 @@ namespace Hd2Mod
                 ["changed"] = c.Changed.Take(40).Cast<object>().ToList(),
                 ["missing_n"] = (long)c.Missing.Count, ["extra_n"] = (long)c.Extra.Count, ["changed_n"] = (long)c.Changed.Count,
                 ["wrong"] = c.Wrong.Take(40).Cast<object>().ToList(), ["wrong_n"] = (long)c.Wrong.Count,
+                // changed by another program since the last deploy (Deploy.CheckResult.Altered)
+                ["altered"] = c.Altered.Take(40).Select(x => (object)new Dictionary<string, object> { ["name"] = x.Name, ["mod"] = x.Mod, ["how"] = x.How }).ToList(),
+                ["altered_n"] = (long)c.Altered.Count, ["added_n"] = (long)c.Altered.Count(x => x.How == "added"),
             };
+        }
+
+        /// <summary>A mod's own word on its files another program changed since the last deploy:
+        /// those in the library itself first (a deploy does not undo them), then those a deploy
+        /// puts back. The manager's own words, by key and arguments (the window words them in its
+        /// language): altered_library, altered_game, each with the number of files.</summary>
+        static IEnumerable<Dictionary<string, object>> AlteredNotes(Deploy.CheckResult c, string mod)
+        {
+            int lib = c.Altered.Count(x => x.Mod == mod && x.How == "library"), game = c.Altered.Count(x => x.Mod == mod && x.How == "game");
+            if (lib > 0)
+                yield return new Dictionary<string, object> { ["colour"] = "Yellow", ["key"] = "altered_library", ["args"] = new List<object> { (long)lib } };
+            if (game > 0)
+                yield return new Dictionary<string, object> { ["colour"] = "Yellow", ["key"] = "altered_game", ["args"] = new List<object> { (long)game } };
         }
 
         static string Picture(string folder, string rel, List<string> includes)
@@ -272,6 +287,7 @@ namespace Hd2Mod
         {
             var errors = new Dictionary<string, string>();
             var d = game != null ? Deploy.Compute(lib, game, verify, errors) : null;
+            var check = Deploy.Check(lib, game, d);
             var data = game != null ? Paths.Join(game, "data") : null;
             var action = new Dictionary<string, (string What, string From)>();
             if (d != null)
@@ -354,7 +370,7 @@ namespace Hd2Mod
             var record = Store.Load("deployed.json");
             var mods = new List<object>();
             int index = 0;
-            var pluginHost = PluginHost.Make(false);        // what the plugins say of each mod (PluginFiles.Notes)
+            var pluginHost = PluginHost.Make();             // what the plugins say of each mod (PluginFiles.Notes), in the manager's language
             foreach (var m in lib.Mods)
             {
                 index++;
@@ -415,7 +431,7 @@ namespace Hd2Mod
                     ["site_author"] = m.Site?.Author, ["site_summary"] = m.Site?.Summary, ["site_version"] = m.Site?.Version,
                     ["tags"] = m.Tags.Cast<object>().ToList(), ["group"] = m.Group,
                     // what the added plugins say of it, and the official plugins it needs that are not added
-                    ["notes"] = exists ? PluginFiles.Notes(m.Path, pluginHost).Cast<object>().ToList() : new List<object>(),
+                    ["notes"] = AlteredNotes(check, m.Name).Concat(exists ? PluginFiles.Notes(m.Path, pluginHost) : new List<Dictionary<string, object>>()).Cast<object>().ToList(),
                     // the version kept for a rollback (Versions), and the newest one skipped
                     ["previous"] = m.Previous == null ? null : new Dictionary<string, object>
                     {
@@ -473,7 +489,7 @@ namespace Hd2Mod
                 ["loader_helpers"] = Loaders.Helpers(lib).Select(m => (object)m.Id).ToList(),
                 ["profiles"] = lib.Profiles.Select(p => (object)p.Name).ToList(),
                 ["deploying"] = Deploying(),
-                ["check"] = CheckBlock(lib, game, d),
+                ["check"] = CheckBlock(check),
                 // whether mods with a script keep the version they had (Versions)
                 ["keep_previous"] = Versions.KeepOn(),
                 ["leftovers"] = Ops.Leftovers(lib, null).Select(d => (object)new Dictionary<string, object>

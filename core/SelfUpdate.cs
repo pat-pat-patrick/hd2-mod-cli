@@ -76,23 +76,32 @@ namespace Hd2Mod
             };
         }
 
-        /// <summary>A release text in one language. A text in both carries a line &lt;!-- zh --&gt;
-        /// before its Chinese and &lt;!-- en --&gt; before its English; what comes before the first
-        /// of them is for both. A text without them is the same in both languages (Same: true).</summary>
-        public static (string Text, bool Same) NotesIn(string body, bool zh)
+        /// <summary>A release text in one language, lang a language tag ("zh-CN"). Each language's
+        /// part follows a line &lt;!-- tag --&gt; (&lt;!-- en --&gt;, &lt;!-- zh --&gt;, &lt;!-- pt-BR --&gt;); what comes
+        /// before the first is for all. A part is the language's when its tag is lang or lang's
+        /// language (zh for zh-CN). Without a part for lang: the English part, else every part, and
+        /// Same is true, as for a text with no markers.</summary>
+        public static (string Text, bool Same) NotesIn(string body, string lang)
         {
             body = (body ?? "").Replace("\r\n", "\n");
-            var parts = Regex.Split(body, @"^[ \t]*<!--\s*(zh|en)\s*-->[ \t]*$", RegexOptions.Multiline);
+            var parts = Regex.Split(body, @"^[ \t]*<!--\s*([A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*)\s*-->[ \t]*$", RegexOptions.Multiline);
             if (parts.Length == 1) return (body.Trim(), true);
-            var sb = new StringBuilder(parts[0]);
-            bool any = false;
             // each part starts with the marker line's own end
             string Part(int i) => parts[i + 1].StartsWith("\n") ? parts[i + 1].Substring(1) : parts[i + 1];
-            for (int i = 1; i + 1 < parts.Length; i += 2)
-                if ((parts[i] == "zh") == zh) { sb.Append(Part(i)); any = true; }
-            if (!any)
-                for (int i = 1; i + 1 < parts.Length; i += 2) sb.Append(Part(i));
-            return (sb.ToString().Trim(), !any);
+            string Language(string tag) => tag.Split('-')[0].ToLowerInvariant();
+            bool Of(string marker, string tag) =>
+                string.Equals(marker, tag, StringComparison.OrdinalIgnoreCase) || (!marker.Contains("-") && Language(marker) == Language(tag ?? ""));
+            string Pick(Func<string, bool> mine)
+            {
+                var sb = new StringBuilder(parts[0]);
+                bool any = false;
+                for (int i = 1; i + 1 < parts.Length; i += 2)
+                    if (mine(parts[i])) { sb.Append(Part(i)); any = true; }
+                return any ? sb.ToString().Trim() : null;
+            }
+            var own = Pick(m => Of(m, lang ?? "en"));
+            if (own != null) return (own, false);
+            return (Pick(m => Of(m, "en")) ?? Pick(m => true), true);
         }
 
         /// <summary>Whether the window should show the notes of the newest version by itself: it

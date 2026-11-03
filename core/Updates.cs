@@ -55,6 +55,24 @@ namespace Hd2Mod
             }
         }
 
+        /// <summary>A file, as bytes (a release's asset: GitHub sends it on to its storage).</summary>
+        internal static byte[] GetBytes(string url)
+        {
+            var q = new HttpRequestMessage(HttpMethod.Get, url);
+            q.Headers.Accept.Clear();
+            q.Headers.Accept.ParseAdd("application/octet-stream");
+            HttpResponseMessage r;
+            try { r = http.SendAsync(q).GetAwaiter().GetResult(); }
+            catch (HttpRequestException e) { throw new ModError("cannot be reached: " + e.Message, "offline"); }
+            using (r)
+            {
+                if ((int)r.StatusCode == 404) throw new ModError("no such file: " + url, "missing");
+                if ((int)r.StatusCode == 403 || (int)r.StatusCode == 429) throw new ModError("too many requests for now", "busy");
+                if (!r.IsSuccessStatusCode) throw new ModError("answered " + (int)r.StatusCode, "error");
+                return r.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult();
+            }
+        }
+
         /// <summary>Every mod checked (progress: done, all). Mods without an origin first learn the one
         /// HD2 Arsenal recorded, when it has.</summary>
         public static List<UpdateInfo> Check(Library lib, Action<int, int> progress = null)

@@ -37,22 +37,28 @@ namespace Hd2Mod.Tests
         public void A_release_text_in_both_languages_gives_each_its_own()
         {
             var body = "## 0.15.0\n\n<!-- zh -->\n- 新功能\n<!-- en -->\n- New feature\n";
-            var (zh, zhSame) = SelfUpdate.NotesIn(body, true);
-            var (en, enSame) = SelfUpdate.NotesIn(body, false);
+            var (zh, zhSame) = SelfUpdate.NotesIn(body, "zh-CN");
+            var (en, enSame) = SelfUpdate.NotesIn(body, "en");
             Assert.Equal("## 0.15.0\n\n- 新功能", zh);
             Assert.Equal("## 0.15.0\n\n- New feature", en);
             Assert.False(zhSame);
             Assert.False(enSame);
             // English first, CRLF, spaces around the marker: the same
-            Assert.Equal("- 新功能", SelfUpdate.NotesIn("  <!-- en -->  \r\n- New\r\n<!--zh-->\r\n- 新功能", true).Text);
+            Assert.Equal("- 新功能", SelfUpdate.NotesIn("  <!-- en -->  \r\n- New\r\n<!--zh-->\r\n- 新功能", "zh-CN").Text);
             // a text with no markers is the same in both
-            Assert.Equal(("- Only English", true), SelfUpdate.NotesIn("- Only English\n", true));
+            Assert.Equal(("- Only English", true), SelfUpdate.NotesIn("- Only English\n", "zh-CN"));
             // markers for one language only: the other gets all of it
-            var (onlyZh, same) = SelfUpdate.NotesIn("<!-- zh -->\n- 新功能", false);
+            var (onlyZh, same) = SelfUpdate.NotesIn("<!-- zh -->\n- 新功能", "en");
             Assert.Equal("- 新功能", onlyZh);
             Assert.True(same);
             // a marker inside a line is text, not a marker
-            Assert.Equal("see <!-- zh --> here", SelfUpdate.NotesIn("see <!-- zh --> here", true).Text);
+            Assert.Equal("see <!-- zh --> here", SelfUpdate.NotesIn("see <!-- zh --> here", "zh-CN").Text);
+            // any language by its tag; a language without its part gets the English one, not all of them
+            var three = "<!-- en -->\n- New\n<!-- zh-CN -->\n- 新功能\n<!-- de -->\n- Neu\n";
+            Assert.Equal(("- Neu", false), SelfUpdate.NotesIn(three, "de-AT"));
+            Assert.Equal(("- 新功能", false), SelfUpdate.NotesIn(three, "zh-CN"));
+            Assert.Equal(("- New", true), SelfUpdate.NotesIn(three, "fr"));
+            Assert.Equal(("- New", true), SelfUpdate.NotesIn(three, "zh-TW"));     // zh-CN is not zh-TW's
         }
 
         [Fact]

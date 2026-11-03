@@ -51,11 +51,12 @@ namespace QuickDeploy
             for (int i = 0; i < u.Notes.Count; i++)
             {
                 var (tag, _, text) = u.Notes[i];
-                var (said, same) = SelfUpdate.NotesIn(text, Texts.Zh);
+                var (said, same) = SelfUpdate.NotesIn(text, Texts.Lang);
                 body.Children.Add(new TextBlock { Text = Bare(tag), FontSize = 17, FontWeight = FontWeights.Bold, Margin = new Thickness(0, i == 0 ? 0 : 22, 0, 2) });
                 // a release text often opens with a title that says the name and this version again
                 said = Regex.Replace(said, @"\A#{1,3}[^\n]*" + Regex.Escape(Bare(tag)) + @"[^\n]*\n*", "");
-                if (same && Texts.Zh && said.Length > 0 && !Regex.IsMatch(said, @"\p{IsCJKUnifiedIdeographs}"))
+                // not written in the window's language: said so, unless what was written is Chinese and so is the window
+                if (same && Texts.Lang != "en" && said.Length > 0 && !(Texts.Lang.StartsWith("zh") && Regex.IsMatch(said, @"\p{IsCJKUnifiedIdeographs}")))
                     body.Children.Add(Small(Texts.Get("notes_english"), new Thickness(0, 0, 0, 4)));
                 if (said.Length == 0) body.Children.Add(Small(Texts.Get("notes_none"), new Thickness(0, 4, 0, 0)));
                 else Markdown(said, body);
@@ -100,7 +101,7 @@ namespace QuickDeploy
                 if (item.Success) { blocks.Add(("item", item.Groups[1].Value)); continue; }
                 int last = blocks.Count - 1;
                 if (last >= 0 && (blocks[last].Kind == "item" || blocks[last].Kind == "para"))
-                    blocks[last] = (blocks[last].Kind, blocks[last].Text + (Texts.Zh && Regex.IsMatch(line, @"^\s*\p{IsCJKUnifiedIdeographs}") ? "" : " ") + line.Trim());
+                    blocks[last] = (blocks[last].Kind, blocks[last].Text + (Regex.IsMatch(blocks[last].Text, @"\p{IsCJKUnifiedIdeographs}$") && Regex.IsMatch(line, @"^\s*\p{IsCJKUnifiedIdeographs}") ? "" : " ") + line.Trim());   // CJK lines join with no space
                 else blocks.Add(("para", line.Trim()));
             }
             foreach (var (kind, words) in blocks)

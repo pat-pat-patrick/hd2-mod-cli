@@ -34,7 +34,15 @@ namespace Hd2Mod.Tests
             Deploy.SameDrive = Native.SameDrive;
             // no plugin added: a test that wants one adds it (PluginTests.cs)
             PluginFiles.Folder = Path.Combine(Root, "no plugins");
+            PluginFiles.OfficialJson = KeptList;          // the test home's copy: none until a test reads one
+            PluginHost.Lang = () => "en";
+            PluginFiles.OfficialLocaleJson = KeptLocale;
+            PluginFiles.ListUrl = null;                                       // never GitHub
+            PluginFiles.Downloads = "http://127.0.0.1:1";
         }
+
+        protected static readonly System.Func<string> KeptList = PluginFiles.OfficialJson;
+        protected static readonly System.Func<string, string> KeptLocale = PluginFiles.OfficialLocaleJson;
 
         public virtual void Dispose()
         {
