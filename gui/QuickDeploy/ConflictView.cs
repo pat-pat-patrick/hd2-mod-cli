@@ -31,7 +31,8 @@ namespace QuickDeploy
             foreach (var c in sets)
             {
                 var ids = c.Mods.Select(n => st.Mods.FirstOrDefault(x => x.Name == n)?.Id).Where(id => id != null).ToList();
-                var key = string.Join("|", ids.OrderBy(x => x, StringComparer.Ordinal));
+                // by its mods and its items: two items can have the same mods
+                var key = string.Join("|", ids.OrderBy(x => x, StringComparer.Ordinal)) + "#" + string.Join("|", c.Groups.SelectMany(g => g.Of).Select(a => a.Category + "/" + a.Name).Distinct());
                 var sig = CardSig(c, ids);
                 if (!cfCards.TryGetValue(key, out var had) || had.Sig != sig) cfCards[key] = had = (sig, ConflictCard(c, ids));
                 keep.Add(key);
@@ -96,12 +97,15 @@ namespace QuickDeploy
             var state = mods.Any(x => x.Assumed != null) ? (on > 1 ? (c.Now == "options" ? "options" : "conflict") : on == 1 ? "one_on" : "none_on")
                       : c.Now ?? (on > 1 ? "conflict" : on == 1 ? "one_on" : "none_on");
             bool clashing = state == "conflict";
-            var heading = new TextBlock { FontSize = 14, FontWeight = FontWeights.SemiBold, Foreground = B(clashing ? "Yellow" : "Muted"), Margin = new Thickness(0, 0, 0, 10), TextWrapping = TextWrapping.Wrap };
-            heading.Inlines.Add(new System.Windows.Documents.Run(Texts.F("cf_set", c.Count, c.Mods.Count, c.Resources.Count > 0 ? TypeLabel(c.Resources[0].Type) : "")));
-            if (!clashing)
-                heading.Inlines.Add(new System.Windows.Documents.Run("  ·  " + Texts.Get(state == "options" ? "cf_quiet_options" : state == "one_on" ? "cf_quiet_1" : "cf_quiet_0"))
-                                    { FontWeight = FontWeights.Normal, FontSize = 13 });
-            card.Children.Add(heading);
+            // the heading is what they replace: the game item, else the resource's name, else its
+            // type; how many mods and resources is the line under it (the user, 2026-11-03: the
+            // count was the heading and what it was the small print)
+            var (title, named) = CardTitle(c);
+            card.Children.Add(new TextBlock { Text = title, FontSize = 14, FontWeight = FontWeights.SemiBold, Foreground = B(clashing ? "Yellow" : "Muted"), TextWrapping = TextWrapping.Wrap });
+            var types = c.Groups.GroupBy(g => TypeLabel(g.Type)).Select(g => (Type: g.Key, Count: g.Sum(x => x.Count))).ToList();
+            var why = Texts.F("cf_why", c.Mods.Count, c.Count, types.Count == 1 ? types[0].Type : string.Join("  ·  ", types.Select(t => t.Type + " ×" + t.Count)));
+            if (!clashing) why += "  ·  " + Texts.Get(state == "options" ? "cf_quiet_options" : state == "one_on" ? "cf_quiet_1" : "cf_quiet_0");
+            card.Children.Add(new TextBlock { Text = why, FontSize = 12, Foreground = B("Muted"), Margin = new Thickness(0, 3, 0, 10), TextWrapping = TextWrapping.Wrap });
             // the option that brings it, under the mod's name: a click offers the others, each
             // with what it would conflict with (the user, 2026-11-03: switching mods on and off,
             // or choosing whose version wins, does not solve a conflict an option brings)
@@ -148,16 +152,39 @@ namespace QuickDeploy
             var inGame = clashing ? st.Mods.FirstOrDefault(x => x.Name == c.Deployed)?.Id : null;     // whose copy the game has now
             // no bracket: each set is a card of its own (the user, 2026-11-03)
             card.Children.Add(WinnerRows(ids, winner, "pick_now", inGame, true, FromLine, clashing));
-            // which resources, by name when HD2SDK's list knows them; an id alone tells a player
-            // nothing and is left to the mod's details (the user, 2026-11-03: the view was cluttered)
-            // one line for each kind of them, with how many ("模型 ×16 · 护甲：O-3 Free Spirit")
-            var list = ResourceLines(c, 5, 12, "Muted", false);
-            list.Margin = new Thickness(0, 4, 0, 0);
+            // under the mods, only the named resources the heading does not say already ("贴图 ·
+            // <its name>"); the item's own ones repeated it (the user, 2026-11-03). An id alone tells
+            // a player nothing and is left to the mod's details
+            var list = new StackPanel { Margin = new Thickness(0, 4, 0, 0) };
+            foreach (var g in c.Groups.Where(g => !named.Contains(g)).Take(5))
+                list.Children.Add(new TextBlock
+                {
+                    Text = TypeLabel(g.Type) + (g.Count > 1 ? " ×" + g.Count : "") + "  ·  " + GroupWords(g), FontSize = 12, Foreground = B("Muted"),
+                    TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 1, 0, 1),
+                });
             if (list.Children.Count > 0) card.Children.Add(list);
             return new Border
             {
                 BorderBrush = B("Grid"), BorderThickness = new Thickness(0, 0, 0, 1), Padding = new Thickness(20, 16, 20, 16), Child = card,
             };
+        }
+
+        /// <summary>A card's heading: its game items ("护甲：O-3 Free Spirit", the first four and how
+        /// many more), else the first resource name, else the types; with the kinds of resources
+        /// it says, which the card does not list again, and those with no name.</summary>
+        (string Title, HashSet<(string Type, string Name, List<(string Category, string Name)> Of, int Count, List<string> Ids)> Said) CardTitle(Clash c)
+        {
+            var said = new HashSet<(string Type, string Name, List<(string Category, string Name)> Of, int Count, List<string> Ids)>(
+                c.Groups.Where(g => GroupWords(g) == null || (g.Of.Count > 0 && GroupWords(g) == ItemsLabel(g.Of))));
+            // an item's name once, with its categories ("护甲 / 头盔：SR-24 Street Scout")
+            var items = c.Groups.SelectMany(g => g.Of).GroupBy(a => a.Name, StringComparer.OrdinalIgnoreCase)
+                         .Select(g => (Cats: string.Join(" / ", g.Select(a => CategoryLabel(a.Category)).Distinct()), Name: g.Key)).ToList();
+            if (items.Count > 0)
+                return (string.Join(Texts.Get("sep_clause"), items.Take(4).GroupBy(i => i.Cats).Select(g => Texts.F("archive_named", g.Key, string.Join(" / ", g.Select(i => i.Name)))))
+                        + (items.Count > 4 ? Texts.F("cf_items_more", items.Count - 4) : ""), said);
+            var first = c.Groups.FirstOrDefault(g => GroupWords(g) != null);
+            if (first.Type != null) { said.Add(first); return (GroupWords(first), said); }
+            return (string.Join(Texts.Get("sep_list"), c.Groups.Select(g => TypeLabel(g.Type)).Distinct()), said);
         }
 
         /// <summary>A mod's options as a menu, these of them: an option with sub-options offers

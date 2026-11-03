@@ -169,13 +169,46 @@ namespace Hd2Mod.Tests
                 Cli("add", Mod("One", new Dictionary<string, byte[]> { [A + ".patch_0"] = Archive(Bytes("one's own"), (1, 101), (1, 102)) }));
                 Cli("add", Mod("Two", new Dictionary<string, byte[]> { [A + ".patch_0"] = Archive(Bytes("two's own"), (1, 101), (1, 102)) }));
                 var doc = StateDoc.Build(Library.Load(), Game);
-                var set = Json.List(doc, "all_conflicts").OfType<Dictionary<string, object>>().Single(c => !Json.Bool(c, "same"));
-                var res = Json.List(set, "resources").OfType<Dictionary<string, object>>().ToList();
+                // the conflicts view's sets are by item: 101's, and 102 (no item) by its mods
+                var res = Json.List(doc, "all_conflicts").OfType<Dictionary<string, object>>().Where(c => !Json.Bool(c, "same"))
+                    .SelectMany(c => Json.List(c, "resources").OfType<Dictionary<string, object>>()).ToList();
                 var r101 = Json.List(res.Single(r => Json.Str(r, "id") == 101UL.ToString("x16")), "archives").OfType<Dictionary<string, object>>().Select(a => Json.Str(a, "name"));
                 Assert.Equal(new[] { "Set A", "Set B" }, r101);
                 Assert.Empty(Json.List(res.Single(r => Json.Str(r, "id") == 102UL.ToString("x16")), "archives"));
                 var one = Json.List(doc, "mods").OfType<Dictionary<string, object>>().Single(m => Json.Str(m, "name") == "One");
                 Assert.Equal(new[] { "Set A", "Set B" }, Json.List(one, "replaces").OfType<Dictionary<string, object>>().Select(a => Json.Str(a, "name")));
+            }
+            finally { GameArchives.NamesOverride = null; GameArchives.MapOverride = null; }
+        }
+
+        /// <summary>The conflicts view has one set for each game item, with every mod that replaces
+        /// any of its resources (the user, 2026-11-03: "护甲：O-3 Free Spirit" was two sets, of six
+        /// mods and of four; its helmet a third). Must live: item A's armour and helmet resources, shared by different mods, are one
+        /// set of all three mods. Must die: item B's resource, with the same mods as one of A's, is
+        /// not put with it.</summary>
+        [Fact]
+        public void The_conflicts_view_has_a_set_for_each_game_item()
+        {
+            var names = Path.Combine(Store.Home, "archive_names_test.json");
+            File.WriteAllText(names, "{\"Armor\": {\"00000000000000aa\": \"Set A\", \"00000000000000bb\": \"Set B\"}, \"Helmet\": {\"00000000000000cc\": \"Set A\"}}");
+            GameArchives.NamesOverride = names;
+            GameArchives.MapOverride = new Dictionary<ulong, ulong[]> { [101] = new ulong[] { 0xaa }, [102] = new ulong[] { 0xaa }, [103] = new ulong[] { 0xbb }, [104] = new ulong[] { 0xcc } };
+            try
+            {
+                Cli("add", Mod("One", new Dictionary<string, byte[]> { [A + ".patch_0"] = Archive(Bytes("one's own"), (1, 101), (1, 102), (1, 103), (1, 104)) }));
+                Cli("add", Mod("Two", new Dictionary<string, byte[]> { [A + ".patch_0"] = Archive(Bytes("two's own"), (1, 101), (1, 103)) }));
+                Cli("add", Mod("Three", new Dictionary<string, byte[]> { [A + ".patch_0"] = Archive(Bytes("three's own"), (1, 102), (1, 104)) }));
+                var sets = Json.List(StateDoc.Build(Library.Load(), Game), "all_conflicts").OfType<Dictionary<string, object>>().Where(c => !Json.Bool(c, "same")).ToList();
+                string Item(Dictionary<string, object> c) => string.Join(",", Json.List(c, "groups").OfType<Dictionary<string, object>>()
+                    .SelectMany(g => Json.List(g, "archives").OfType<Dictionary<string, object>>()).Select(a => Json.Str(a, "name")).Distinct());
+                Assert.Equal(new[] { "Set A", "Set B" }, sets.Select(Item).OrderBy(x => x));
+                var a = sets.Single(c => Item(c) == "Set A");
+                Assert.Equal(new[] { "One", "Two", "Three" }, Json.List(a, "mods").OfType<string>());
+                Assert.Equal(3L, Json.Long(a, "count"));                         // and its helmet, an archive of the same name
+                var b = sets.Single(c => Item(c) == "Set B");
+                Assert.Equal(new[] { "One", "Two" }, Json.List(b, "mods").OfType<string>());
+                Assert.Equal(1L, Json.Long(b, "count"));
+                Assert.Equal("Three", Json.Str(a, "winner"));                  // 101 is Two's, 102 and 104 Three's: whose most are
             }
             finally { GameArchives.NamesOverride = null; GameArchives.MapOverride = null; }
         }

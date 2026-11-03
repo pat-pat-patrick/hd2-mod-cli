@@ -381,20 +381,34 @@ namespace Hd2Mod
             // now: for a set of every option's files (the conflicts view), whether it conflicts with
             // the options chosen and the mods on ("conflict", or why not: "options", "one_on",
             // "none_on"), and whose copy a deploy gives
+            // itemOf (the conflicts view): a resource's game item, and the sets are by item, every
+            // mod that replaces any of its resources in one (the user, 2026-11-03: "护甲：O-3 Free
+            // Spirit" was a set of six mods for 10 resources and another of four for 6); rank: the
+            // deploy order the mods of an item are listed in. A resource of no item: by its mods
             void Sets(List<Deploy.Clash> found, List<object> into, Func<List<string>, string> winner, Dictionary<string, string> from = null,
-                      Func<List<string>, List<Deploy.Clash>, (string State, string Winner)> now = null)
+                      Func<List<string>, List<Deploy.Clash>, (string State, string Winner)> now = null,
+                      Func<Deploy.Clash, string> itemOf = null, Dictionary<string, int> rank = null)
             {
                 var pairs = new List<(List<string> Mods, bool Same, bool Boot, long Count, List<Deploy.Clash> Some, List<Deploy.Clash> All)>();
+                var at = new Dictionary<string, int>();
                 foreach (var c in found)
                 {
                     bool boot = c.Type == Deploy.LuaType && c.Id == LuaMods.BootId;
-                    int i = pairs.FindIndex(p => p.Same == c.Same && p.Boot == boot && p.Mods.SequenceEqual(c.Mods));
-                    if (i < 0) pairs.Add((c.Mods, c.Same, boot, 1, new List<Deploy.Clash> { c }, new List<Deploy.Clash> { c }));
+                    var item = c.Same || boot ? null : itemOf?.Invoke(c);
+                    var key = item != null ? "item\u001f" + item : (c.Same ? "s" : "-") + (boot ? "b" : "-") + string.Join("\u001f", c.Mods);
+                    if (!at.TryGetValue(key, out var i))
+                    {
+                        at[key] = pairs.Count;
+                        pairs.Add((new List<string>(c.Mods), c.Same, boot, 1, new List<Deploy.Clash> { c }, new List<Deploy.Clash> { c }));
+                    }
                     else
                     {
-                        if (pairs[i].Some.Count < Shown) pairs[i].Some.Add(c);
-                        pairs[i].All.Add(c);
-                        pairs[i] = (pairs[i].Mods, pairs[i].Same, pairs[i].Boot, pairs[i].Count + 1, pairs[i].Some, pairs[i].All);
+                        var p = pairs[i];
+                        if (p.Some.Count < Shown) p.Some.Add(c);
+                        p.All.Add(c);
+                        var mods = item == null || c.Mods.All(p.Mods.Contains) ? p.Mods
+                                 : p.Mods.Union(c.Mods).OrderBy(m => rank != null && rank.TryGetValue(m, out var r) ? r : int.MaxValue).ToList();
+                        pairs[i] = (mods, p.Same, p.Boot, p.Count + 1, p.Some, p.All);
                     }
                 }
                 // which resources they are (the user, 2026-10-25): the first ones of each pair,
@@ -436,15 +450,46 @@ namespace Hd2Mod
                 var givenNow = new Dictionary<(ulong, ulong), List<string>>();
                 foreach (var c in Deploy.Clashes(d.All).Where(c => !c.Same)) givenNow[(c.Type, c.Id)] = c.Mods;
                 var onCount = new HashSet<string>(d.All.Select(w => w.Mod));
+                // whose version: of an item's resources the mods replace differently, the one
+                // whose copy most of them take
                 (string, string) Now(List<string> mods, List<Deploy.Clash> all)
                 {
+                    var wins = new Dictionary<string, int>();
                     foreach (var c in all)
                         if (!c.Same && givenNow.TryGetValue((c.Type, c.Id), out var who) && who.Count(mods.Contains) > 1)
-                            return ("conflict", who.Last(mods.Contains));
+                        {
+                            var w = who.Last(mods.Contains);
+                            wins[w] = wins.TryGetValue(w, out var n) ? n + 1 : 1;
+                        }
+                    if (wins.Count > 0) return ("conflict", wins.OrderByDescending(kv => kv.Value).First().Key);
                     int onHere = mods.Count(onCount.Contains);
                     return (onHere > 1 ? "options" : onHere == 1 ? "one_on" : "none_on", null);
                 }
-                Sets(Deploy.Clashes(everything), allClashes, ms => ms.LastOrDefault(on.Contains), archiveOf, Now);
+                // an item: the game archives that hold a resource, joined with every archive that
+                // shares a resource with them (one body model in two armour sets is one card)
+                var found = Deploy.Clashes(everything);
+                var parent = new Dictionary<string, string>();
+                string Root(string x)
+                {
+                    if (!parent.ContainsKey(x)) parent[x] = x;
+                    while (parent[x] != x) x = parent[x] = parent[parent[x]];
+                    return x;
+                }
+                // by name: an armour and its helmet are two archives of one name, one item to a player
+                string Arch((string Category, string Name) a) => a.Name.ToLowerInvariant();
+                foreach (var c in found.Where(c => !c.Same))
+                {
+                    var of = GameArchives.Of(c.Id, game);
+                    for (int k = 1; k < of.Count; k++) parent[Root(Arch(of[k]))] = Root(Arch(of[0]));
+                }
+                string ItemOf(Deploy.Clash c)
+                {
+                    var of = GameArchives.Of(c.Id, game);
+                    return of.Count == 0 ? null : Root(Arch(of[0]));
+                }
+                var rank = new Dictionary<string, int>();
+                foreach (var w in everything) if (!rank.ContainsKey(w.Mod)) rank[w.Mod] = rank.Count;
+                Sets(found, allClashes, ms => ms.LastOrDefault(on.Contains), archiveOf, Now, ItemOf, rank);
             }
             Dictionary<string, object> summary = null;
             if (d != null)
