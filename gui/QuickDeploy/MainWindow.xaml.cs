@@ -1032,7 +1032,20 @@ namespace QuickDeploy
             {
                 // the plugins page, so a test outside can take its picture
                 var g = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
-                g.Tick += (s, e) => { g.Stop(); ShowPage("plugins"); };
+                g.Tick += (s, e) =>
+                {
+                    g.Stop();
+                    ShowPage("plugins");
+                    // HD2QD_OPEN_PLUGIN=AssetCheck: that plugin's window opened too, for its picture
+                    var open = Environment.GetEnvironmentVariable("HD2QD_OPEN_PLUGIN");
+                    var p = open == null ? default : PluginFiles.All().FirstOrDefault(x => string.Equals(x.File, "HD2QD." + open + ".dll", StringComparison.OrdinalIgnoreCase));
+                    if (p.Type != null) PluginFiles.Call(p.Type, "Open", this, PluginHostHere());
+                    // whether its window has the acrylic (a picture of a window does not show it)
+                    var said = Environment.GetEnvironmentVariable("HD2QD_WHEEL_OUT");
+                    if (said != null)
+                        Dispatcher.BeginInvoke(new Action(() => File.WriteAllText(said, string.Join("\n", Application.Current.Windows.OfType<ChromeWindow>()
+                            .Select(w => w.Title + " | background " + w.Background + " | acrylic " + (w.Background == Brushes.Transparent))))), DispatcherPriority.ApplicationIdle);
+                };
                 g.Start();
                 return;
             }

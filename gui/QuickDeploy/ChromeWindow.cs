@@ -103,6 +103,15 @@ namespace QuickDeploy
             }
         }
 
+        /// <summary>The acrylic the main window has (Backdrop): the grounds are translucent for it,
+        /// and without it a pop-up showed them over black (the user, 2026-11-03: the asset check's
+        /// and model repair's windows were pitch black beside the manager).</summary>
+        protected override void OnSourceInitialized(EventArgs e)
+        {
+            base.OnSourceInitialized(e);
+            if (Backdrop.Enable(this)) frame.Background = Brush("Ground900");
+        }
+
         void Toggle()
         {
             if (WindowState == WindowState.Maximized) SystemCommands.RestoreWindow(this);
