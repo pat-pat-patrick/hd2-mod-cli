@@ -157,6 +157,8 @@ namespace QuickDeploy
         public int Conflicts, Shared;
         /// <summary>In a conflict with any mod, on or off (the conflicts view).</summary>
         public bool InConflict;
+        /// <summary>What it replaces, by game item (GameArchives): category and name, most first.</summary>
+        public List<(string Category, string Name)> Replaces = new List<(string, string)>();
         public int Changes => Files.Count(f => f.Action != "keep");
         public int Chosen => Options.Sum(o => o.Subs.Count == 0 ? (o.Enabled ? 1 : 0) : (o.Enabled ? o.Subs.Count(x => x.Enabled) : 0));
         public int Choices => Options.Sum(o => o.Subs.Count == 0 ? 1 : o.Subs.Count);
@@ -197,7 +199,7 @@ namespace QuickDeploy
         /// <summary>Every mod ships the very same bytes: shared, not fought over.</summary>
         public bool Same, ManagedBoot;
         /// <summary>The first of its resources: type, id, and name when HD2SDK's list knows it.</summary>
-        public List<(string Type, string Id, string Name)> Resources = new List<(string, string, string)>();
+        public List<(string Type, string Id, string Name, List<(string Category, string Name)> Of)> Resources = new List<(string, string, string, List<(string, string)>)>();
         /// <summary>The options (and sub-options, else -1) that bring it, by mod (the conflicts view only).</summary>
         public List<(string Mod, int Option, int Sub)> From = new List<(string, int, int)>();
     }
@@ -337,6 +339,10 @@ namespace QuickDeploy
 
         // ---------------------------------------------------------------- reading `state`
 
+        /// <summary>A list of game items ({category, name}) in a state entry.</summary>
+        static List<(string Category, string Name)> Archives(Dictionary<string, object> d, string key) =>
+            List(d, key).OfType<Dictionary<string, object>>().Select(a => (Str(a, "category"), Str(a, "name"))).Where(a => a.Item2 != null).ToList();
+
         public static State ReadState(string json)
         {
             var d = (Dictionary<string, object>)Json.Parse(json);
@@ -380,7 +386,7 @@ namespace QuickDeploy
                     into.Add(new Clash
                     {
                         Mods = List(c, "mods").OfType<string>().ToList(), Count = Int(c, "count"), Winner = Str(c, "winner"), Deployed = Str(c, "deployed"), Same = Bool(c, "same"), ManagedBoot = Bool(c, "managed_boot"),
-                        Resources = List(c, "resources").OfType<Dictionary<string, object>>().Select(r => (Str(r, "type"), Str(r, "id"), Str(r, "name"))).ToList(),
+                        Resources = List(c, "resources").OfType<Dictionary<string, object>>().Select(r => (Str(r, "type"), Str(r, "id"), Str(r, "name"), Archives(r, "archives"))).ToList(),
                         From = List(c, "from").OfType<Dictionary<string, object>>().Select(f => (Str(f, "mod"), Int(f, "option"), Int(f, "sub"))).ToList(),
                     });
             s.ResourceNames = Bool(d, "resource_names");
@@ -454,6 +460,7 @@ namespace QuickDeploy
                     row.Options.Add(opt);
                 }
                 foreach (var t in List(m, "tags")) if (t is string tag) row.Tags.Add(tag);
+                row.Replaces = Archives(m, "replaces");
                 row.Group = Str(m, "group");
                 row.OffWith = Str(m, "off_with");
                 var pv = Json.Obj(m, "previous");

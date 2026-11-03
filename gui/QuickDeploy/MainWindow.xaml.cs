@@ -4805,6 +4805,8 @@ namespace QuickDeploy
             if (!m.Loader) Fact("d_opts", m.Options.Count > 0 ? m.Chosen + " / " + m.Choices : "—");
             if (!m.Loader && st.Groups.Count > 0)
                 Fact("d_group", m.Group != null ? string.Join(" › ", PathTo(m.Group).Select(x => x.Name)) : Texts.Get("g_top"));
+            // what it replaces, by game item (the user, 2026-11-03)
+            if (m.Replaces.Count > 0) Fact("d_replaces", ItemsLabel(m.Replaces));
             Fact("d_folder", m.Path, true, true);
             {
                 // remove from the library, and open the folder. A row that does not fit wraps onto
@@ -4907,7 +4909,8 @@ namespace QuickDeploy
                     var type = new TextBlock { Text = TypeLabel(r.Type) + "  ·  ", FontSize = 13, Foreground = B("Muted") };
                     DockPanel.SetDock(type, Dock.Left);
                     dp.Children.Add(type);
-                    var what = r.Name != null ? Selectable.Text(r.Name, 13) : Selectable.Text(r.Id, 12, "Muted", Mono);
+                    var words = ResourceWords(r);
+                    var what = words != null ? Selectable.Text(words, 13) : Selectable.Text(r.Id, 12, "Muted", Mono);
                     what.VerticalAlignment = VerticalAlignment.Center;
                     dp.Children.Add(what);
                     list.Children.Add(dp);
@@ -7143,6 +7146,22 @@ namespace QuickDeploy
                 return mods.Where(x => x.Enabled).OrderBy(x => x.Index).LastOrDefault()?.Id;
             return stated;
         }
+
+        /// <summary>Game items as words: "护甲：CM-09 Bonesnapper / AF-02 Haz-Master", the items of
+        /// one category together, the category in the window's language when it has it.</summary>
+        static string ItemsLabel(List<(string Category, string Name)> items) =>
+            string.Join(Texts.Get("sep_clause"), items.GroupBy(i => i.Category)
+                .Select(g => Texts.F("archive_named", CategoryLabel(g.Key), string.Join(" / ", g.Select(i => i.Name)))));
+
+        static string CategoryLabel(string category)
+        {
+            var key = "cat_" + System.Text.RegularExpressions.Regex.Replace(category ?? "", "[^A-Za-z0-9]+", "_").Trim('_');
+            return Texts.Has(key) ? Texts.Get(key) : category;
+        }
+
+        /// <summary>A conflict's resource in words: its name, else the game items it belongs to, else null.</summary>
+        static string ResourceWords((string Type, string Id, string Name, List<(string Category, string Name)> Of) r) =>
+            r.Name ?? (r.Of != null && r.Of.Count > 0 ? ItemsLabel(r.Of) : null);
 
         /// <summary>A resource type as the conflicts name it: in words for the common ones, else the engine's name.</summary>
         static string TypeLabel(string type) => Texts.Has("rt_" + type) ? Texts.Get("rt_" + type) : type;

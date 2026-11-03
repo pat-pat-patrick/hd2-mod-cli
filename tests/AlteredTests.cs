@@ -154,6 +154,32 @@ namespace Hd2Mod.Tests
             Assert.Equal("Cape Two", ResourceNames.Name(102));
         }
 
+        /// <summary>A resource is named by the game items whose archives hold it, every one of them
+        /// (one body model in two armour sets), and a mod says what it replaces (the user,
+        /// 2026-11-03). Must live: both sets named. Must die: a resource no archive holds has none.</summary>
+        [Fact]
+        public void A_resource_is_named_by_the_game_archives_that_hold_it()
+        {
+            var names = Path.Combine(Store.Home, "archive_names_test.json");
+            File.WriteAllText(names, "{\"Armor\": {\"00000000000000aa\": \"Set A\", \"00000000000000bb\": \"Set B\"}, \"Helmet\": {\"00000000000000cc\": \"Hat C\"}}");
+            GameArchives.NamesOverride = names;
+            GameArchives.MapOverride = new Dictionary<ulong, ulong[]> { [101] = new ulong[] { 0xaa, 0x77, 0xbb } };
+            try
+            {
+                Cli("add", Mod("One", new Dictionary<string, byte[]> { [A + ".patch_0"] = Archive(Bytes("one's own"), (1, 101), (1, 102)) }));
+                Cli("add", Mod("Two", new Dictionary<string, byte[]> { [A + ".patch_0"] = Archive(Bytes("two's own"), (1, 101), (1, 102)) }));
+                var doc = StateDoc.Build(Library.Load(), Game);
+                var set = Json.List(doc, "all_conflicts").OfType<Dictionary<string, object>>().Single(c => !Json.Bool(c, "same"));
+                var res = Json.List(set, "resources").OfType<Dictionary<string, object>>().ToList();
+                var r101 = Json.List(res.Single(r => Json.Str(r, "id") == 101UL.ToString("x16")), "archives").OfType<Dictionary<string, object>>().Select(a => Json.Str(a, "name"));
+                Assert.Equal(new[] { "Set A", "Set B" }, r101);
+                Assert.Empty(Json.List(res.Single(r => Json.Str(r, "id") == 102UL.ToString("x16")), "archives"));
+                var one = Json.List(doc, "mods").OfType<Dictionary<string, object>>().Single(m => Json.Str(m, "name") == "One");
+                Assert.Equal(new[] { "Set A", "Set B" }, Json.List(one, "replaces").OfType<Dictionary<string, object>>().Select(a => Json.Str(a, "name")));
+            }
+            finally { GameArchives.NamesOverride = null; GameArchives.MapOverride = null; }
+        }
+
         /// <summary>A conflict often comes from an option, and another option avoids it (the user,
         /// 2026-11-03). Must live: the sub-option chosen is named as where the conflict comes from,
         /// and says whom it conflicts with. Must die: the other sub-option, which replaces something

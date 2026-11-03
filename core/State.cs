@@ -288,6 +288,17 @@ namespace Hd2Mod
             using (Loaders.Pass()) return BuildNow(lib, game, verify);
         }
 
+        /// <summary>A mod's patch archives, as its chosen options give them; none when it cannot be read.</summary>
+        static List<string> PatchArchives(Mod m)
+        {
+            try
+            {
+                return Deploy.IncludedFolders(m).Where(Directory.Exists)
+                             .SelectMany(f => Deploy.List(f).Where(x => Deploy.Patch.IsMatch(x)).Select(x => Paths.Join(f, x))).ToList();
+            }
+            catch (Exception e) when (e is ModError || e is IOException || e is UnauthorizedAccessException) { return new List<string>(); }
+        }
+
         /// <summary>The option (and sub-option, else -1) of a mod whose folder holds an archive;
         /// null when it is in none (a mod without options).</summary>
         static (int Option, int Sub)? OptionAt(Mod mod, string archive)
@@ -373,6 +384,8 @@ namespace Hd2Mod
                         ["resources"] = p.Some.Select(c => (object)new Dictionary<string, object>
                         {
                             ["type"] = ResourceNames.Type(c.Type), ["id"] = c.Id.ToString("x16"), ["name"] = ResourceNames.Name(c.Id),
+                            // the game item it belongs to, by the game archive that holds it (GameArchives)
+                            ["archives"] = GameArchives.Of(c.Id, game).Select(a => (object)new Dictionary<string, object> { ["category"] = a.Category, ["name"] = a.Name }).ToList(),
                         }).ToList(),
                     });
             }
@@ -526,6 +539,9 @@ namespace Hd2Mod
                     ["skip"] = m.Skip,
                     ["off_with"] = m.OffWith,
                     ["auto_tags"] = (manifest?.Tags ?? new List<string>()).Cast<object>().ToList(),
+                    // what it replaces, by game item ("Armor", "SR-24 Street Scout"), most resources first
+                    ["replaces"] = (exists ? GameArchives.Replaces(PatchArchives(m), game) : new List<(string, string)>())
+                        .Select(r => (object)new Dictionary<string, object> { ["category"] = r.Item1, ["name"] = r.Item2 }).ToList(),
                     ["error"] = error,
                 });
             }
