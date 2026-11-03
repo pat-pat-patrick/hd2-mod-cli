@@ -226,6 +226,7 @@ namespace QuickDeploy
             Refresh();
             ClickTest();
             GroupTest();
+            ConflictPickTest();
             PreviewTest();
             DragTest();
             DropTest();
@@ -6987,7 +6988,17 @@ namespace QuickDeploy
         /// after deploy" (the user, 2026-11-03: a click must change the view itself).</summary>
         UIElement WinnerRows(List<string> ids, string now, string tagKey, string inGame = null)
         {
-            var mods = ids.Select(id => st.Mods.FirstOrDefault(x => x.Id == id)).Where(x => x != null).ToList();
+            // by name, not in the load order: a click moved the mod, and the rows swapped places
+            // under the pointer; what is in effect is what they are for (the user, 2026-11-03)
+            var mods = ids.Select(id => st.Mods.FirstOrDefault(x => x.Id == id)).Where(x => x != null)
+                          .OrderBy(x => x.Name, StringComparer.CurrentCultureIgnoreCase).ThenBy(x => x.Id, StringComparer.Ordinal).ToList();
+            // a choice just clicked is drawn at once, until the state it was made in is read again
+            var key = string.Join("|", ids.OrderBy(x => x, StringComparer.Ordinal));
+            if (picksNow.TryGetValue(key, out var pick))
+            {
+                if (pick.Under == st) now = pick.Id;
+                else picksNow.Remove(key);
+            }
             bool pending = inGame != null && inGame != now && mods.Any(x => x.Id == inGame);
             var rowsBox = new StackPanel();
             foreach (var x in mods)
@@ -7015,7 +7026,7 @@ namespace QuickDeploy
                 var row = new Border
                 {
                     BorderBrush = next ? Brushes.Transparent : B(solid ? "Yellow" : "Grid"), BorderThickness = new Thickness(1), Background = B("Ground900"),
-                    Padding = new Thickness(8, 6, 8, 6), Child = line, Cursor = wins ? Cursors.Arrow : Cursors.Hand,
+                    Padding = new Thickness(8, 6, 8, 6), Child = line, Cursor = wins ? Cursors.Arrow : Cursors.Hand, Tag = x.Id,
                 };
                 // the chosen one's frame in dashes, over the row (it takes no clicks)
                 var cell = new Grid { Margin = new Thickness(0, 0, 0, 6) };
@@ -7031,13 +7042,19 @@ namespace QuickDeploy
                     row.MouseLeftButtonUp += (s, e) =>
                     {
                         var last = mods.Where(o => o.Id != id).OrderBy(o => o.Index).Last();
+                        picksNow[key] = (id, st);
                         if (mods.First(o => o.Id == id).Index < last.Index) Run("move", id, "--after", last.Id);
+                        if (filter == "conflict") RenderConflicts();
+                        else RenderDetail();
                     };
                 }
                 rowsBox.Children.Add(cell);
             }
             return rowsBox;
         }
+
+        // the choices clicked in WinnerRows, by the mods of the set, with the state they were made in
+        readonly Dictionary<string, (string Id, State Under)> picksNow = new Dictionary<string, (string, State)>();
 
         /// <summary>A resource type as the conflicts name it: in words for the common ones, else the engine's name.</summary>
         static string TypeLabel(string type) => Texts.Has("rt_" + type) ? Texts.Get("rt_" + type) : type;

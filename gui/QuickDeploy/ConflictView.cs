@@ -19,9 +19,14 @@ namespace QuickDeploy
         void RenderConflicts()
         {
             ListHint.Text = Texts.Get("cf_hint");
+            // the view stays where it was: a choice redraws it, and the state read after it again
+            double at = ListScroll.VerticalOffset;
             List.Children.Clear();
+            Dispatcher.BeginInvoke(new Action(() => ListScroll.ScrollToVerticalOffset(at)), System.Windows.Threading.DispatcherPriority.Loaded);
+            // in an order a choice does not change (the load order's names did)
             var sets = st.Clashes.Where(c => !c.Same && !c.ManagedBoot && c.Mods.Count > 1)
-                                 .OrderByDescending(c => c.Mods.Count).ThenByDescending(c => c.Count).ToList();
+                                 .OrderByDescending(c => c.Mods.Count).ThenByDescending(c => c.Count)
+                                 .ThenBy(c => string.Join("\u001f", c.Mods.OrderBy(n => n, StringComparer.CurrentCultureIgnoreCase)), StringComparer.CurrentCultureIgnoreCase).ToList();
             if (sets.Count == 0)
             {
                 List.Children.Add(new TextBlock { Text = Texts.Get("cf_none"), Foreground = B("Muted"), Margin = new Thickness(20), TextWrapping = TextWrapping.Wrap });
@@ -79,6 +84,57 @@ namespace QuickDeploy
             {
                 BorderBrush = B("Grid"), BorderThickness = new Thickness(0, 0, 0, 1), Padding = new Thickness(20, 16, 20, 16), Child = card,
             };
+        }
+
+        /// <summary>HD2QD_CLICK_TEST=conflictpick (measuring only): the conflicts view, then a click
+        /// on the first mod not in effect of the first set; each set's rows (name, its tag, dashed),
+        /// before, at once and after the state read, go to HD2QD_WHEEL_OUT. Posted clicks do not
+        /// reach WPF, so the click is raised here.</summary>
+        void ConflictPickTest()
+        {
+            if (Environment.GetEnvironmentVariable("HD2QD_CLICK_TEST") != "conflictpick") return;
+            var out_ = new System.Text.StringBuilder();
+            IEnumerable<Border> Rows(DependencyObject d)
+            {
+                foreach (var c in LogicalTreeHelper.GetChildren(d).OfType<DependencyObject>())
+                {
+                    if (c is Border b && b.Tag is string) yield return b;
+                    foreach (var r in Rows(c)) yield return r;
+                }
+            }
+            string Words(DependencyObject d) => string.Join(" ", LogicalTreeHelper.GetChildren(d).OfType<DependencyObject>()
+                .Select(c => c is TextBlock t ? t.Text : Words(c)).Where(s => s.Length > 0));
+            void Dump(string when)
+            {
+                out_.AppendLine("== " + when + " (scroll " + ListScroll.VerticalOffset + ")");
+                foreach (var r in Rows(List))
+                    out_.AppendLine("  " + Words(r) + (((Grid)r.Parent).Children.OfType<System.Windows.Shapes.Rectangle>().Any() ? "  [dashed]" : ""));
+            }
+            var t = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(4) };
+            t.Tick += (s, e) =>
+            {
+                t.Stop();
+                filter = "conflict";
+                RenderList();
+                UpdateLayout();
+                Dump("before");
+                var row = Rows(List).FirstOrDefault(r => r.Cursor == System.Windows.Input.Cursors.Hand);
+                row?.RaiseEvent(new System.Windows.Input.MouseButtonEventArgs(System.Windows.Input.Mouse.PrimaryDevice, 0, System.Windows.Input.MouseButton.Left)
+                                { RoutedEvent = UIElement.MouseLeftButtonUpEvent });
+                UpdateLayout();
+                Dump("at once, clicked " + row?.Tag);
+                var later = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(4) };
+                later.Tick += (s1, e1) =>
+                {
+                    later.Stop();
+                    UpdateLayout();
+                    Dump("after the state read");
+                    var path = Environment.GetEnvironmentVariable("HD2QD_WHEEL_OUT");
+                    if (path != null) System.IO.File.WriteAllText(path, out_.ToString());
+                };
+                later.Start();
+            };
+            t.Start();
         }
     }
 }
