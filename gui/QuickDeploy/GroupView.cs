@@ -39,6 +39,19 @@ namespace QuickDeploy
         class GroupDrop
         {
             public string Group;
+            // a column's: the state it was drawn from, what it shows apart from what is chosen,
+            // and its items, so that a click restyles them instead of drawing it again
+            public State St;
+            public string Sig;
+            public List<Shell> Items;
+        }
+
+        /// <summary>An item of a column (a folder or a mod) and how it is drawn as chosen.</summary>
+        class Shell
+        {
+            public Border Item, Edge;
+            public bool IsGroup, Chosen;
+            public string Id;
         }
 
         void LoadView()
@@ -190,18 +203,33 @@ namespace QuickDeploy
                 hadX = GroupScroll.HorizontalOffset;
             }
             int hadCols = GroupCols.ColumnDefinitions.Count;
-            GroupCols.Children.Clear();
-            GroupCols.ColumnDefinitions.Clear();
             var parents = new List<string> { null };
             parents.AddRange(groupPath);
+            // a column that shows the same as before stays as it is, only what is chosen in it
+            // restyled: a click drew every column again, and each list flashed back to its top
+            // (the user, 2026-11-03)
+            var had = GroupCols.Children.OfType<Border>().ToList();
+            var want = new List<Border>();
             for (int i = 0; i < parents.Count; i++)
             {
-                bool last = i == parents.Count - 1;
-                GroupCols.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-                var col = GroupColumn(i, parents[i], shown, under, Visible, narrowed, last);
-                Grid.SetColumn(col, i);
-                GroupCols.Children.Add(col);
+                var sig = ColumnSig(parents[i], shown, under, Visible, narrowed);
+                if (i < had.Count && had[i].Tag is GroupDrop d && d.St == st && d.Group == parents[i] && d.Sig == sig)
+                {
+                    Restyle(d, i);
+                    want.Add(had[i]);
+                }
+                else want.Add(GroupColumn(i, parents[i], shown, under, Visible, narrowed, sig));
             }
+            for (int i = 0; i < want.Count; i++)
+            {
+                Grid.SetColumn(want[i], i);
+                if (i < GroupCols.Children.Count && GroupCols.Children[i] == want[i]) continue;
+                if (i < GroupCols.Children.Count) GroupCols.Children.RemoveAt(i);
+                GroupCols.Children.Insert(i, want[i]);
+            }
+            while (GroupCols.Children.Count > want.Count) GroupCols.Children.RemoveAt(GroupCols.Children.Count - 1);
+            while (GroupCols.ColumnDefinitions.Count < want.Count) GroupCols.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            while (GroupCols.ColumnDefinitions.Count > want.Count) GroupCols.ColumnDefinitions.RemoveAt(GroupCols.ColumnDefinitions.Count - 1);
             FitColumns();
             // sideways: a column just opened comes into view, as Finder scrolls to it; otherwise
             // the strip stays where it was
@@ -235,17 +263,53 @@ namespace QuickDeploy
         double hadX;
         bool restoring;
 
-        FrameworkElement GroupColumn(int index, string parent, List<ModRow> shown, Dictionary<string, List<ModRow>> under,
-                                     Func<GroupRow, bool> visible, bool narrowed, bool last)
+        /// <summary>What a column shows apart from what is chosen in it: drawn from the same
+        /// state, a column with the same signature looks the same.</summary>
+        string ColumnSig(string parent, List<ModRow> shown, Dictionary<string, List<ModRow>> under, Func<GroupRow, bool> visible, bool narrowed)
+        {
+            var sb = new System.Text.StringBuilder();
+            void Add(object x) => sb.Append(x).Append('\u001f');
+            Add(parent); Add(narrowed);
+            foreach (var g in st.Groups.Where(g => g.Parent == parent && visible(g))) { Add(g.Id); Add(g.Name); Add(under[g.Id].Count); Add(under[g.Id].Count(m => m.Enabled)); }
+            foreach (var m in shown.Where(m => m.Group == parent))
+            {
+                Add(m.Id);
+                foreach (var p in PacksOf(m)) { Add(p.Id); Add(p.Id == selectedId); }      // a pack line shows itself chosen
+            }
+            return sb.ToString();
+        }
+
+        /// <summary>A column kept: its items drawn chosen or not, as they are now.</summary>
+        void Restyle(GroupDrop d, int index)
+        {
+            bool active = index == groupCol;
+            foreach (var sh in d.Items)
+                ShowChosen(sh, sh.IsGroup ? index < groupPath.Count && groupPath[index] == sh.Id
+                                     : (sh.Id == selectedId || picked.Contains(sh.Id)) && index == groupPath.Count, active);
+        }
+
+        void ShowChosen(Shell sh, bool chosen, bool active)
+        {
+            sh.Chosen = chosen;
+            sh.Edge.BorderBrush = chosen ? B(active ? "Yellow" : "Muted") : Brushes.Transparent;
+            sh.Item.Background = chosen ? (active ? ChosenHere : B("Ground900")) : sh.Item.IsMouseOver ? B("Band") : Brushes.Transparent;
+        }
+
+        // the items of the column being drawn (GroupColumn), for its GroupDrop
+        List<Shell> shells;
+
+        Border GroupColumn(int index, string parent, List<ModRow> shown, Dictionary<string, List<ModRow>> under,
+                                     Func<GroupRow, bool> visible, bool narrowed, string sig)
         {
             bool active = index == groupCol;
             var list = new StackPanel { Margin = new Thickness(0, 6, 0, 12) };
+            shells = new List<Shell>();
             var col = new Border
             {
                 // every column one width, the room after them empty, as Finder: the last one
                 // filling the rest jumped between narrow and wide (the user, 2026-10-27)
                 BorderBrush = B("Grid"), BorderThickness = new Thickness(0, 0, 1, 0), Background = Brushes.Transparent,
-                Tag = new GroupDrop { Group = parent },
+                Tag = new GroupDrop { Group = parent, St = st, Sig = sig, Items = shells },
                 Child = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Focusable = false, Content = list },
             };
             col.Width = GroupColWidth;
@@ -285,6 +349,7 @@ namespace QuickDeploy
                 add.Click += (s, e) => NewGroup(parent);
                 list.Children.Add(add);
             }
+            shells = null;
             return col;
         }
 
@@ -292,16 +357,15 @@ namespace QuickDeploy
         /// path behind it (Finder: blue and grey).</summary>
         static readonly Brush ChosenHere = new SolidColorBrush(Color.FromArgb(0x1F, 0xFF, 0xD2, 0x3F));
 
-        Border ItemShell(bool chosen, bool active, object tag)
+        Border ItemShell(bool chosen, bool active, object tag, bool isGroup, string id)
         {
-            var edge = new Border
-            {
-                BorderThickness = new Thickness(3, 0, 0, 0),
-                BorderBrush = chosen ? B(active ? "Yellow" : "Muted") : Brushes.Transparent,
-            };
-            var item = new Border { Tag = tag, Background = chosen ? (active ? ChosenHere : B("Ground900")) : Brushes.Transparent, Child = edge, Cursor = Cursors.Hand };
-            item.MouseEnter += (s, e) => { if (!chosen) item.Background = B("Band"); };
-            item.MouseLeave += (s, e) => { if (!chosen) item.Background = Brushes.Transparent; };
+            var edge = new Border { BorderThickness = new Thickness(3, 0, 0, 0) };
+            var item = new Border { Tag = tag, Child = edge, Cursor = Cursors.Hand };
+            var sh = new Shell { Item = item, Edge = edge, IsGroup = isGroup, Id = id };
+            ShowChosen(sh, chosen, active);
+            shells?.Add(sh);
+            item.MouseEnter += (s, e) => { if (!sh.Chosen) item.Background = B("Band"); };
+            item.MouseLeave += (s, e) => { if (!sh.Chosen) item.Background = Brushes.Transparent; };
             return item;
         }
 
@@ -329,7 +393,7 @@ namespace QuickDeploy
         Border FolderItem(GroupRow g, int index, bool active, List<ModRow> mods)
         {
             bool chosen = index < groupPath.Count && groupPath[index] == g.Id;
-            var item = ItemShell(chosen, active, new GroupDrop { Group = g.Id });
+            var item = ItemShell(chosen, active, new GroupDrop { Group = g.Id }, true, g.Id);
             var line = new DockPanel { MinHeight = 52, Margin = new Thickness(11, 6, 10, 6) };
             var pic = Folder(ColourOf(g.Id), 40);
             DockPanel.SetDock(pic, Dock.Left);
@@ -381,7 +445,7 @@ namespace QuickDeploy
         Border ModItem(ModRow m, int index, bool active)
         {
             bool chosen = (m.Id == selectedId || picked.Contains(m.Id)) && index == groupPath.Count;
-            var item = ItemShell(chosen, active, null);
+            var item = ItemShell(chosen, active, null, false, m.Id);
             var line = new DockPanel { MinHeight = 52, Margin = new Thickness(11, 6, 10, 6) };
             var sw = new CheckBox { Style = (Style)FindResource("Switch"), IsChecked = m.Enabled, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0), ToolTip = m.Name };
             sw.Click += (s, e) =>
@@ -834,7 +898,12 @@ namespace QuickDeploy
                 out_.AppendLine("before width " + First().ActualWidth + " scroll " + Sv().VerticalOffset + " columns " + GroupCols.Children.Count);
                 var items = ((StackPanel)Sv().Content).Children.OfType<Border>().ToList();
                 var mod = items.LastOrDefault(b => b.Tag == null);
+                var firstBefore = First();
+                var clock = System.Diagnostics.Stopwatch.StartNew();
                 mod?.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, 0, MouseButton.Left) { RoutedEvent = UIElement.MouseLeftButtonUpEvent });
+                UpdateLayout();
+                // the first frame after the click: a column drawn again showed its top here
+                out_.AppendLine("at once " + clock.ElapsedMilliseconds + " ms, scroll " + Sv().VerticalOffset + ", column kept " + (First() == firstBefore));
                 Dispatcher.BeginInvoke(new Action(() =>
                 {
                     UpdateLayout();
