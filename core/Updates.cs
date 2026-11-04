@@ -113,6 +113,7 @@ namespace Hd2Mod
                 progress?.Invoke(++i, lib.Mods.Count);
             }
             SaveChecks();
+            Keep(lib.Mods, out_, true);
             return out_;
         }
 
@@ -129,7 +130,87 @@ namespace Hd2Mod
 
         /// <summary>One mod checked on its own channel. A check that cannot be made is a
         /// result too: "no_source", "no_check", or "error" with its reason in Why.</summary>
-        public static UpdateInfo One(Mod m) => Versions.Skipped(m, One(m, true));
+        public static UpdateInfo One(Mod m)
+        {
+            var u = Versions.Skipped(m, One(m, true));
+            Keep(new[] { m }, new List<UpdateInfo> { u }, false);
+            return u;
+        }
+
+        // ------------------------------------------------------------ the last results, and the check at start
+
+        // The window checks every mod by itself when it opens, once a day, unless turned off (the
+        // user, 2026-11-04). Nexus Mods is asked through its public API with no key, so no player's
+        // key is used for what the player did not start (Nexus Mods' API Acceptable Use Policy is
+        // about keys); GitHub allows 60 requests an hour without a key, hence once a day. The last
+        // results are kept in mod_updates.json, so a window opened again shows them without asking.
+
+        const string KeptFile = "mod_updates.json";
+        const long Day = 24L * 3600;
+
+        /// <summary>Whether the window checks every mod when it opens (on unless turned off).</summary>
+        public static bool AtStart
+        {
+            get => Json.Bool(Store.Load(KeptFile), "at_start", true);
+            set { var d = Store.Load(KeptFile); d["at_start"] = value; Store.Save(KeptFile, d); }
+        }
+
+        /// <summary>Whether the check at start is due: on, and no whole check in the last day.</summary>
+        public static bool DueAtStart() => AtStart && Now() - Json.Long(Store.Load(KeptFile), "checked_at") >= Day;
+
+        /// <summary>What a result was checked for: the mod's folder, its recorded version and its
+        /// page. A mod changed since (a new version, another source) is not shown the old result.</summary>
+        public static string As(Mod m) => m.Path + "\u001f" + (m.Nexus?.Version ?? m.GitHub?.Tag) + "\u001f" + Origins.Of(m).Page;
+
+        /// <summary>Results kept: a whole check's replace the last ones and set its time; one mod's
+        /// replace only that mod's.</summary>
+        static void Keep(IEnumerable<Mod> mods, List<UpdateInfo> results, bool whole)
+        {
+            try
+            {
+                var d = Store.Load(KeptFile);
+                var kept = whole ? new Dictionary<string, object>() : Json.Obj(d, "mods") ?? new Dictionary<string, object>();
+                var by = mods.ToDictionary(m => m.Id);
+                foreach (var u in results)
+                    if (u.ModId != null && by.TryGetValue(u.ModId, out var m))
+                        kept[u.ModId] = new Dictionary<string, object>
+                        {
+                            ["as"] = As(m), ["name"] = u.Name, ["channel"] = u.Channel, ["page"] = u.Page, ["status"] = u.Status,
+                            ["current"] = u.Current, ["latest"] = u.Latest, ["why"] = u.Why, ["download"] = u.Download,
+                            ["latest_file"] = u.LatestFile, ["latest_time"] = u.LatestTime,
+                            ["changes"] = u.Changes.Select(c => (object)new Dictionary<string, object> { ["version"] = c.Version, ["lines"] = c.Lines.Cast<object>().ToList() }).ToList(),
+                        };
+                d["mods"] = kept;
+                if (whole) d["checked_at"] = Now();
+                Store.Save(KeptFile, d);
+            }
+            catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { }
+        }
+
+        /// <summary>The last results, for the mods of the library that are still as they were
+        /// checked (As), each with the player's skip as it is now.</summary>
+        public static List<UpdateInfo> Kept(Library lib)
+        {
+            var kept = Json.Obj(Store.Load(KeptFile), "mods") ?? new Dictionary<string, object>();
+            var out_ = new List<UpdateInfo>();
+            foreach (var m in lib.Mods)
+            {
+                var d = Json.Obj(kept, m.Id);
+                if (d == null || Json.Str(d, "as") != As(m)) continue;
+                var u = new UpdateInfo
+                {
+                    ModId = m.Id, Name = Json.Str(d, "name"), Channel = Json.Str(d, "channel"), Page = Json.Str(d, "page"), Status = Json.Str(d, "status"),
+                    Current = Json.Str(d, "current"), Latest = Json.Str(d, "latest"), Why = Json.Str(d, "why"), Download = Json.Str(d, "download"),
+                    LatestFile = Json.Long(d, "latest_file"), LatestTime = Json.Long(d, "latest_time"),
+                    Changes = Json.List(d, "changes").OfType<Dictionary<string, object>>()
+                        .Select(c => new Change { Version = Json.Str(c, "version"), Lines = Json.List(c, "lines").OfType<string>().ToList() }).ToList(),
+                };
+                // a skip taken back, or a skip made, since the check
+                if (u.Status == "skipped") u.Status = "update";
+                out_.Add(Versions.Skipped(m, u));
+            }
+            return out_;
+        }
 
         static UpdateInfo One(Mod m, bool save)
         {

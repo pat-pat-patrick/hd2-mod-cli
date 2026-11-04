@@ -106,10 +106,10 @@ namespace Hd2Mod
             Cmd("nexus-login", new Spec { Help = "sign in to Nexus Mods: your browser opens Nexus Mods' page, where you allow this program (OAuth with PKCE)",
                                           Run = NexusLoginCmd }),
             Cmd("nexus-logout", new Spec { Help = "sign out of Nexus Mods here (the access can also be taken back on Nexus Mods)", Run = NexusLogoutCmd }),
-            Cmd("check-updates", new Spec { Help = "check every mod for a newer version on its own channel (Nexus Mods, GitHub releases), with what each version changed", Run = CheckUpdatesCmd }),
+            Cmd("check-updates", new Spec { Help = "check every mod for a newer version on its own channel (Nexus Mods, GitHub releases), with what each version changed; --at-start on|off: the window's check when it opens, once a day (on by default)", Values = new[] { "--at-start" }, Run = CheckUpdatesCmd }),
             Cmd("update", new Spec { Help = "download a mod's newer version from GitHub (or Nexus Mods, premium accounts) and put it in the library", Positionals = new[] { "mod" }, Run = UpdateCmd }),
 #else
-            Cmd("check-updates", new Spec { Help = "check every mod for a newer version on its own channel (Nexus Mods, GitHub releases), with what each version changed", Run = CheckUpdatesCmd }),
+            Cmd("check-updates", new Spec { Help = "check every mod for a newer version on its own channel (Nexus Mods, GitHub releases), with what each version changed; --at-start on|off: the window's check when it opens, once a day (on by default)", Values = new[] { "--at-start" }, Run = CheckUpdatesCmd }),
             Cmd("update", new Spec { Help = "download a mod's newer release from GitHub and put it in the library", Positionals = new[] { "mod" }, Run = UpdateCmd }),
 #endif
             Cmd("nexus-info", new Spec { Help = "a mod on Nexus Mods by its number (16662, N站16662) or its page: its name, author, version, page, and whether the library has it (read only; no sign-in needed)",
@@ -1248,6 +1248,15 @@ namespace Hd2Mod
 
         static void CheckUpdatesCmd(Args a, TextWriter o)
         {
+            // the window's check at start, on or off (the user, 2026-11-04)
+            var at = a.Value("--at-start");
+            if (at != null)
+            {
+                if (at != "on" && at != "off") throw new ModError("--at-start takes on or off", "usage");
+                Updates.AtStart = at == "on";
+                o.WriteLine("the window checks every mod for updates when it opens (once a day): " + at);
+                return;
+            }
             var lib = Library.Load();
             if (Updates.Learn(lib, out var known)) lib.Save();
             if (known > 0) o.WriteLine(known + " mod(s) recognised on Nexus Mods by their archive");

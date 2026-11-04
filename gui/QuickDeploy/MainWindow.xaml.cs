@@ -235,6 +235,7 @@ namespace QuickDeploy
             DropTest();
             Listen();
             SelfUpdateAtStart();
+            ModUpdatesAtStart();
             PluginsAtStart();
 #if HAS_NEXUS
             if (App.StartLink != null) Dispatcher.BeginInvoke(new Action(() => Arrived(App.StartLink)), DispatcherPriority.ApplicationIdle);
@@ -5352,7 +5353,34 @@ namespace QuickDeploy
 
         /// <summary>Every mod checked on its own channel (Nexus Mods, GitHub), the window kept usable
         /// meanwhile; then the mods with updates are listed and a summary is shown.</summary>
-        async void Updates_Click(object sender, RoutedEventArgs e)
+        void Updates_Click(object sender, RoutedEventArgs e) => CheckAll(false);
+
+        /// <summary>The last check's results at once (kept from the window before), then, when the
+        /// check at start is on and due (once a day), every mod checked in the background (the
+        /// user, 2026-11-04). It waits a few seconds, so the first read of the library and the
+        /// pictures go first; the window is usable throughout.</summary>
+        async void ModUpdatesAtStart()
+        {
+            try
+            {
+                var lib = await Queued(() => Library.Load());
+                foreach (var u in Updates.Kept(lib))
+                {
+                    updates[u.ModId] = u;
+                    checkedAs[u.ModId] = Updates.As(lib.Mods.First(m => m.Id == u.ModId));
+                }
+            }
+            catch (Exception x) when (x is ModError || x is IOException || x is FormatException || x is UnauthorizedAccessException) { }
+            if (st != null) { RenderNav(); RenderList(); RenderDetail(); }
+            if (!Updates.DueAtStart()) return;
+            await Task.Delay(5000);
+            CheckAll(true);
+        }
+
+        /// <summary>Every mod checked. atStart: the check the window makes by itself, which says
+        /// what it found in the footer only, and only when something has an update: no summary
+        /// window, no change of filter or of the mod shown.</summary>
+        async void CheckAll(bool atStart)
         {
             if (checking || busy) return;
             checking = true;
@@ -5385,7 +5413,13 @@ namespace QuickDeploy
                 UpdatesBtn.IsEnabled = true;
                 UpdatesBtn.Content = Texts.Get("up_check");
             }
-            if (failed != null) { Foot(Texts.F("failed", failed), "Yellow"); Dialog.Tell(this, Texts.F("failed", failed)); return; }
+            if (failed != null)
+            {
+                if (atStart) return;            // the next start, or the button, tries again
+                Foot(Texts.F("failed", failed), "Yellow");
+                Dialog.Tell(this, Texts.F("failed", failed));
+                return;
+            }
 
             updates.Clear();
             checkedAs.Clear();
@@ -5397,6 +5431,14 @@ namespace QuickDeploy
             }
             int Count(string status, Func<UpdateInfo, bool> also = null) => found.Count(u => u.Status == status && (also == null || also(u)));
             int upd = Count("update"), err = Count("error"), none = Count("no_source"), other = Count("no_check");
+            if (atStart)
+            {
+                // nothing to say: the line goes back to what it says of the deploy
+                if (upd > 0) Foot(Texts.F("up_foot_start", upd), "Yellow");
+                else if (st != null) FootState();
+                if (st != null) { RenderNav(); RenderList(); RenderDetail(); }
+                return;
+            }
             Foot(Texts.F("up_foot", upd, Seconds(clock.Elapsed.TotalSeconds)), upd > 0 ? "Yellow" : "Blue");
             if (upd > 0)
             {
@@ -6906,6 +6948,20 @@ namespace QuickDeploy
             };
             body.Children.Add(kpLine);
             body.Children.Add(Small(Texts.Get("set_keep_note"), new Thickness(0, 8, 0, 0)));
+
+            // every mod checked when the window opens, once a day (the user, 2026-11-04)
+            body.Children.Add(Label("set_mod_updates", new Thickness(0, 20, 0, 6)));
+            var muSw = new CheckBox { Style = (Style)FindResource("Switch"), IsChecked = Updates.AtStart, VerticalAlignment = VerticalAlignment.Center };
+            var muLine = new StackPanel { Orientation = Orientation.Horizontal };
+            muLine.Children.Add(muSw);
+            muLine.Children.Add(new TextBlock { Text = Texts.Get("set_mod_updates_on"), Foreground = B("Ink"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 0, 0, 0) });
+            muSw.Click += (s, e2) =>
+            {
+                try { Updates.AtStart = muSw.IsChecked == true; }
+                catch (Exception err) when (err is IOException || err is UnauthorizedAccessException) { muSw.IsChecked = Updates.AtStart; }
+            };
+            body.Children.Add(muLine);
+            body.Children.Add(Small(Texts.Get("set_mod_updates_note"), new Thickness(0, 8, 0, 0)));
 
             // About and diagnostics
             body = about;

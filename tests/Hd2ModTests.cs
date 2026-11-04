@@ -746,6 +746,43 @@ namespace Hd2Mod.Tests
             finally { Updates.Now = now; }
         }
 
+        /// <summary>The window's check at start (the user, 2026-11-04): on unless turned off, due once
+        /// a day after a whole check; the last results kept for the next window, each for the mod
+        /// as it was checked, with the player's skip as it is now.</summary>
+        [Fact]
+        public void Update_checks_at_start_are_daily_and_their_results_kept()
+        {
+            Assert.True(Updates.AtStart);
+            Assert.True(Updates.DueAtStart());
+            var lib = new Library { Mods = { UpdatesMod() } };
+            Updates.Check(lib);
+            Assert.False(Updates.DueAtStart());
+            var now = Updates.Now;
+            try
+            {
+                Updates.Now = () => now() + 24 * 3600;
+                Assert.True(Updates.DueAtStart());
+                Cli("check-updates", "--at-start", "off");
+                Assert.False(Updates.AtStart);
+                Assert.False(Updates.DueAtStart());
+                Cli("check-updates", "--at-start", "on");
+                Assert.True(Updates.DueAtStart());
+            }
+            finally { Updates.Now = now; }
+
+            var kept = Updates.Kept(lib).Single();
+            Assert.Equal(("update", "2.0", 2L), (kept.Status, kept.Latest, kept.LatestFile));
+            Assert.Equal(new[] { "2.0", "1.5", "1.2" }, kept.Changes.Select(c => c.Version));
+            // skipped since: said so; the mod changed since: not shown
+            Versions.Skip(lib.Mods[0], kept);
+            Assert.Equal("skipped", Updates.Kept(lib).Single().Status);
+            lib.Mods[0].Nexus.Version = "2.0";
+            Assert.Empty(Updates.Kept(lib));
+            // one mod's own check keeps its result beside the others'
+            Updates.One(lib.Mods[0]);
+            Assert.Equal("2.0", Updates.Kept(lib).Single().Latest);
+        }
+
         /// <summary>A mod added from an archive with no Nexus Mods record is known by the archive's
         /// MD5 (the user, 2026-11-04): taken when it is added, asked in the update check, which then
         /// checks the file it is. Bytes in two mods tell nothing; another game's are not ours; a mod

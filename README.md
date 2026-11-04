@@ -218,7 +218,11 @@ Storage page, and handles each choice:
 ### Update checks
 
 **Check for updates** (above the list) checks every mod on the channel it came
-from:
+from. The window also checks by itself when it opens, at most once a day, in
+the background (Settings → *Mod updates*, on by default; `hd2qd check-updates
+--at-start on|off`); it downloads and replaces nothing, and says in the bottom
+line how many mods have an update. The last results are kept, so the yellow
+marks are there again when the window is opened again.
 
 | Source | How it is checked | How it is updated |
 |---|---|---|
@@ -282,9 +286,10 @@ download from Nexus Mods:
   program once it is the program for those links (one button on the Download
   page takes them, another gives them back to the program that had them).
   Premium accounts can also update a mod from the list directly.
-- **Requests.** Every request follows something you clicked, and carries this
-  program's name and version. Nothing is asked of Nexus Mods at start-up or in
-  the background.
+- **Requests.** Every request carries this program's name and version. Signing
+  in and downloads follow only something you clicked. The update check the
+  window makes when it opens (once a day, can be turned off) uses only the
+  public interface, with no key and no sign-in.
 
 ### Lua mods before a deploy
 
@@ -597,7 +602,7 @@ mod 库与游戏不在同一分区时无法使用硬链接，有变化的文件�
 
 ### 检查更新
 
-点击列表上方的 **检查更新**，程序将按各 mod 的来源渠道检查新版本：
+点击列表上方的 **检查更新**，程序将按各 mod 的来源渠道检查新版本。打开管理器时也会自动检查，每天最多一次，在后台进行（设置 →“MOD 更新”，默认开启；命令行为 `hd2qd check-updates --at-start on|off`）；不会自动下载或替换 mod，检查完在底部状态行说明有几个 mod 有更新。上次检查的结果会保留，再次打开管理器时黄色标记仍在。
 
 | 来源 | 检查方式 | 更新方式 |
 |---|---|---|
@@ -625,7 +630,7 @@ mod 库与游戏不在同一分区时无法使用硬链接，有变化的文件�
 
 - **登录**：在“下载”页面点击“登录 Nexus Mods”，会在浏览器中打开 Nexus Mods 自己的页面，在那里允许本程序即可（OAuth 2.0 + PKCE）。本程序不会接触你的密码。登录信息仅保存在本机，以你的 Windows 账户加密，并会自动续期。“退出登录”只在本机删除登录信息；也可以在 Nexus Mods 网站上收回本程序的访问权限。
 - **下载**：本程序接管“Mod Manager Download”链接后，网站上的这个按钮会把文件交给本程序（“下载”页面上一个按钮用于接管，另一个用于交还给原来的程序）。高级会员还可以在列表中直接更新 mod。
-- **请求**：每次请求都由你的操作发起，并带有本程序的名称和版本。启动时和后台都不会向 Nexus Mods 发送请求。
+- **请求**：每次请求都带有本程序的名称和版本。登录和下载只由你的操作发起。打开管理器时的自动检查更新（每天最多一次，可关闭）只使用公开接口，不带密钥，也不登录。
 
 ### LUA MOD 部署前检查
 
