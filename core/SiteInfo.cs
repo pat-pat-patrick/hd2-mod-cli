@@ -40,25 +40,16 @@ namespace Hd2Mod
             return null;
         }
 
+        /// <summary>The mod's page as anyone sees it, with no sign-in, in every build (Nexus.LookUp;
+        /// the user, 2026-11-04).</summary>
         static SiteInfo FromNexus(NexusRef r)
         {
-#if !HAS_NEXUS
-            throw new ModError("this build was made without Nexus Mods support", "no_nexus");
-#else
-            var key = Nexus.Credential();
-            if (string.IsNullOrEmpty(key)) throw new ModError("checking Nexus Mods needs you signed in to it", "no_key");
-            var d = Json.Parse(Nexus.Api("/v1/games/" + r.Game + "/mods/" + r.Mod + ".json", key)) as Dictionary<string, object>;
-            if (d == null) throw new ModError("Nexus Mods answered nothing about mod " + r.Mod, "nexus_error");
+            var m = Nexus.LookUp(r.Mod);
             return new SiteInfo
             {
-                Name = Json.Str(d, "name"),
-                Author = Json.Str(d, "author") ?? Json.Str(d, "uploaded_by"),
-                Summary = Clean(Json.Str(d, "summary")),
-                Picture = Json.Str(d, "picture_url"),
-                Version = Json.Str(d, "version"),
-                Updated = Json.Long(d, "updated_timestamp"),
+                Name = m.Name, Author = m.Author ?? m.Uploader, Summary = Clean(m.Summary),
+                Picture = m.Picture, Version = m.Version, Updated = m.Updated,
             };
-#endif
         }
 
         static SiteInfo FromGitHub(GitHubRef r)

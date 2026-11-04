@@ -106,14 +106,14 @@ namespace Hd2Mod
             Cmd("nexus-login", new Spec { Help = "sign in to Nexus Mods: your browser opens Nexus Mods' page, where you allow this program (OAuth with PKCE)",
                                           Run = NexusLoginCmd }),
             Cmd("nexus-logout", new Spec { Help = "sign out of Nexus Mods here (the access can also be taken back on Nexus Mods)", Run = NexusLogoutCmd }),
-            Cmd("nexus-info", new Spec { Help = "a mod on Nexus Mods by its number (16662, N站16662) or its page: its name, author, version, page, and whether the library has it (read only; no sign-in needed)",
-                                         Positionals = new[] { "number" }, Run = NexusInfoCmd }),
-            Cmd("check-updates", new Spec { Help = "check every mod for a newer version on its own channel (Nexus Mods when signed in, GitHub releases)", Run = CheckUpdatesCmd }),
+            Cmd("check-updates", new Spec { Help = "check every mod for a newer version on its own channel (Nexus Mods, GitHub releases), with what each version changed", Run = CheckUpdatesCmd }),
             Cmd("update", new Spec { Help = "download a mod's newer version from GitHub (or Nexus Mods, premium accounts) and put it in the library", Positionals = new[] { "mod" }, Run = UpdateCmd }),
 #else
-            Cmd("check-updates", new Spec { Help = "check every mod from GitHub for a newer release", Run = CheckUpdatesCmd }),
+            Cmd("check-updates", new Spec { Help = "check every mod for a newer version on its own channel (Nexus Mods, GitHub releases), with what each version changed", Run = CheckUpdatesCmd }),
             Cmd("update", new Spec { Help = "download a mod's newer release from GitHub and put it in the library", Positionals = new[] { "mod" }, Run = UpdateCmd }),
 #endif
+            Cmd("nexus-info", new Spec { Help = "a mod on Nexus Mods by its number (16662, N站16662) or its page: its name, author, version, page, and whether the library has it (read only; no sign-in needed)",
+                                         Positionals = new[] { "number" }, Run = NexusInfoCmd }),
             Cmd("source", new Spec { Help = "set where a mod comes from: a Nexus Mods page, a GitHub repository, or another page (--clear: none)",
                                      Positionals = new[] { "mod" }, Many = true, Flags = new[] { "--clear" }, Run = SourceCmd }),
             Cmd("delete", new Spec { Help = "delete mods from the disk for good: out of the library and the game (one deploy), their folders deleted",
@@ -998,8 +998,6 @@ namespace Hd2Mod
         }
 #endif
 
-#if HAS_NEXUS
-
         static void NexusInfoCmd(Args a, TextWriter o)
         {
             var n = Nexus.ModNumber(a.Pos["number"]);
@@ -1020,6 +1018,7 @@ namespace Hd2Mod
             o.WriteLine(had != null ? "in the library: " + had.Name : "not in the library");
         }
 
+#if HAS_NEXUS
         static void NexusLoginCmd(Args a, TextWriter o)
         {
             o.WriteLine("your browser opens Nexus Mods: allow HD2 Mod Quick Deploy there");

@@ -1,4 +1,3 @@
-#if HAS_NEXUS
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -45,7 +44,8 @@ namespace Hd2Mod
     }
 
     // Mods are passed around by their number alone in Chinese-speaking groups ("N站16662"; the user,
-    // 2026-10-29): the number, or a page, looked up on Nexus Mods without signing in.
+    // 2026-10-29): the number, or a page, looked up on Nexus Mods without signing in, in every build
+    // (the user, 2026-11-04: the developer build leaves out downloads only).
     public static partial class Nexus
     {
         static readonly Regex PageLink = new Regex(@"nexusmods\.com/([\w-]+)/mods/(\d+)", RegexOptions.IgnoreCase);
@@ -74,15 +74,19 @@ namespace Hd2Mod
             "modId name summary version author pictureUrl updatedAt endorsements downloads adultContent status uploader { name } } } }";
 
         /// <summary>What the mod's page says. Asked without signing in; when that way fails for
-        /// another reason than the mod not being there, and the player is signed in, the v1 API
-        /// is asked instead.</summary>
+        /// another reason than the mod not being there, and the player is signed in (builds with
+        /// downloads), the v1 API is asked instead.</summary>
         public static NexusModInfo LookUp(long mod)
         {
+#if HAS_NEXUS
             try { return FromGraphQL(mod); }
             catch (ModError e) when (e.Kind == "nexus_error" && Credential() is string key)
             {
                 return FromV1(mod, key);
             }
+#else
+            return FromGraphQL(mod);
+#endif
         }
 
         static NexusModInfo FromGraphQL(long mod)
@@ -103,6 +107,7 @@ namespace Hd2Mod
             };
         }
 
+#if HAS_NEXUS
         static NexusModInfo FromV1(long mod, string key)
         {
             var d = Json.Parse(Get("/v1/games/" + Game + "/mods/" + mod + ".json", key)) as Dictionary<string, object>;
@@ -115,6 +120,7 @@ namespace Hd2Mod
                 Downloads = Json.Long(d, "mod_downloads"), Endorsements = Json.Long(d, "endorsement_count"), Adult = Json.Bool(d, "contains_adult_content"),
             };
         }
+#endif
 
         static string Words(string s) => string.IsNullOrWhiteSpace(s) ? null : s.Replace("<br />", "\n").Replace("<br>", "\n").Trim();
 
@@ -122,4 +128,3 @@ namespace Hd2Mod
             DateTimeOffset.TryParse(iso, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var t) ? t.ToUnixTimeSeconds() : 0;
     }
 }
-#endif

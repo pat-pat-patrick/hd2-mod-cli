@@ -256,7 +256,22 @@ from:
 
 ### Nexus Mods
 
-In builds with the Nexus Mods part (ours, and `build.bat --with-nexus`):
+Every build, the developer build too, uses Nexus Mods' public interface, with
+no sign-in and no API key, for what a mod's page shows to anyone:
+
+- **Update checks** and the changes of each version (see *Update checks*), and
+  an archive's source found by its MD5.
+- **By number.** A mod's number alone (`16662`, as it is often passed around,
+  also `N站16662`) or its page's address, typed in *Find by Nexus number* on the
+  Download page (*Nexus Mods* in the developer build), shows what its page says:
+  name, author, version, numbers and words, and whether the library has it
+  already, with a button to its Files tab. `hd2qd nexus-info 16662` says the
+  same.
+- **Match the source**: a mod's name, author, words, picture and the page's
+  version filled in from its page (`hd2qd match MOD`).
+
+Only builds with the Nexus Mods part (ours, and `build.bat --with-nexus`) also
+download from Nexus Mods:
 
 - **Signing in.** *Sign in to Nexus Mods* on the Download page opens Nexus Mods'
   own page in your browser, where you allow this program (OAuth 2.0 with PKCE).
@@ -267,12 +282,6 @@ In builds with the Nexus Mods part (ours, and `build.bat --with-nexus`):
   program once it is the program for those links (one button on the Download
   page takes them, another gives them back to the program that had them).
   Premium accounts can also update a mod from the list directly.
-- **By number.** A mod's number alone (`16662`, as it is often passed around,
-  also `N站16662`) or its page's address, typed in *Find by Nexus number* on the
-  Download page, shows what its page says: name, author, version, numbers and
-  words, and whether the library has it already, with a button to its Files tab.
-  It needs no sign-in (Nexus Mods' public GraphQL API). `hd2qd nexus-info 16662`
-  says the same.
 - **Requests.** Every request follows something you clicked, and carries this
   program's name and version. Nothing is asked of Nexus Mods at start-up or in
   the background.
@@ -606,11 +615,16 @@ mod 库与游戏不在同一分区时无法使用硬链接，有变化的文件�
 
 ### Nexus Mods
 
-包含 Nexus Mods 部分的版本（我们发布的版本，以及 `build.bat --with-nexus` 构建的版本）：
+所有版本（包括开发版）都使用 Nexus Mods 的公开接口，无需登录或 API 密钥，读取 mod 页面上人人可见的信息：
+
+- **检查更新**及各版本的改动（见“检查更新”），以及按压缩包的 MD5 认出来源。
+- **按编号查找**：在“下载”页面（开发版中为“Nexus Mods”页面）的“按 Nexus 编号查找”中输入 mod 编号（如 `16662`、`N站16662`）或 mod 页面地址，即可看到该 mod 页面上的名称、作者、版本、下载与点赞数、简介，以及是否已在 mod 库中，并可一键前往其 Files 页面。命令行为 `hd2qd nexus-info 16662`。
+- **匹配来源信息**：按 mod 页面补全名称、作者、简介、图片和页面上的版本（`hd2qd match MOD`）。
+
+只有包含 Nexus Mods 部分的版本（我们发布的版本，以及 `build.bat --with-nexus` 构建的版本）还能从 Nexus Mods 下载：
 
 - **登录**：在“下载”页面点击“登录 Nexus Mods”，会在浏览器中打开 Nexus Mods 自己的页面，在那里允许本程序即可（OAuth 2.0 + PKCE）。本程序不会接触你的密码。登录信息仅保存在本机，以你的 Windows 账户加密，并会自动续期。“退出登录”只在本机删除登录信息；也可以在 Nexus Mods 网站上收回本程序的访问权限。
 - **下载**：本程序接管“Mod Manager Download”链接后，网站上的这个按钮会把文件交给本程序（“下载”页面上一个按钮用于接管，另一个用于交还给原来的程序）。高级会员还可以在列表中直接更新 mod。
-- **按编号查找**：在“下载”页面的“按 Nexus 编号查找”中输入 mod 编号（如 `16662`、`N站16662`）或 mod 页面地址，即可看到该 mod 页面上的名称、作者、版本、下载与点赞数、简介，以及是否已在 mod 库中，并可一键前往其 Files 页面下载。无需登录（使用 Nexus Mods 的公开 GraphQL 接口）。命令行为 `hd2qd nexus-info 16662`。
 - **请求**：每次请求都由你的操作发起，并带有本程序的名称和版本。启动时和后台都不会向 Nexus Mods 发送请求。
 
 ### LUA MOD 部署前检查

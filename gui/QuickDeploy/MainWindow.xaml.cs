@@ -168,7 +168,9 @@ namespace QuickDeploy
             PageDownload.Content = Texts.Get("page_download");
             PageStorage.Content = Texts.Get("page_storage");
             PageTags.Content = Texts.Get("page_tags");
-            PageDownload.Visibility = HasNexus ? Visibility.Visible : Visibility.Collapsed;
+            // a build without downloads keeps the page for what needs no sign-in (the user,
+            // 2026-11-04): a mod by its number, and the mods from Nexus Mods
+            if (!HasNexus) PageDownload.Content = Texts.Get("page_nexus");
 #if HAS_NEXUS
             SearchHint.Text = Texts.Get("search_hint");
 #else
@@ -2524,14 +2526,20 @@ namespace QuickDeploy
 
         TextBlock Heading(string text) => new TextBlock { Text = text, FontWeight = FontWeights.SemiBold, FontSize = 16, TextWrapping = TextWrapping.Wrap };
 
-#if HAS_NEXUS
         /// <summary>The download page: the site's Mod Manager Download button (who gets it, take
-        /// it or give it back), the Nexus Mods account, the download going now, the downloads so far, and
-        /// the mods in the library that came from Nexus Mods.</summary>
+        /// it or give it back), the Nexus Mods account, the look-up by number, the download going
+        /// now, the downloads so far, and the mods in the library that came from Nexus Mods. A
+        /// build without downloads has the look-up and the mods only, and says so.</summary>
         void RenderDownloads()
         {
             Downloads.Children.Clear();
-            Downloads.Children.Add(new TextBlock { Text = Texts.Get("dl_title"), FontSize = 28, FontWeight = FontWeights.Bold, Margin = new Thickness(0, 0, 0, 4) });
+            Downloads.Children.Add(new TextBlock { Text = Texts.Get(HasNexus ? "dl_title" : "dl_title_dev"), FontSize = 28, FontWeight = FontWeights.Bold, Margin = new Thickness(0, 0, 0, 4) });
+#if !HAS_NEXUS
+            // what this build leaves out is said whatever the hints setting
+            Downloads.Children.Add(Small(Texts.Get("dl_intro_dev"), new Thickness(0, 0, 0, 20)));
+            Downloads.Children.Add(Card(FindByNumber(false)));
+            Downloads.Children.Add(new Border { Height = 20 });
+#else
             Downloads.Children.Add(Texts.Hints ? Small(Texts.Get("dl_intro"), new Thickness(0, 0, 0, 20)) : new Border { Height = 12 });
 
             // the button and the key, side by side
@@ -2685,6 +2693,7 @@ namespace QuickDeploy
                 Downloads.Children.Add(Card(scroll));
                 Downloads.Children.Add(new Border { Height = 20 });
             }
+#endif
 
             // the mods that came from Nexus Mods
             var fromNexus = st?.Mods.Where(m => m.NexusPage != null).ToList() ?? new List<ModRow>();
@@ -2826,12 +2835,12 @@ namespace QuickDeploy
             page.Click += (s, e) => Process.Start(new ProcessStartInfo(m.Page) { UseShellExecute = true });
             btns.Children.Add(page);
             words.Children.Add(btns);
-            // Mod Manager Download there comes back here only while the button is ours
-            if (m.Available) words.Children.Add(Small(Texts.Get(ours ? "dl_find_files_n" : "dl_find_take"), new Thickness(0, 6, 0, 0)));
+            // Mod Manager Download there comes back here only while the button is ours; a build
+            // without downloads: by hand, then dropped in
+            if (m.Available) words.Children.Add(Small(Texts.Get(!HasNexus ? "dl_find_manual" : ours ? "dl_find_files_n" : "dl_find_take"), new Thickness(0, 6, 0, 0)));
             card.Children.Add(words);
             return card;
         }
-#endif
 
         /// <summary>Why a download failed, in the window's words.</summary>
         static string Why(string kind)
@@ -2843,12 +2852,13 @@ namespace QuickDeploy
 #endif
             switch (kind)
             {
-#if HAS_NEXUS
-                case "no_key": return Texts.Get("up_no_key");
-                case "nexus_refused": return Texts.Get("nx_refused");
+                // the public look-ups, in every build
                 case "nexus_offline": return Texts.Get("nx_offline");
                 case "nexus_busy": return Texts.Get("nx_busy");
                 case "nexus_missing": return Texts.Get("dl_missing");
+#if HAS_NEXUS
+                case "no_key": return Texts.Get("up_no_key");
+                case "nexus_refused": return Texts.Get("nx_refused");
                 case "download_cut": return Texts.Get("dl_cut");
 #endif
                 case "not_zip": return Texts.Get("dl_not_zip");
@@ -2886,9 +2896,7 @@ namespace QuickDeploy
             PluginsBtn.Background = page == "plugins" ? B("Yellow") : Brushes.Transparent;
             PluginsBtn.BorderBrush = page == "plugins" ? B("Yellow") : B("Grid");
             PlugGlyph.Foreground = page == "plugins" ? B("TapeInk") : B("Ink");
-#if HAS_NEXUS
             if (page == "download") RenderDownloads();
-#endif
             if (page == "storage") RenderStorage();
             if (page == "lua") RenderLua();
             if (page == "tags") RenderTags();
@@ -2903,9 +2911,7 @@ namespace QuickDeploy
 
         // how the two lists of mods are sorted (the user, 2026-10-24)
         string storageSort = "size";
-#if HAS_NEXUS
         string downloadSort = "order";
-#endif
 
         /// <summary>The buttons that pick the order of a list: the one in use is lit.</summary>
         UIElement SortBy(string now, Action<string> pick, params (string Key, string Text)[] ways)
@@ -5765,9 +5771,6 @@ namespace QuickDeploy
             if (busy) return;
             var many = Taken(m).Where(x => x.Channel == "Nexus Mods" || x.Channel == "GitHub").ToList();
             if (many.Count == 0) { Dialog.Tell(this, Texts.Get("match_no_source")); return; }
-#if HAS_NEXUS
-            if (many.Any(x => x.Channel == "Nexus Mods") && Nexus.Credential() == null && !await AskKey()) return;
-#endif
             var ids = many.Select(x => x.Id).ToList();
             var r = await Exec(() => Cli.Call(() =>
             {

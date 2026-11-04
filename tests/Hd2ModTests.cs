@@ -842,11 +842,8 @@ namespace Hd2Mod.Tests
             finally { Updates.Now = now; }
         }
 
-#if HAS_NEXUS
-        static string Link(int file, bool withKey = true) =>
-            "nxm://helldivers2/mods/77/files/" + file + (withKey ? "?key=abc%2Bd&expires=1700000000&user_id=5" : "");
-
-        /// <summary>A mod's number as players pass it around, or its page (the user, 2026-10-29).</summary>
+        /// <summary>A mod's number as players pass it around, or its page (the user, 2026-10-29); in
+        /// every build, as the look-ups below (the user, 2026-11-04).</summary>
         [Fact]
         public void ANexusNumberIsFoundInWhatIsTyped()
         {
@@ -862,7 +859,9 @@ namespace Hd2Mod.Tests
         [Fact]
         public void ANumberIsLookedUpWithoutSigningIn()
         {
+#if HAS_NEXUS
             Assert.Null(Nexus.Credential());
+#endif
             lock (Seen) Seen.Clear();
             var m = Nexus.LookUp(77);
             Assert.Equal(("Cape Colours on Nexus", "Capey", "CapeUploader", "2.0"), (m.Name, m.Author, m.Uploader, m.Version));
@@ -899,6 +898,24 @@ namespace Hd2Mod.Tests
             Assert.Equal("nexus_error", e.Kind);
             Assert.Contains("Cannot query field", e.Message);
         }
+
+        /// <summary>A Nexus mod matched against its page with no sign-in, in every build (the user,
+        /// 2026-11-04): name, author, words and the page's version filled in, the name it had kept.</summary>
+        [Fact]
+        public void A_Nexus_mod_is_matched_without_signing_in()
+        {
+            Cli("add", Mod("cape-folder-1234", Files((A + ".patch_0", "cape"))));
+            Cli("source", "cape-folder-1234", "https://www.nexusmods.com/helldivers2/mods/77");
+            Assert.Contains("Cape Colours on Nexus", Cli("match", "cape-folder-1234"));
+            var mod = Library.Load().Mods[0];
+            Assert.Equal(("Cape Colours on Nexus", "cape-folder-1234"), (mod.Name, mod.RealName));
+            Assert.Equal(("Capey", "Capes in every colour.\nTwo lines.", "2.0"), (mod.Site.Author, mod.Site.Summary, mod.Site.Version));
+            lock (Seen) Assert.DoesNotContain(Seen, x => x.StartsWith("/v1/"));
+        }
+
+#if HAS_NEXUS
+        static string Link(int file, bool withKey = true) =>
+            "nxm://helldivers2/mods/77/files/" + file + (withKey ? "?key=abc%2Bd&expires=1700000000&user_id=5" : "");
 
         [Fact]
         public void LinkIsRead()
