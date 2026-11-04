@@ -263,7 +263,7 @@ no sign-in and no API key, for what a mod's page shows to anyone:
   an archive's source found by its MD5.
 - **By number.** A mod's number alone (`16662`, as it is often passed around,
   also `N站16662`) or its page's address, typed in *Find by Nexus number* on the
-  Download page (*Nexus Mods* in the developer build), shows what its page says:
+  Download page (*Nexus* in the developer build), shows what its page says:
   name, author, version, numbers and words, and whether the library has it
   already, with a button to its Files tab. `hd2qd nexus-info 16662` says the
   same.
@@ -618,7 +618,7 @@ mod 库与游戏不在同一分区时无法使用硬链接，有变化的文件�
 所有版本（包括开发版）都使用 Nexus Mods 的公开接口，无需登录或 API 密钥，读取 mod 页面上人人可见的信息：
 
 - **检查更新**及各版本的改动（见“检查更新”），以及按压缩包的 MD5 认出来源。
-- **按编号查找**：在“下载”页面（开发版中为“Nexus Mods”页面）的“按 Nexus 编号查找”中输入 mod 编号（如 `16662`、`N站16662`）或 mod 页面地址，即可看到该 mod 页面上的名称、作者、版本、下载与点赞数、简介，以及是否已在 mod 库中，并可一键前往其 Files 页面。命令行为 `hd2qd nexus-info 16662`。
+- **按编号查找**：在“下载”页面（开发版中为“Nexus”页面）的“按 Nexus 编号查找”中输入 mod 编号（如 `16662`、`N站16662`）或 mod 页面地址，即可看到该 mod 页面上的名称、作者、版本、下载与点赞数、简介，以及是否已在 mod 库中，并可一键前往其 Files 页面。命令行为 `hd2qd nexus-info 16662`。
 - **匹配来源信息**：按 mod 页面补全名称、作者、简介、图片和页面上的版本（`hd2qd match MOD`）。
 
 只有包含 Nexus Mods 部分的版本（我们发布的版本，以及 `build.bat --with-nexus` 构建的版本）还能从 Nexus Mods 下载：
