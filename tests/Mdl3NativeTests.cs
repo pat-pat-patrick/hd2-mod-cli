@@ -16,6 +16,7 @@ namespace Hd2Mod.Tests
         static readonly Func<int> RealCodePage = Mdl3Native.CodePage;
         static readonly Func<string, string> RealShortName = Mdl3Native.ShortName;
         static readonly Func<string> RealElsewhere = Mdl3Native.Elsewhere;
+        static readonly Func<string> RealProgramData = Mdl3Native.ProgramData;
         string Local;
         string signedBy = "dll";
 
@@ -30,6 +31,7 @@ namespace Hd2Mod.Tests
             // a Chinese system's code page, whatever this machine's; the DLL's other place in the test's folder
             Mdl3Native.CodePage = () => 936;
             Mdl3Native.Elsewhere = () => Elsewhere;
+            Mdl3Native.ProgramData = () => Shared;
             Mdl3Native.Last = null;
         }
 
@@ -41,6 +43,7 @@ namespace Hd2Mod.Tests
             Mdl3Native.CodePage = RealCodePage;
             Mdl3Native.ShortName = RealShortName;
             Mdl3Native.Elsewhere = RealElsewhere;
+            Mdl3Native.ProgramData = RealProgramData;
             base.Dispose();
         }
 
@@ -68,6 +71,8 @@ namespace Hd2Mod.Tests
 
         string Installed => Path.Combine(Local, "MDL3", "mdl_native_bridge.dll");
         string Elsewhere => Path.Combine(Root, "programdata", "MDL3");
+        // %ProgramData% as MDL3 dev.33 uses it
+        string Shared => Path.Combine(Root, "shared");
 
         Dictionary<string, object> Config() =>
             (Dictionary<string, object>)Json.Parse(File.ReadAllText(Path.Combine(Local, "MDL3", "config.json")));
@@ -259,6 +264,86 @@ namespace Hd2Mod.Tests
             Assert.Contains("MDL3 cannot open its folder", said);
             Assert.False(File.Exists(Installed));
             Assert.False(Directory.Exists(Elsewhere));
+        }
+
+        /// <summary>MDL3 3.0.0-dev.33 (2026-11-04): a user folder the code page cannot write (Chinese
+        /// under 1252) moves MDL3's files to %ProgramData%, as its install.ps1 and boot do. The DLL,
+        /// config.json and the folders go there, the native host is granted that place in the user
+        /// folder's MDL3\sys-paths.txt, and the settings and mods there are carried over.</summary>
+        [Fact]
+        public void From_dev33_a_user_name_the_code_page_cannot_write_moves_to_programdata()
+        {
+            Local = Path.Combine(Root, "张三", "Local");
+            Directory.CreateDirectory(Local);
+            Mdl3Native.CodePage = () => 1252;
+            Mdl3Native.ShortName = s => s;
+            // what an earlier MDL left in the user folder
+            Directory.CreateDirectory(Path.Combine(Local, "MDL", "Helldivers2", "Mods", "Loose"));
+            File.WriteAllText(Path.Combine(Local, "MDL", "Helldivers2", "MDL.cfg"), "ui = {}");
+            Directory.CreateDirectory(Path.Combine(Local, "MDL3"));
+            File.WriteAllText(Path.Combine(Local, "MDL3", "config.json"), "{\"schema\":1,\"task_jit\":\"off\"}");
+            File.WriteAllText(Path.Combine(Local, "MDL3", "sys-paths.txt"), "mkdir=D:\\Somewhere\r\n");
+
+            var said = Cli("add", Package("MDL3 dev.33", "3.0.0-dev.33", "dll one"));
+            Assert.Contains("installed in " + Path.Combine(Shared, "MDL3"), said);
+            var dll = Path.Combine(Shared, "MDL3", "mdl_native_bridge.dll");
+            Assert.Equal("dll one", File.ReadAllText(dll));
+            Assert.False(File.Exists(Installed));
+            var c = (Dictionary<string, object>)Json.Parse(File.ReadAllText(Path.Combine(Shared, "MDL3", "config.json")));
+            Assert.Equal(dll, Json.Str(c, "dll"));
+            Assert.Equal("off", Json.Str(c, "task_jit"));
+            Assert.Equal(new[] { "mkdir=D:\\Somewhere", "mkdir=" + Path.Combine(Shared, "MDL3"), "mkdir=" + Path.Combine(Shared, "MDL", "Helldivers2") },
+                         File.ReadAllLines(Path.Combine(Local, "MDL3", "sys-paths.txt")));
+            Assert.Equal("ui = {}", File.ReadAllText(Path.Combine(Shared, "MDL", "Helldivers2", "MDL.cfg")));
+            Assert.True(Directory.Exists(Path.Combine(Shared, "MDL", "Helldivers2", "Mods", "Loose")));
+            foreach (var f in new[] { "MDL3/Logs", "MDL/Helldivers2/Logs", "CowboyBingus/Helldivers2/Logs", "HD2Runtime/mod_data" })
+                Assert.True(Directory.Exists(Path.Combine(Shared, f)), f);
+            Assert.DoesNotContain("MDL3", Cli("deploy"));               // the same place next time
+            Assert.Equal(Path.Combine(Shared, "MDL3"), Mdl3Native.DataDir());
+
+            // a copy already there is never written over; the grant lines are not added twice
+            File.WriteAllText(Path.Combine(Shared, "MDL", "Helldivers2", "MDL.cfg"), "newer");
+            File.Delete(dll);
+            Assert.Contains("installed", Cli("deploy"));
+            Assert.Equal("newer", File.ReadAllText(Path.Combine(Shared, "MDL", "Helldivers2", "MDL.cfg")));
+            Assert.Equal(3, File.ReadAllLines(Path.Combine(Local, "MDL3", "sys-paths.txt")).Length);
+        }
+
+        /// <summary>Must fail: the same user folder with MDL3 before dev.33 (its boot reads only
+        /// %LOCALAPPDATA%), and with dev.33 when %ProgramData% is not plain ASCII.</summary>
+        [Fact]
+        public void Before_dev33_or_without_an_ascii_programdata_it_is_still_refused()
+        {
+            Local = Path.Combine(Root, "张三", "Local");
+            Directory.CreateDirectory(Local);
+            Mdl3Native.CodePage = () => 1252;
+            Mdl3Native.ShortName = s => s;
+            var said = Cli("add", Package("MDL3 dev.27", "3.0.0-dev.27", "dll one"));
+            Assert.Contains("MDL3 cannot open its folder", said);
+            Assert.Contains("3.0.0-dev.33 or later", said);
+            Assert.False(Directory.Exists(Path.Combine(Shared, "MDL3")));
+
+            Mdl3Native.ProgramData = () => Path.Combine(Root, "共享");
+            said = Cli("add", Package("MDL3 dev.33", "3.0.0-dev.33", "dll two"));
+            Assert.Contains("MDL3 cannot open its folder", said);
+            Assert.False(Directory.Exists(Path.Combine(Root, "共享", "MDL3")));
+        }
+
+        /// <summary>A user folder the code page writes stays where it is, dev.33 or not.</summary>
+        [Fact]
+        public void From_dev33_a_user_folder_the_game_opens_stays()
+        {
+            Assert.Contains("installed", Cli("add", Package("MDL3 dev.33", "3.0.0-dev.33", "dll one")));
+            Assert.Equal("dll one", File.ReadAllText(Installed));
+            Assert.False(Directory.Exists(Shared));
+            Assert.False(File.Exists(Path.Combine(Local, "MDL3", "sys-paths.txt")));
+        }
+
+        [Fact]
+        public void Versions_from_dev33_move()
+        {
+            foreach (var v in new[] { "3.0.0-dev.33", "3.0.0-dev.40-preview", "3.0.0", "3.1.0", "4.0.0-dev.1" }) Assert.True(Mdl3Native.Moves(v), v);
+            foreach (var v in new[] { "3.0.0-dev.32", "3.0.0-dev.9", "2.9.9", "", null, "dev" }) Assert.False(Mdl3Native.Moves(v), v ?? "null");
         }
 
         /// <summary>A path the game opens: ASCII as it is, a Chinese one only through an ASCII short

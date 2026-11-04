@@ -121,7 +121,7 @@ namespace Hd2Mod
 
         /// <summary>MDL3, when the library has it or this PC has its folder (the user, 2026-11-01: a
         /// player's MDL3 mods did nothing, and the report could not say whether its native part
-        /// was there): the package the deploy uses, what is in %LOCALAPPDATA%\MDL3, where its boot
+        /// was there): the package the deploy uses, what is in its folder (Mdl3Native.Root), where its boot
         /// loads the native part from, and the logs of MDL3, MDL and the shared Bingus folder,
         /// where Data Hub and the mods MDL3 runs write theirs (there, only those of the last
         /// week). The report's line on it, else null.</summary>
@@ -130,7 +130,7 @@ namespace Hd2Mod
             try
             {
                 var p = Mdl3Native.Wanted(lib);
-                var data = Mdl3Native.DataDir();
+                var data = Mdl3Native.DataDir(p);
                 if (p == null && !Directory.Exists(data)) return null;
                 string need = null;
                 if (p != null)
@@ -161,7 +161,7 @@ namespace Hd2Mod
                     ["native_part"] = need,
                     ["folder"] = data,
                     // where the DLL goes: MDL3's folder, or this program's when the game cannot open that path
-                    ["dll_folder"] = Mdl3Native.DllHome(), ["code_page"] = (long)Mdl3Native.CodePage(),
+                    ["dll_folder"] = Mdl3Native.DllHome(p), ["code_page"] = (long)Mdl3Native.CodePage(),
                     ["files"] = files,
                     ["config"] = Mdl3Native.ReadJson(Path.Combine(data, "config.json")),
                     ["install_state"] = Mdl3Native.ReadJson(Path.Combine(data, "install-state.json")),
@@ -170,7 +170,7 @@ namespace Hd2Mod
                 var left = new List<string>();
                 foreach (var (dir, every) in new[] { (@"MDL3\Logs", true), (@"MDL\Helldivers2\Logs", true), (@"CowboyBingus\Helldivers2\Logs", false) })
                 {
-                    var full = Path.Combine(Mdl3Native.LocalAppData(), dir);
+                    var full = Path.Combine(Mdl3Native.Root(p), dir);
                     if (!Directory.Exists(full)) continue;
                     // the newest first: past the budget, the older ones are only listed
                     foreach (var f in Directory.GetFiles(full, "*.log").OrderByDescending(File.GetLastWriteTimeUtc))

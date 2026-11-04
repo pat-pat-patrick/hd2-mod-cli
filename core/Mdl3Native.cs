@@ -36,8 +36,14 @@ namespace Hd2Mod
     ///   path is ASCII, and config.json names it there (players with Chinese user names were
     ///   refused, 2026-11-01). A game folder with no such path is left out of config.json: the boot
     ///   then finds the game from its working folder. MDL3's own folder itself is reached through
-    ///   os.getenv, so its path has to be one the code page can write; when it is not, MDL3 cannot
-    ///   run there and nothing is installed.
+    ///   os.getenv, so its path has to be one the code page can write; when it is not, MDL3 up to
+    ///   dev.32 cannot run there and nothing is installed.
+    /// - MDL3 3.0.0-dev.33 (2026-11-04, its README and install.ps1) keeps its files under
+    ///   %ProgramData% instead when the code page cannot write %LOCALAPPDATA%: MDL3\ (DLL,
+    ///   config.json, logs) and MDL\Helldivers2 (settings, loose mods), with the rest of the
+    ///   folders below. Its native host is told about that place in %LOCALAPPDATA%\MDL3\sys-paths.txt
+    ///   (UTF-8, read through its own Unicode path), and the settings and mods in the user folder
+    ///   are copied over once. That is done here the same way (Root).
     ///   A process whose writes to AppData Windows sends elsewhere (a packaged app) installs
     ///   nothing: the game would not see it.</summary>
     public static class Mdl3Native
@@ -46,7 +52,7 @@ namespace Hd2Mod
         public const string Publisher = "CHIEI INTERNET TECHNOLOGY LLC";
         const string CodeSigning = "1.3.6.1.5.5.7.3.3";
         /// <summary>The folders the boot (dev.21) writes into before its native part could make them,
-        /// under %LOCALAPPDATA%: its log, MDL's own folders, the shared Bingus log folder, HD2Runtime's data.</summary>
+        /// under Root: its log, MDL's own folders, the shared Bingus log folder, HD2Runtime's data.</summary>
         static readonly string[] Folders =
             { @"MDL3\Logs", @"MDL\Helldivers2\Mods", @"MDL\Helldivers2\Logs", @"MDL\Helldivers2\Languages\Options", @"CowboyBingus\Helldivers2\Logs", @"HD2Runtime\mod_data" };
 
@@ -57,7 +63,36 @@ namespace Hd2Mod
         /// <summary>Where this process's writes to a folder really land when Windows sends them
         /// elsewhere, else null; tests replace it.</summary>
         public static Func<string, string> Redirected = FindRedirect;
-        public static string DataDir() => Path.Combine(LocalAppData(), "MDL3");
+        /// <summary>%ProgramData%, where MDL3 dev.33 and later keep their files when the code page
+        /// cannot write %LOCALAPPDATA%; tests replace it.</summary>
+        public static Func<string> ProgramData = () =>
+            Environment.GetEnvironmentVariable("ProgramData") is string v && v.Length > 0 ? v : Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
+        /// <summary>The folder MDL3's files are under: %LOCALAPPDATA%, or %ProgramData% for a package
+        /// that moves there (dev.33 and later) when the code page cannot write %LOCALAPPDATA% and
+        /// %ProgramData% is plain ASCII, as dev.33's install.ps1 decides. With no package: where an
+        /// earlier install put them.</summary>
+        public static string Root(Package p = null)
+        {
+            var local = LocalAppData();
+            if (Writable(local)) return local;
+            var shared = ProgramData();
+            if (string.IsNullOrEmpty(shared) || !Ascii(shared)) return local;
+            if (p == null ? Directory.Exists(Path.Combine(shared, "MDL3")) : Moves(p.Version)) return shared;
+            return local;
+        }
+        public static string DataDir(Package p = null) => Path.Combine(Root(p), "MDL3");
+
+        /// <summary>Whether a version keeps its files under %ProgramData% when the user folder needs
+        /// it: 3.0.0-dev.33 and later (the first seen with it; dev.28-32 were never seen). A version
+        /// that does not read as one stays in the user folder, as before.</summary>
+        public static bool Moves(string version)
+        {
+            var m = System.Text.RegularExpressions.Regex.Match(version ?? "", @"^(\d+)\.(\d+)\.(\d+)(?:-dev\.(\d+))?");
+            if (!m.Success) return false;
+            var v = new Version(int.Parse(m.Groups[1].Value), int.Parse(m.Groups[2].Value), int.Parse(m.Groups[3].Value));
+            if (v != new Version(3, 0, 0)) return v > new Version(3, 0, 0);
+            return !m.Groups[4].Success || int.Parse(m.Groups[4].Value) >= 33;
+        }
         /// <summary>The system's ANSI code page, in which the game's Lua opens paths; tests replace it.</summary>
         public static Func<int> CodePage = () => GetACP();
         /// <summary>A path's 8.3 short form, else null; tests replace it.</summary>
@@ -167,10 +202,10 @@ namespace Hd2Mod
         /// <summary>Why the installed native part is not this package's, else null.</summary>
         public static string Need(Package p, string game)
         {
-            var target = Path.Combine(DllHome(), p.DllName);
+            var target = Path.Combine(DllHome(p), p.DllName);
             if (!File.Exists(target)) return "not installed";
             if (Sha(target) != p.Sha256) return "another version";
-            var config = ReadJson(Path.Combine(DataDir(), "config.json"));
+            var config = ReadJson(Path.Combine(DataDir(p), "config.json"));
             if (config == null) return "no settings";
             if (!Same(Json.Str(config, "dll"), target)) return "settings for another place";
             // a game folder the game cannot open by its path is left out (ForGame)
@@ -181,9 +216,9 @@ namespace Hd2Mod
 
         /// <summary>The folder the DLL goes to: MDL3's own when the game can open its path (ForGame),
         /// else Elsewhere.</summary>
-        public static string DllHome()
+        public static string DllHome(Package p = null)
         {
-            var data = DataDir();
+            var data = DataDir(p);
             return ForGame(data) != null ? data : Elsewhere();
         }
 
@@ -238,21 +273,23 @@ namespace Hd2Mod
             string ByHand(string why) => "MDL3 " + p.Version + ": " + why + ". Run the installer in " + p.Folder + " (INSTALL bat or install.ps1)";
             if (p.Problem != null) throw new ModError(ByHand(p.Problem), "mdl3_manual", p.Folder);
             if (!Signed(p.Dll)) throw new ModError(ByHand("its DLL is not signed by " + Publisher), "mdl3_unsigned", p.Folder);
-            var data = DataDir();
+            var root = Root(p);
+            var data = DataDir(p);
             NoLinks(data);
             if (Inside(data, game)) throw new ModError("MDL3's folder " + data + " is inside the game folder", "mdl3_place");
             // the boot reaches its folder through os.getenv, in the code page: one it cannot write is
             // a folder MDL3 cannot open, wherever the DLL goes
             if (!Writable(data))
                 throw new ModError("MDL3 cannot open its folder " + data + ": the code page Windows uses for non-Unicode programs (" + CodePage() +
-                                   ") cannot write its characters. A Windows user name in letters and digits, or Windows' option \"Beta: Use Unicode UTF-8 for worldwide language support\", makes it work", "mdl3_place", data);
+                                   ") cannot write its characters. MDL3 3.0.0-dev.33 or later (it keeps its files in %ProgramData% then), a Windows user name in letters and digits, " +
+                                   "or Windows' option \"Beta: Use Unicode UTF-8 for worldwide language support\" makes it work", "mdl3_place", data);
             Directory.CreateDirectory(data);
             var away = Redirected(data);
             if (away != null)
                 throw new ModError("this program's writes to " + data + " go to " + away + ", where the game does not look: install from HD2 Mod Quick Deploy started on its own", "mdl3_redirected");
             var gameDir = ForGame(game);
             // the DLL where the game can load it from (DllHome); MDL3's folder exists now, so its 8.3 name too
-            var home = DllHome();
+            var home = DllHome(p);
             if (!Same(home, data))
             {
                 NoLinks(home);
@@ -269,11 +306,14 @@ namespace Hd2Mod
             if (File.Exists(target) && Sha(target) != p.Sha256 && !Tracked(state, target) && !Signed(target))
                 throw new ModError("another file is at " + target + ": move it away first", "mdl3_place");
 
+            var moved = !Same(root, LocalAppData());
+            if (moved) Grant(root);
             var backup = Backup(data, new[] { target, configPath, statePath });
             try
             {
                 Put(p.Dll, target, home);
-                var config = ReadJson(configPath) ?? new Dictionary<string, object>();
+                // a first install under %ProgramData% keeps the settings MDL3 had in the user folder
+                var config = ReadJson(configPath) ?? (moved ? ReadJson(Path.Combine(LocalAppData(), "MDL3", "config.json")) : null) ?? new Dictionary<string, object>();
                 if (!config.ContainsKey("schema")) config["schema"] = 1L;
                 config["dll"] = ForGame(target);
                 if (gameDir != null) config["game_dir"] = gameDir;
@@ -293,13 +333,57 @@ namespace Hd2Mod
                 Restore(backup);
                 throw;
             }
+            if (moved) CarryOver(root);
             foreach (var f in Folders)
             {
-                var dir = Path.Combine(LocalAppData(), f);
+                var dir = Path.Combine(root, f);
                 NoLinks(dir);
                 Directory.CreateDirectory(dir);
             }
             return "MDL3's native part " + p.NativeVersion + " (MDL3 " + p.Version + ") installed in " + home;
+        }
+
+        /// <summary>MDL3's native host told it may make its folders under root: the mkdir= lines
+        /// dev.33's install.ps1 adds to %LOCALAPPDATA%\MDL3\sys-paths.txt (UTF-8, no BOM), the lines
+        /// there kept.</summary>
+        static void Grant(string root)
+        {
+            var dir = Path.Combine(LocalAppData(), "MDL3");
+            NoLinks(dir);
+            Directory.CreateDirectory(dir);
+            var away = Redirected(dir);
+            if (away != null)
+                throw new ModError("this program's writes to " + dir + " go to " + away + ", where the game does not look: install from HD2 Mod Quick Deploy started on its own", "mdl3_redirected");
+            var grant = Path.Combine(dir, "sys-paths.txt");
+            var lines = File.Exists(grant) ? File.ReadAllLines(grant).ToList() : new List<string>();
+            var before = lines.Count;
+            foreach (var want in new[] { "mkdir=" + Path.Combine(root, "MDL3"), "mkdir=" + Path.Combine(root, @"MDL\Helldivers2") })
+                if (!lines.Contains(want)) lines.Add(want);
+            if (lines.Count != before) File.WriteAllLines(grant, lines, new UTF8Encoding(false));
+        }
+
+        /// <summary>A first install under %ProgramData%: MDL's settings and loose mods and HD2Runtime's
+        /// data copied from the user folder, as dev.33's install.ps1 does; a folder already there is
+        /// never written over.</summary>
+        static void CarryOver(string root)
+        {
+            foreach (var rel in new[] { @"MDL\Helldivers2", @"HD2Runtime\mod_data" })
+            {
+                var from = Path.Combine(LocalAppData(), rel);
+                var to = Path.Combine(root, rel);
+                if (!Directory.Exists(from) || Directory.Exists(to)) continue;
+                NoLinks(to);
+                try { CopyTree(from, to); }
+                catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { ManagerLog.Warn("MDL3: could not copy " + rel + ": " + e.Message); }
+            }
+        }
+
+        static void CopyTree(string from, string to)
+        {
+            Directory.CreateDirectory(to);
+            foreach (var f in Directory.GetFiles(from)) File.Copy(f, Path.Combine(to, Path.GetFileName(f)));
+            foreach (var d in Directory.GetDirectories(from))
+                if (!File.GetAttributes(d).HasFlag(FileAttributes.ReparsePoint)) CopyTree(d, Path.Combine(to, Path.GetFileName(d)));
         }
 
         static bool Tracked(Dictionary<string, object> state, string target) =>

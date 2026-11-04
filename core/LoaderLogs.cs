@@ -48,6 +48,8 @@ namespace Hd2Mod
 
         static string Roaming => RoamingOverride ?? LuaMods.GameFolder;
         static string Local => LocalOverride ?? Mdl3Native.LocalAppData();
+        // MDL3's own: under %ProgramData% when it moved there (Mdl3Native.Root)
+        static string Mdl3Home => LocalOverride ?? Mdl3Native.Root();
 
         /// <summary>The logs a loader of this kind writes, there or not.</summary>
         public static List<Source> Of(string kind)
@@ -59,10 +61,11 @@ namespace Hd2Mod
                 case "chef": return new List<Source> { new Source { Kind = kind, Name = "chef_loader.log", Path = System.IO.Path.Combine(Roaming, "chef_loader.log"), Session = new Regex(@"\| ==== Chef Shared Loader") } };
                 case "bsl": return new List<Source> { new Source { Kind = kind, Name = "BingusSharedLoader.log", Path = System.IO.Path.Combine(bingus, "BingusSharedLoader.log") } };
                 case "mdl3":
+                    bingus = System.IO.Path.Combine(Mdl3Home, "CowboyBingus", "Helldivers2", "Logs");
                     return new List<Source>
                     {
-                        new Source { Kind = kind, Name = "MDL3.log", Path = System.IO.Path.Combine(Local, "MDL3", "Logs", "MDL3.log"), Session = new Regex(@"^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d BOOT ") },
-                        new Source { Kind = kind, Name = "MDL.log", Path = System.IO.Path.Combine(Local, "MDL", "Helldivers2", "Logs", "MDL.log") },
+                        new Source { Kind = kind, Name = "MDL3.log", Path = System.IO.Path.Combine(Mdl3Home, "MDL3", "Logs", "MDL3.log"), Session = new Regex(@"^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d BOOT ") },
+                        new Source { Kind = kind, Name = "MDL.log", Path = System.IO.Path.Combine(Mdl3Home, "MDL", "Helldivers2", "Logs", "MDL.log") },
                         new Source { Kind = kind, Name = "MDL-Boot.log", Path = System.IO.Path.Combine(bingus, "MDL-Boot.log") },
                     };
                 // the manager's own (ManagerLog): a session from each start of the window
