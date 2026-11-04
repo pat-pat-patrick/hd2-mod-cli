@@ -553,7 +553,7 @@
   "self_auto_note_official": "At most once a day. Only the list of releases on GitHub is read; nothing is downloaded. Only full releases are offered.",
   "self_auto_note_dev": "At most once a day. Only the list of releases on GitHub is read; nothing is downloaded. Pre-releases are offered too.",
   "self_tip": "Version {0} is out: see Settings",
-  "set_no_nexus": "(no Nexus Mods support in this build)",
+  "set_no_nexus": "(Nexus Mods downloads are not included in this build)",
   "author_name": "Ko-fi.com/vegansquid",
   "author_url": "https://ko-fi.com/vegansquid",
   "project_name": "github.com/pat-pat-patrick/hd2-mod-cli",

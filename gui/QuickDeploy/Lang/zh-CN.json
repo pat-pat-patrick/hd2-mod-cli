@@ -540,7 +540,7 @@
   "self_auto_note_official": "每天最多检查一次，仅读取 GitHub 上的发布列表，不会自动下载。只提示正式版本。",
   "self_auto_note_dev": "每天最多检查一次，仅读取 GitHub 上的发布列表，不会自动下载。预发布版本也会提示。",
   "self_tip": "有新版本 {0}，详见设置",
-  "set_no_nexus": "（此版本不含 Nexus Mods 功能）",
+  "set_no_nexus": "（此版不包含 Nexus 下载功能）",
   "author_name": "没盖De乌龟",
   "author_url": "https://space.bilibili.com/1838498",
   "project_name": "github.com/pat-pat-patrick/hd2-mod-cli",

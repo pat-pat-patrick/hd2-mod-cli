@@ -211,7 +211,7 @@ namespace Hd2Mod
 #if HAS_NEXUS
             ", with Nexus Mods" +
 #else
-            ", without Nexus Mods" +
+            ", without Nexus Mods downloads" +
 #endif
             ")" + Environment.NewLine +
             Windows() + (Environment.Is64BitOperatingSystem ? " 64-bit" : " 32-bit") +
