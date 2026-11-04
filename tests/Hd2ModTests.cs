@@ -635,6 +635,13 @@ namespace Hd2Mod.Tests
 
         string lastGraphQL;
 
+        /// <summary>What the fake's fileHashes answers for each MD5 (its FileHash nodes as JSON).</summary>
+        readonly Dictionary<string, string[]> Hashes = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
+
+        static string HashNode(string md5, string fileName, long game, long mod, long file, string version, long date) =>
+            "{\"md5\": \"" + md5 + "\", \"fileName\": \"" + fileName + "\", \"gameId\": " + game + ", \"modFile\": {\"fileId\": " + file +
+            ", \"modId\": " + mod + ", \"version\": \"" + version + "\", \"date\": " + date + "}}";
+
         /// <summary>The fake GraphQL API (v2). The page lookup: mod 77 is there, mod 14 is there but
         /// deleted, mod 13 makes an error, no other mod is. The update check: the game is 6119; mod
         /// 77's files are 1 (old) and 2 (main, its update: one group), and 77 was last updated at
@@ -651,14 +658,24 @@ namespace Hd2Mod.Tests
                 lock (Seen) Seen.Add("graphql game");
                 return (200, Bytes("{\"data\": {\"game\": {\"id\": 6119}}}"));
             }
+            if (query.Contains("fileHashes"))
+            {
+                lock (Seen) Seen.Add("graphql hashes");
+                var nodes = Json.List(vars, "md5s").OfType<string>().SelectMany(x => Hashes.TryGetValue(x, out var n) ? n : new string[0]);
+                return (200, Bytes("{\"data\": {\"fileHashes\": [" + string.Join(", ", nodes) + "]}}"));
+            }
             if (query.Contains("modFiles"))
             {
                 var mod = Json.Str(vars, "mod");
                 lock (Seen) Seen.Add("graphql files " + mod);
                 if (Regex.IsMatch(mod ?? "", @"^5\d\d$")) return (429, Bytes("{\"message\":\"rate limited\"}"));
                 var files = mod != "77" ? "[]" :
-                    "[{\"fileId\": 1, \"name\": \"Cape\", \"version\": \"1.0\", \"category\": \"OLD_VERSION\", \"date\": 1700000000, \"groupId\": 10}, " +
-                    "{\"fileId\": 2, \"name\": \"Cape\", \"version\": \"2.0\", \"category\": \"MAIN\", \"date\": 1750000000, \"groupId\": 10}]";
+                    "[{\"fileId\": 1, \"name\": \"Cape\", \"version\": \"1.0\", \"category\": \"OLD_VERSION\", \"date\": 1700000000, \"groupId\": 10, \"changelogText\": [\"First release\"]}, " +
+                    "{\"fileId\": 7, \"name\": \"Cape.zip\", \"version\": \"1.2\", \"category\": \"ARCHIVED\", \"date\": 1715000000, \"groupId\": 11, \"changelogText\": [\"Hood\"]}, " +
+                    "{\"fileId\": 5, \"name\": \"Cape\", \"version\": \"1.5\", \"category\": \"ARCHIVED\", \"date\": 1720000000, \"groupId\": 11, \"changelogText\": [\"Red capes\", \" \"]}, " +
+                    "{\"fileId\": 6, \"name\": \"Cape\", \"version\": \"1.5\", \"category\": \"ARCHIVED\", \"date\": 1720000100, \"groupId\": 10, \"changelogText\": [\"Red capes\"]}, " +
+                    "{\"fileId\": 2, \"name\": \"Cape\", \"version\": \"2.0\", \"category\": \"MAIN\", \"date\": 1750000000, \"groupId\": 10, \"changelogText\": [\"Blue capes\", \"Fixed the hood\"]}, " +
+                    "{\"fileId\": 3, \"name\": \"Cape extras\", \"version\": \"9.0\", \"category\": \"OPTIONAL\", \"date\": 1740000000, \"groupId\": 20, \"changelogText\": [\"Extras only\"]}]";
                 return (200, Bytes("{\"data\": {\"modFiles\": " + files + "}}"));
             }
             var ids = Json.List(vars, "ids").OfType<Dictionary<string, object>>().ToList();
@@ -693,6 +710,94 @@ namespace Hd2Mod.Tests
             Assert.Equal(("update", "1.0", "2.0", 2L), (u.Status, u.Current, u.Latest, u.LatestFile));
             Assert.Equal("https://www.nexusmods.com/helldivers2/mods/77?tab=files", u.Page);
             lock (Seen) Assert.Contains("/v2/graphql " + Nexus.AppName, Seen);
+        }
+
+        /// <summary>An update says what each version since the installed one changed, from the
+        /// page's changelogs (the user, 2026-11-04): newest first, the mod's own line only (files
+        /// linked by a group or a name: 1.5 shares only the name, 1.2 only 1.5's group, as on the
+        /// page), a version uploaded twice once, empty lines left out; kept with the check's answer.</summary>
+        [Fact]
+        public void An_update_lists_the_changes_since_the_installed_version()
+        {
+            var u = Updates.One(UpdatesMod());
+            Assert.Equal(new[] { "2.0", "1.5", "1.2" }, u.Changes.Select(c => c.Version));
+            Assert.Equal(new[] { "Blue capes", "Fixed the hood" }, u.Changes[0].Lines);
+            Assert.Equal(new[] { "Red capes" }, u.Changes[1].Lines);
+
+            // installed time known, file not: the versions after it
+            var byTime = Updates.One(new Mod { Id = "t", Name = "Cape", Nexus = new NexusRef { Game = "helldivers2", Mod = 77, Time = 1710000000 } });
+            Assert.Equal(new[] { "2.0", "1.5", "1.2" }, byTime.Changes.Select(c => c.Version));
+            // neither known: the newest one's own
+            var unknown = Updates.One(new Mod { Id = "n", Name = "Cape", Nexus = new NexusRef { Game = "helldivers2", Mod = 77 } });
+            Assert.Equal(new[] { "2.0" }, unknown.Changes.Select(c => c.Version));
+
+            // a check kept (77 not updated since) brings its changes back
+            var lib = new Library { Mods = { UpdatesMod() } };
+            Updates.Check(lib);
+            var now = Updates.Now;
+            try
+            {
+                Updates.Now = () => now() + 60;
+                lock (Seen) Seen.Clear();
+                var kept = Updates.Check(lib).Single();
+                lock (Seen) Assert.DoesNotContain("graphql files 77", Seen);
+                Assert.Equal(new[] { "2.0", "1.5", "1.2" }, kept.Changes.Select(c => c.Version));
+            }
+            finally { Updates.Now = now; }
+        }
+
+        /// <summary>A mod added from an archive with no Nexus Mods record is known by the archive's
+        /// MD5 (the user, 2026-11-04): taken when it is added, asked in the update check, which then
+        /// checks the file it is. Bytes in two mods tell nothing; another game's are not ours; a mod
+        /// added before MD5s were kept has it taken from its archive, still where it was.</summary>
+        [Fact]
+        public void A_mod_is_known_on_Nexus_by_its_archive()
+        {
+            string Archive(string name, string body)
+            {
+                var p = Path.Combine(Root, name);
+                File.WriteAllBytes(p, Zip(("Cape/" + A + ".patch_0", body)));
+                return p;
+            }
+            var mine = Archive("my cape.zip", "cape v1");
+            var twice = Archive("copied.zip", "copied");
+            var other = Archive("other game.zip", "other");
+            var later = Archive("later.zip", "later");
+            string md5 = Fingerprints.Md5(mine), md5Twice = Fingerprints.Md5(twice), md5Other = Fingerprints.Md5(other), md5Later = Fingerprints.Md5(later);
+            // the same bytes as two files of mod 77: the one of the same name
+            Hashes[md5] = new[] { HashNode(md5, "Cape-77-2.zip", 6119, 77, 2, "2.0", 1750000000), HashNode(md5, "my cape.zip", 6119, 77, 1, "1.0", 1700000000) };
+            Hashes[md5Twice] = new[] { HashNode(md5Twice, "a.zip", 6119, 77, 1, "1.0", 1), HashNode(md5Twice, "b.zip", 6119, 88, 4, "1.0", 2) };
+            Hashes[md5Other] = new[] { HashNode(md5Other, "other game.zip", 1704, 77, 1, "1.0", 1) };
+            // two files of one mod, neither of the same name: the newest
+            Hashes[md5Later] = new[] { HashNode(md5Later, "x.zip", 6119, 77, 1, "1.0", 1700000000), HashNode(md5Later, "y.zip", 6119, 77, 2, "2.0", 1750000000) };
+
+            Cli("add", mine, "--name", "Mine");
+            Cli("add", twice, "--name", "Twice");
+            Cli("add", other, "--name", "Other");
+            Cli("add", later, "--name", "Later");
+            Assert.Equal(md5, Library.Load().Mods.First(m => m.Name == "Mine").ArchiveMd5);
+            // added before MD5s were kept
+            var lib = Library.Load();
+            lib.Mods.First(m => m.Name == "Later").ArchiveMd5 = null;
+            lib.Save();
+
+            Assert.Contains("2 mod(s) recognised on Nexus Mods by their archive", Cli("check-updates"));
+            var by = Library.Load().Mods.ToDictionary(m => m.Name);
+            Assert.Equal((77L, 1L, "1.0", 1700000000L), (by["Mine"].Nexus.Mod, by["Mine"].Nexus.File, by["Mine"].Nexus.Version, by["Mine"].Nexus.Time));
+            Assert.Equal((77L, 2L), (by["Later"].Nexus.Mod, by["Later"].Nexus.File));
+            Assert.Equal(md5Later, by["Later"].ArchiveMd5);
+            Assert.Null(by["Twice"].Nexus);
+            Assert.Null(by["Other"].Nexus);
+            // and checked as that file: 1.0, with 2.0 out
+            var u = Updates.One(by["Mine"]);
+            Assert.Equal(("update", "1.0", "2.0"), (u.Status, u.Current, u.Latest));
+
+            // a mod with a source of its own is not asked about
+            lock (Seen) Seen.Clear();
+            Cli("source", "Twice", "https://github.com/someone/cape");
+            Cli("source", "Other", "https://example.invalid/other");
+            Cli("check-updates");
+            lock (Seen) Assert.DoesNotContain("graphql hashes", Seen);
         }
 
         /// <summary>Once Nexus Mods says too many requests, an update check asks it nothing more:

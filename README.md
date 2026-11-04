@@ -223,12 +223,18 @@ from:
 | Source | How it is checked | How it is updated |
 |---|---|---|
 | GitHub | The repository's latest release. | **Update** downloads the release's zip, 7z or rar. |
-| Nexus Mods | Signed in to Nexus Mods (see *Nexus Mods*): one request for the game's mods updated in the last month, then one for each of your mods that changed since its last check. | Premium accounts: **Update** downloads the new file. Free accounts: **Open page**, then *Mod Manager Download* on the site. |
+| Nexus Mods | Nexus Mods' public interface, with no sign-in and no API key: one request for when your Nexus mods were last updated, then one for each of them that changed since its last check. An update lists what each version since yours changed, as its author wrote it on the page (the newest five; `check-updates` prints all). | Premium accounts: **Update** downloads the new file. Free accounts: **Open page**, then *Mod Manager Download* on the site. |
 | Another site | Not checked. | **Open page**. |
 
 - The source is recorded when a mod arrives: a file downloaded with a browser
   (Windows keeps the address it came from), or HD2 Arsenal's records for the
   mods it installed.
+- **An archive with no record of its source** (downloaded by hand, renamed,
+  passed on) is known by its MD5, taken when it is added. An update check asks
+  Nexus Mods which mod and file has those exact bytes, and records them, with
+  the file's version. A mod added before 0.17.0 gets its MD5 from its archive,
+  when that is still where it was added from. Bytes found in several mods, or in
+  another game, are not used; a mod with another source is not asked about.
 - When it is not recorded, the mod's details offer **Set source…**: paste the
   mod's Nexus Mods page or GitHub repository.
 - Mods with updates get a yellow tag in the list and their own filter, **Updates**.
@@ -346,7 +352,7 @@ A change made on the command line shows in an open window half a second later.
 | `add PATH [--name N] [--copy] [--whole] [--new]` | Add a mod at the bottom: a zip (unpacked once into the library folder) or a folder (used where it is, so a mod you are building can be deployed straight from its build folder). A folder of several mods is refused as a library folder (`folder-add`); `--whole` takes it as one mod all the same. A new version of a mod in the library (the same manifest Guid or download source) replaces it; one whose name alone matches is refused with the choice: `replace`, or `add PATH --new` to add it as a separate mod. |
 | `replace MOD PATH` | A new version of a mod: same place in the order, the same options by name. |
 | `remove MOD` | Take a mod out of the library; its files stay. |
-| `check-updates` | Check every mod from GitHub for a newer release. |
+| `check-updates` | Check every mod for a newer version on its source (Nexus Mods, GitHub), with what each version changed. |
 | `self-update` | Whether a newer version of this program is on GitHub (read only). The official build counts releases only; the development build counts pre-releases too. |
 | `update MOD` | Download a mod's newer version from its GitHub releases and put it in its place. |
 | `skip MOD [--clear]` | Stop offering a mod's newest version until a newer one comes (`--clear`: offer it again). |
@@ -587,10 +593,11 @@ mod 库与游戏不在同一分区时无法使用硬链接，有变化的文件�
 | 来源 | 检查方式 | 更新方式 |
 |---|---|---|
 | GitHub | 仓库的最新发布版本（Release）。 | 点击 **更新** 下载该版本的 zip、7z 或 rar。 |
-| Nexus Mods | 登录 Nexus Mods 后（见“Nexus Mods”）：先请求一次该游戏最近一个月有更新的 mod，再只对上次检查后有变化的 mod 各请求一次。 | 高级会员：点击 **更新** 直接下载新文件。普通会员：点击 **打开页面**，在网站上点击“Mod Manager Download”。 |
+| Nexus Mods | 使用 Nexus Mods 的公开接口，无需登录或 API 密钥：先请求一次各 mod 的最近更新时间，再只对上次检查后有变化的 mod 各请求一次。有更新时列出当前版本之后每个版本的改动，即作者在页面上填写的更新说明（窗口中显示最新的 5 个版本，`check-updates` 全部列出）。 | 高级会员：点击 **更新** 直接下载新文件。普通会员：点击 **打开页面**，在网站上点击“Mod Manager Download”。 |
 | 其他网站 | 不检查。 | 点击 **打开页面** 查看。 |
 
 - mod 的来源在加入时自动记录：用浏览器下载的文件（Windows 会保存下载地址），以及 HD2 Arsenal 为其安装的 mod 保存的记录。
+- **没有来源记录的压缩包**（手动下载、改过名或他人转发）按其 MD5 识别：加入时记下压缩包的 MD5，检查更新时向 Nexus Mods 查询哪个 mod 的哪个文件与之完全相同，找到后记下该 mod、文件及其版本。0.17.0 之前加入的 mod，只要原压缩包仍在加入时的位置，也会补记。同一内容出现在多个 mod 中或属于其他游戏时不采用；已有其他来源的 mod 不查询。
 - 未记录来源的 mod，可在详情中点击 **设置来源…**，填写该 mod 的 Nexus Mods 页面或 GitHub 仓库地址。
 - 有更新的 mod 在列表中显示黄色标记，并可通过 **有更新** 筛选查看。
 - 更新后，mod 的加载顺序、开关和可选内容保持不变；之后执行部署即可生效。
@@ -647,7 +654,7 @@ mod 库与游戏不在同一分区时无法使用硬链接，有变化的文件�
     hd2qd import-echelon     # 同上，来源为 Echelon
     hd2qd folders            # 列出 mod 库文件夹
     hd2qd status             # 显示部署将执行的更改，不做修改
-    hd2qd check-updates      # 检查来自 GitHub 的 mod 是否有新版本
+    hd2qd check-updates      # 检查各 mod 在其来源（Nexus Mods、GitHub）是否有新版本，并列出各版本的改动
     hd2qd rollback MOD       # 回滚到保留的上一版本（先用 keep-previous-on 开启保留）
     hd2qd lua                # 部署前检查 Lua mod：启动脚本、加载器、无法运行的脚本、上一局、上次崩溃
     hd2qd self-update        # 检查本程序是否有新版本（正式版只看正式发布，开发版也看预发布）

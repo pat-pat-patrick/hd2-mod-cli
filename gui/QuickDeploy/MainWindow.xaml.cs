@@ -5356,6 +5356,7 @@ namespace QuickDeploy
             List<UpdateInfo> found = null;
             var was = new Dictionary<string, string>();
             string failed = null;
+            int known = 0;
             try
             {
                 // the origins HD2 Arsenal recorded are learnt first, in turn with the other commands
@@ -5365,9 +5366,11 @@ namespace QuickDeploy
                     if (Origins.FromArsenal(l) > 0) l.Save();
                     return l;
                 });
+                // then what Nexus Mods knows the archives as (Fingerprints)
+                (lib, known) = await Fingerprinted(lib, null);
                 foreach (var m in lib.Mods) was[m.Id] = CheckedAs(m.Path, m.Nexus?.Version ?? m.GitHub?.Tag, Origins.Of(m).Page);
                 found = await Task.Run(() => Updates.Check(lib, (i, n) =>
-                    Dispatcher.BeginInvoke(new Action(() => Foot(Texts.F("up_progress", i, n), "Blue")))));
+                    Dispatcher.BeginInvoke(new Action(() => Foot(Texts.F("up_progress", i, n), "Blue"))), learn: false));
             }
             catch (Exception x) when (x is ModError || x is IOException || x is FormatException || x is UnauthorizedAccessException) { failed = x.Message; }
             finally
@@ -5397,6 +5400,7 @@ namespace QuickDeploy
             if (st != null) { RenderNav(); RenderList(); RenderDetail(); }
 
             var text = Texts.F("up_summary", found.Count, upd, Count("current"), Count("unknown"), none);
+            if (known > 0) text += "\n\n" + Texts.F("up_summary_known", known);
             if (Count("skipped") > 0) text += "\n\n" + Texts.F("up_summary_skipped", Count("skipped"));
             if (other > 0) text += "\n\n" + Texts.F("up_summary_other", other);
             if (err > 0) text += "\n\n" + Texts.F("up_summary_err", err);
@@ -5432,6 +5436,8 @@ namespace QuickDeploy
                     return l.Mods.FirstOrDefault(x => x.Id == m.Id);
                 });
                 if (mod == null) return;
+                var (lib, _) = await Fingerprinted(null, mod.Id);
+                mod = lib.Mods.FirstOrDefault(x => x.Id == m.Id) ?? mod;
                 was = CheckedAs(mod.Path, mod.Nexus?.Version ?? mod.GitHub?.Tag, Origins.Of(mod).Page);
                 u = await Task.Run(() => Updates.One(mod));
             }
@@ -5448,6 +5454,34 @@ namespace QuickDeploy
             updated.Remove(u.ModId);
             Foot(Texts.F("up_one_foot", m.Name, Texts.Get("up_row_" + u.Status)), u.Status == "update" ? "Yellow" : "Blue");
             if (st != null) { RenderNav(); RenderList(); RenderDetail(); }
+        }
+
+        /// <summary>The library after its archives' fingerprints are asked about (Fingerprints; the
+        /// user, 2026-11-04): the MD5s taken and Nexus Mods asked outside the queue, the answers put
+        /// in inside it. lib: the library as read (null: read now); onlyId: one mod's own check. Also
+        /// how many mods learnt their source; the window reads the state again when any did.</summary>
+        async Task<(Library Lib, int Known)> Fingerprinted(Library lib, string onlyId)
+        {
+            if (lib == null) lib = await Queued(() => Library.Load());
+            var read = lib;
+            var wanted = await Task.Run(() => Fingerprints.Wanted(read, onlyId));
+            if (wanted.Count == 0) return (lib, 0);
+            Foot(Texts.Get("up_fingerprints"), "Blue");
+            var found = await Task.Run(() =>
+            {
+                try { return Fingerprints.Look(wanted.Values); }
+                catch (ModError) { return new Dictionary<string, NexusRef>(); }    // the check says why for itself
+            });
+            int known = 0;
+            lib = await Queued(() =>
+            {
+                var l = Library.Load();
+                known = Fingerprints.Apply(l, wanted, found);
+                l.Save();
+                return l;
+            });
+            if (known > 0) Refresh();
+            return (lib, known);
         }
 
         /// <summary>The details' update section: where the mod comes from, its version, the last
@@ -5531,6 +5565,7 @@ namespace QuickDeploy
                 said.Margin = new Thickness(0, 8, 0, 0);
                 box.Children.Add(said);
             }
+            if (apply && u.Changes.Count > 0) box.Children.Add(ChangesList(u.Changes));
 
             // the buttons in two columns of the same width, the odd one last across both:
             // a row of them wrapped into a ragged second line (the user, 2026-10-24)
@@ -5583,6 +5618,37 @@ namespace QuickDeploy
             buttons.Add(set);
             box.Children.Add(Columns(buttons, new Thickness(0, 10, 0, 0)));
             return Panel(box, new Thickness(0, 20, 0, 0));
+        }
+
+        /// <summary>What each version since the installed one changed, as its author wrote it on
+        /// Nexus Mods (the user, 2026-11-04), newest first: the newest few, then how many more the
+        /// page has.</summary>
+        UIElement ChangesList(List<Change> changes)
+        {
+            const int Shown = 5;
+            var list = new StackPanel { Margin = new Thickness(0, 10, 0, 0) };
+            list.Children.Add(new TextBlock { Text = Texts.Get("up_changes"), FontSize = 12, Foreground = B("Muted"), Margin = new Thickness(0, 0, 0, 4) });
+            foreach (var c in changes.Take(Shown))
+            {
+                list.Children.Add(new TextBlock { Text = V(c.Version ?? ""), FontSize = 12, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 6, 0, 2) });
+                foreach (var line in c.Lines)
+                {
+                    var row = new DockPanel { Margin = new Thickness(0, 1, 0, 1) };
+                    var dot = new TextBlock { Text = "\u2022", FontSize = 12, Foreground = B("Muted"), Width = 14 };
+                    DockPanel.SetDock(dot, Dock.Left);
+                    row.Children.Add(dot);
+                    var t = Selectable.Text(line, 12, "Ink");
+                    row.Children.Add(t);
+                    list.Children.Add(row);
+                }
+            }
+            if (changes.Count > Shown)
+            {
+                var more = Selectable.Text(Texts.F("up_changes_more", changes.Count - Shown), 12, "Muted");
+                more.Margin = new Thickness(0, 6, 0, 0);
+                list.Children.Add(more);
+            }
+            return list;
         }
 
         /// <summary>The newest version skipped, so the check stops offering it until a newer one

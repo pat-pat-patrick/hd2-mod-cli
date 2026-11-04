@@ -106,6 +106,7 @@ namespace Hd2Mod
             };
             mod.Path = back.Path;
             mod.Source = back.Source;
+            mod.ArchiveMd5 = null;      // taken again from its archive, when that is still there
             mod.Page = back.Page;
             mod.Nexus = back.Nexus;
             mod.GitHub = back.GitHub;

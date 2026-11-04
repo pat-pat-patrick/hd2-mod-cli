@@ -599,6 +599,7 @@ namespace Hd2Mod
                                        Ops.Repr(path) + " --new adds it as a mod of its own", "maybe_update", found.Mod.Id + "\n" + Paths.Abs(path));
             }
             if (File.Exists(path)) Origins.FromFile(mod, path);               // a download: where it came from
+            mod.ArchiveMd5 = Fingerprints.OfArchive(path);                    // and its bytes, which Nexus Mods knows a file by
             if (a.Flag("--new"))
                 for (int n = 2; lib.Mods.Any(m => m.Name == mod.Name); n++) mod.Name = System.Text.RegularExpressions.Regex.Replace(mod.Name, @" \(\d+\)$", "") + " (" + n + ")";
             if (lib.Mods.Any(m => m.Name == mod.Name))
@@ -629,6 +630,7 @@ namespace Hd2Mod
             mod.Options = Manifest.Merged(manifest, mod.Options);
             mod.Path = folder;
             mod.Source = Paths.Abs(a.Pos["path"]);
+            mod.ArchiveMd5 = Fingerprints.OfArchive(a.Pos["path"]);
             if (File.Exists(a.Pos["path"]))
             {
                 var fresh = new Mod();
@@ -1247,17 +1249,29 @@ namespace Hd2Mod
 
         static void CheckUpdatesCmd(Args a, TextWriter o)
         {
-            foreach (var u in Updates.Check(Library.Load()))
+            var lib = Library.Load();
+            if (Updates.Learn(lib, out var known)) lib.Save();
+            if (known > 0) o.WriteLine(known + " mod(s) recognised on Nexus Mods by their archive");
+            foreach (var u in Updates.Check(lib, learn: false))
+            {
                 o.WriteLine(u.Status.PadRight(9) + " " + u.Name + (u.Channel != null ? "  [" + u.Channel + "]" : "") +
                             (u.Status == "update" ? "  " + (u.Current ?? "?") + " -> " + (u.Latest ?? "?") + "  " + u.Page : "") +
                             (u.Why != null ? "  (" + u.Why + ")" : ""));
+                // what each version since changed, as the page says
+                if (u.Status == "update")
+                    foreach (var c in u.Changes)
+                        foreach (var line in c.Lines) o.WriteLine("          " + c.Version + ": " + line);
+            }
         }
 
         static void UpdateCmd(Args a, TextWriter o)
         {
             var lib = Library.Load();
             var mod = Ops.Pick(lib, a.Pos["mod"]);
-            var u = Updates.Check(new Library { Mods = { mod } }).First();
+            // the origin learnt on the whole library: a library of this mod alone saved would be
+            // a library of this mod alone
+            if (Updates.Learn(lib, out _)) lib.Save();
+            var u = Updates.One(mod);
             if (u.Status != "update") throw new ModError(mod.Name + ": no newer version found (" + u.Status + (u.Why != null ? ", " + u.Why : "") + ")", "no_update");
             if (mod.GitHub != null) { o.WriteLine("updated: " + Updates.ApplyGitHub(mod.Id, u).Name + " " + u.Latest); return; }
 #if HAS_NEXUS

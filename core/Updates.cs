@@ -20,6 +20,16 @@ namespace Hd2Mod
         /// <summary>GitHub: the release asset to download; Nexus: the newest file's id.</summary>
         public string Download;
         public long LatestFile, LatestTime;
+        /// <summary>Nexus Mods: what each version since the installed one changed, newest first, as
+        /// its author wrote it on the page (the user, 2026-11-04); empty when the page says nothing.</summary>
+        public List<Change> Changes = new List<Change>();
+    }
+
+    /// <summary>One version's changes: its version and the author's lines.</summary>
+    public class Change
+    {
+        public string Version;
+        public List<string> Lines = new List<string>();
     }
 
     /// <summary>Update checks on each mod's own channel (the user, 2026-10-24: "从 GitHub 下下来的，
@@ -74,11 +84,11 @@ namespace Hd2Mod
             }
         }
 
-        /// <summary>Every mod checked (progress: done, all). Mods without an origin first learn the one
-        /// HD2 Arsenal recorded, when it has.</summary>
-        public static List<UpdateInfo> Check(Library lib, Action<int, int> progress = null)
+        /// <summary>Every mod checked (progress: done, all). Mods without an origin first learn it
+        /// (Learn), unless the caller did already.</summary>
+        public static List<UpdateInfo> Check(Library lib, Action<int, int> progress = null, bool learn = true)
         {
-            if (Origins.FromArsenal(lib) > 0) lib.Save();
+            if (learn && Learn(lib, out _)) lib.Save();
             var out_ = new List<UpdateInfo>();
             int i = 0;
             bool busy = false;
@@ -104,6 +114,17 @@ namespace Hd2Mod
             }
             SaveChecks();
             return out_;
+        }
+
+        /// <summary>Origins learnt before a check: the one HD2 Arsenal recorded, then what Nexus Mods
+        /// knows the archive's bytes as (Fingerprints). Whether the library changed (an MD5 taken
+        /// counts), and how many mods learnt their source from the fingerprint.</summary>
+        public static bool Learn(Library lib, out int known)
+        {
+            int arsenal = Origins.FromArsenal(lib);
+            var had = lib.Mods.Count(m => m.ArchiveMd5 != null);
+            known = Fingerprints.Learn(lib);
+            return arsenal > 0 || known > 0 || lib.Mods.Count(m => m.ArchiveMd5 != null) != had;
         }
 
         /// <summary>One mod checked on its own channel. A check that cannot be made is a
@@ -134,14 +155,14 @@ namespace Hd2Mod
         // and no sign-in, so every build checks Nexus mods (the user, 2026-11-03). A file's updates
         // share its groupId; the files' categories say which are main and which are old.
 
-        const string FilesQuery = "query Files($mod: ID!, $game: ID!) { modFiles(modId: $mod, gameId: $game) { fileId name version category date groupId } }";
+        const string FilesQuery = "query Files($mod: ID!, $game: ID!) { modFiles(modId: $mod, gameId: $game) { fileId name version category date groupId changelogText } }";
         const string UpdatedQuery = "query Updated($ids: [CompositeDomainWithIdInput!]!) { legacyModsByDomain(ids: $ids) { nodes { modId updatedAt } } }";
         const string GameQuery = "query Game($domain: String) { game(domainName: $domain) { id } }";
 
         static readonly Dictionary<string, long> gameIds = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>A game's number on Nexus Mods (helldivers2: 6119), asked once.</summary>
-        static long GameId(string domain)
+        internal static long GameId(string domain)
         {
             lock (gameIds)
                 if (gameIds.TryGetValue(domain, out var known)) return known;
@@ -151,7 +172,7 @@ namespace Hd2Mod
             return id;
         }
 
-        /// <summary>A mod's files on its page: fileId, name, version, category, date, groupId.</summary>
+        /// <summary>A mod's files on its page: fileId, name, version, category, date, groupId, changelogText.</summary>
         static List<Dictionary<string, object>> Files(NexusRef r)
         {
             var d = Nexus.PostGraphQL(FilesQuery, new Dictionary<string, object>
@@ -184,9 +205,12 @@ namespace Hd2Mod
             var files = Files(r);
             u.Current = r.Version;
             Dictionary<string, object> latest = null;
+            // the installed file's upload time, the start of what changed since
+            long since = r.Time;
             if (r.File > 0)
             {
                 var mine = files.FirstOrDefault(f => Json.Long(f, "fileId") == r.File);
+                if (mine != null) since = Json.Long(mine, "date");
                 if (mine != null)
                 {
                     if (string.IsNullOrEmpty(u.Current)) u.Current = Json.Str(mine, "version");
@@ -221,8 +245,50 @@ namespace Hd2Mod
                 u.LatestTime = Json.Long(latest, "date");
                 u.Download = u.LatestFile.ToString(CultureInfo.InvariantCulture);
                 u.Page = Nexus.Page(r) + "?tab=files";
+                u.Changes = ChangesSince(files, latest, since);
             }
             Remember(r, u);
+        }
+
+        /// <summary>What the versions after the installed one, up to the newest, changed: the files of
+        /// the newest one's line uploaded after the installed file, newest first, each version once.
+        /// A line is every file that shares a group or a name (without an archive's extension) with
+        /// the newest, or with a file that does, and so on: on the page the versions of one file are
+        /// often in groups of their own and named with or without ".zip" (Nexus mod 8073,
+        /// 2026-11-04: eight files, five groups, two names, every one linked); an optional file has
+        /// a name and group of its own. Only the newest's own when the installed file's time is not
+        /// known.</summary>
+        static List<Change> ChangesSince(List<Dictionary<string, object>> files, Dictionary<string, object> latest, long since)
+        {
+            long until = Json.Long(latest, "date");
+            string NameOf(Dictionary<string, object> f) =>
+                System.Text.RegularExpressions.Regex.Replace((Json.Str(f, "name") ?? "").Trim(), @"\.(zip|7z|rar)$", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase).ToLowerInvariant();
+            var line = new HashSet<Dictionary<string, object>> { latest };
+            var groups = new HashSet<long>();
+            var names = new HashSet<string>();
+            for (bool grew = true; grew;)
+            {
+                foreach (var f in line)
+                {
+                    if (Json.Long(f, "groupId") != 0) groups.Add(Json.Long(f, "groupId"));
+                    if (NameOf(f).Length > 0) names.Add(NameOf(f));
+                }
+                grew = false;
+                foreach (var f in files)
+                    if (!line.Contains(f) && (groups.Contains(Json.Long(f, "groupId")) || names.Contains(NameOf(f)))) { line.Add(f); grew = true; }
+            }
+            var shown = since <= 0 ? new List<Dictionary<string, object>> { latest }
+                      : line.Where(f => f == latest || (Json.Long(f, "date") > since && Json.Long(f, "date") <= until)).ToList();
+            var out_ = new List<Change>();
+            foreach (var f in shown.OrderByDescending(f => Json.Long(f, "date")))
+            {
+                var lines = Json.List(f, "changelogText").OfType<string>().Select(x => x.Trim()).Where(x => x.Length > 0).ToList();
+                var version = Json.Str(f, "version") ?? Json.Str(f, "name") ?? "";
+                // one version uploaded twice (an old and an archived copy) says it once
+                if (lines.Count == 0 || out_.Any(c => c.Version == version && c.Lines.SequenceEqual(lines))) continue;
+                out_.Add(new Change { Version = version, Lines = lines });
+            }
+            return out_;
         }
 
         // ------------------------------------------------------------ fewer requests to Nexus Mods
@@ -269,6 +335,7 @@ namespace Hd2Mod
             {
                 ["checked_at"] = Now(), ["status"] = u.Status, ["current"] = u.Current, ["latest"] = u.Latest,
                 ["download"] = u.Download, ["latest_file"] = u.LatestFile, ["latest_time"] = u.LatestTime, ["page"] = u.Page,
+                ["changes"] = u.Changes.Select(c => (object)new Dictionary<string, object> { ["version"] = c.Version, ["lines"] = c.Lines.Cast<object>().ToList() }).ToList(),
             };
         }
 
@@ -280,6 +347,8 @@ namespace Hd2Mod
             if (d == null) return null;
             var at = Json.Long(d, "checked_at");
             if (Now() - at > Month) return null;
+            // an update kept from before the changes were kept is asked again, for them
+            if (Json.Str(d, "status") == "update" && !d.ContainsKey("changes")) return null;
             if (!recent.TryGetValue(m.Nexus.Mod, out var changed) || changed >= at - 3600) return null;
             var (channel, page) = Origins.Of(m);
             return new UpdateInfo
@@ -287,6 +356,8 @@ namespace Hd2Mod
                 ModId = m.Id, Name = m.Name, Channel = channel, Page = Json.Str(d, "page") ?? page, Status = Json.Str(d, "status"),
                 Current = Json.Str(d, "current"), Latest = Json.Str(d, "latest"), Download = Json.Str(d, "download"),
                 LatestFile = Json.Long(d, "latest_file"), LatestTime = Json.Long(d, "latest_time"),
+                Changes = Json.List(d, "changes").OfType<Dictionary<string, object>>()
+                    .Select(c => new Change { Version = Json.Str(c, "version"), Lines = Json.List(c, "lines").OfType<string>().ToList() }).ToList(),
             };
         }
 
@@ -332,6 +403,7 @@ namespace Hd2Mod
             mod.Options = Manifest.Merged(manifest, mod.Options);
             mod.Path = unpacked;
             mod.Source = u.Page;
+            mod.ArchiveMd5 = null;
             mod.GitHub = new GitHubRef { Owner = mod.GitHub?.Owner, Repo = mod.GitHub?.Repo, Tag = u.Latest };
             if (!string.IsNullOrEmpty(manifest?.Name)) mod.Name = manifest.Name;
             lib.Save();

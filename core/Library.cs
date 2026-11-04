@@ -61,6 +61,9 @@ namespace Hd2Mod
         /// <summary>The mod this translation pack was turned off with, else null: turning that mod
         /// on again turns the pack on again (the user, 2026-10-30).</summary>
         public string OffWith;
+        /// <summary>The MD5 of the archive it was added from, else null: Nexus Mods knows a file by it
+        /// (Fingerprints).</summary>
+        public string ArchiveMd5;
     }
 
     /// <summary>A mod's version before the newest, as it was: its folder and where it came from
@@ -145,6 +148,7 @@ namespace Hd2Mod
                 mod.Page = Json.Str(m, "page");
                 mod.Skip = Json.Str(m, "skip");
                 mod.OffWith = Json.Str(m, "off_with");
+                mod.ArchiveMd5 = Json.Str(m, "archive_md5");
                 var pv = Json.Obj(m, "previous");
                 if (pv != null && !string.IsNullOrEmpty(Json.Str(pv, "path")))
                     mod.Previous = new PreviousVersion
@@ -225,6 +229,7 @@ namespace Hd2Mod
                 if (m.GitHub != null) entry["github"] = GitHubJson(m.GitHub);
                 if (m.Skip != null) entry["skip"] = m.Skip;
                 if (m.OffWith != null) entry["off_with"] = m.OffWith;
+                if (m.ArchiveMd5 != null) entry["archive_md5"] = m.ArchiveMd5;
                 if (m.Previous != null)
                 {
                     var pv = new Dictionary<string, object>

@@ -367,6 +367,7 @@ namespace Hd2Mod
                 had.Options = Manifest.Merged(manifest, had.Options);
                 had.Path = folder;
                 had.Source = page;
+                had.ArchiveMd5 = null;
                 had.Nexus = nexus;
                 if (!string.IsNullOrEmpty(manifest?.Name)) had.Name = manifest.Name;
                 lib.Save();
