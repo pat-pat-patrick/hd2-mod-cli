@@ -2742,6 +2742,7 @@ namespace QuickDeploy
         string findTyped, findSaid;
         NexusModInfo found;
         bool finding;
+        bool findTested;
 
         /// <summary>The download page's look-up: a Nexus Mods number or page typed or pasted, what
         /// the mod's page says, and the way to its Files tab, where Mod Manager Download is.</summary>
@@ -2781,6 +2782,14 @@ namespace QuickDeploy
             }
             go.Click += (s, e) => Find();
             box.KeyDown += (s, e) => { if (e.Key == Key.Enter) { e.Handled = true; Find(); } };
+            // HD2QD_FIND (pictures only): that number typed in and looked up once the page is first drawn
+            var typed = Environment.GetEnvironmentVariable("HD2QD_FIND");
+            if (typed != null && !findTested)
+            {
+                findTested = true;
+                box.Text = typed;
+                Dispatcher.BeginInvoke(new Action(Find), DispatcherPriority.Loaded);
+            }
 
             if (finding) panel.Children.Add(Small(Texts.Get("dl_find_busy"), new Thickness(0, 12, 0, 0)));
             else if (findSaid != null)
@@ -5524,8 +5533,11 @@ namespace QuickDeploy
             lib = await Queued(() =>
             {
                 var l = Library.Load();
+                int hashed = l.Mods.Count(m => m.ArchiveMd5 != null);
                 known = Fingerprints.Apply(l, wanted, found);
-                l.Save();
+                // saved only when something changed: a save makes the window read the library
+                // again, and that read's bottom line took the place of what the check said
+                if (known > 0 || l.Mods.Count(m => m.ArchiveMd5 != null) != hashed) l.Save();
                 return l;
             });
             if (known > 0) Refresh();
