@@ -222,7 +222,7 @@ namespace Hd2Mod
 
         /// <summary>Every mod folder: the default first, then the ones added, then the folders the
         /// library's mods are in (a mod belongs to the folder its own folder is in).</summary>
-        public static List<LibraryFolder> Folders(Library lib, string game)
+        public static List<LibraryFolder> Folders(Library lib, string game, Func<Mod, long?> known = null)
         {
             var seen = new Dictionary<string, LibraryFolder>();
             var order = new List<LibraryFolder>();
@@ -261,7 +261,10 @@ namespace Hd2Mod
                 if (parent == null) continue;
                 var f = Get(parent);
                 f.Mods.Add(m);
-                if (Directory.Exists(m.Path)) f.Bytes += StateDoc.LibraryBytes(new DirectoryInfo(m.Path));
+                // a size the caller already has (the window's last state read) is not walked for again
+                var had = known?.Invoke(m);
+                if (had != null) f.Bytes += had.Value;
+                else if (Directory.Exists(m.Path)) f.Bytes += StateDoc.LibraryBytes(new DirectoryInfo(m.Path));
             }
             return order;
         }

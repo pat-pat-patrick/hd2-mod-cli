@@ -674,17 +674,21 @@ namespace Hd2Mod.Tests
                     "{\"fileId\": 7, \"name\": \"Cape.zip\", \"version\": \"1.2\", \"category\": \"ARCHIVED\", \"date\": 1715000000, \"groupId\": 11, \"changelogText\": [\"Hood\"]}, " +
                     "{\"fileId\": 5, \"name\": \"Cape\", \"version\": \"1.5\", \"category\": \"ARCHIVED\", \"date\": 1720000000, \"groupId\": 11, \"changelogText\": [\"Red capes\", \" \"]}, " +
                     "{\"fileId\": 6, \"name\": \"Cape\", \"version\": \"1.5\", \"category\": \"ARCHIVED\", \"date\": 1720000100, \"groupId\": 10, \"changelogText\": [\"Red capes\"]}, " +
-                    "{\"fileId\": 2, \"name\": \"Cape\", \"version\": \"2.0\", \"category\": \"MAIN\", \"date\": 1750000000, \"groupId\": 10, \"changelogText\": [\"Blue capes\", \"Fixed the hood\"]}, " +
+                    "{\"fileId\": 2, \"name\": \"Cape\", \"version\": \"2.0\", \"category\": \"MAIN\", \"date\": 1750000000, \"groupId\": 10, \"changelogText\": [\"Blue capes\", \"Fixed the hood\", \"Capes &amp; hoods<br />in <b>every</b> colour\"]}, " +
                     "{\"fileId\": 3, \"name\": \"Cape extras\", \"version\": \"9.0\", \"category\": \"OPTIONAL\", \"date\": 1740000000, \"groupId\": 20, \"changelogText\": [\"Extras only\"]}]";
                 return (200, Bytes("{\"data\": {\"modFiles\": " + files + "}}"));
             }
             var ids = Json.List(vars, "ids").OfType<Dictionary<string, object>>().ToList();
             if (!query.Contains("summary"))
             {
+                // a page of 20 nodes unless the query asks for more, as Nexus Mods answers
+                var count = Regex.Match(query, @"count:\s*(\d+)");
+                ids = ids.Take(count.Success ? int.Parse(count.Groups[1].Value) : 20).ToList();
                 // when each mod was last updated: 77 at file 2's time, the others long ago
                 lock (Seen) Seen.Add("graphql updated");
+                // and the page's own version: 77's is 2.0, the others say none
                 var nodes = string.Join(", ", ids.Select(x => "{\"modId\": " + Json.Long(x, "modId") + ", \"updatedAt\": \"" +
-                    (Json.Long(x, "modId") == 77 ? "2025-06-15T15:06:40Z" : "2024-01-01T00:00:00Z") + "\"}"));
+                    (Json.Long(x, "modId") == 77 ? "2025-06-15T15:06:40Z\", \"version\": \"2.0" : "2024-01-01T00:00:00Z") + "\"}"));
                 return (200, Bytes("{\"data\": {\"legacyModsByDomain\": {\"nodes\": [" + nodes + "]}}}"));
             }
             long id = Json.Long(ids.FirstOrDefault(), "modId");
@@ -721,7 +725,8 @@ namespace Hd2Mod.Tests
         {
             var u = Updates.One(UpdatesMod());
             Assert.Equal(new[] { "2.0", "1.5", "1.2" }, u.Changes.Select(c => c.Version));
-            Assert.Equal(new[] { "Blue capes", "Fixed the hood" }, u.Changes[0].Lines);
+            // the page's HTML as words (the user, 2026-11-06: "&amp;" shown)
+            Assert.Equal(new[] { "Blue capes", "Fixed the hood", "Capes & hoods in every colour" }, u.Changes[0].Lines);
             Assert.Equal(new[] { "Red capes" }, u.Changes[1].Lines);
 
             // installed time known, file not: the versions after it
@@ -744,6 +749,53 @@ namespace Hd2Mod.Tests
                 Assert.Equal(new[] { "2.0", "1.5", "1.2" }, kept.Changes.Select(c => c.Version));
             }
             finally { Updates.Now = now; }
+        }
+
+        /// <summary>The installed files' own version over a record they no longer match (the user,
+        /// 2026-11-05: the newest version installed, an update shown; players said the same). Must
+        /// live: 2.0 put in by hand over file 1's record, or with no file recorded, is current. Must
+        /// die: a record that matches the folder, an older version in the name, or no version at
+        /// all keep their answers.</summary>
+        [Fact]
+        public void The_newest_version_put_in_by_hand_is_current()
+        {
+            // the folder is what is installed: "<name>_<hash>", as the library makes it
+            Mod Named(string name, NexusRef r) => new Mod { Id = name, Name = name, Path = Path.Combine(Root, name + "_0123456789ab"), Nexus = r };
+            NexusRef File1() => new NexusRef { Game = "helldivers2", Mod = 77, File = 1, Version = "1.0" };
+            NexusRef PageOnly() => new NexusRef { Game = "helldivers2", Mod = 77 };
+
+            var stale = Updates.One(Named("Cape v2.0", File1()));
+            Assert.Equal(("current", "2.0", null), (stale.Status, stale.Current, stale.Latest));
+            Assert.Empty(stale.Changes);
+            Assert.Equal("current", Updates.One(Named("Cape 2.0", PageOnly())).Status);
+
+            Assert.Equal("update", Updates.One(Named("Cape v1.0", File1())).Status);     // the record is what is installed
+            Assert.Equal("update", Updates.One(Named("Cape v1.5", File1())).Status);     // older than the newest
+            Assert.Equal("unknown", Updates.One(Named("Cape", PageOnly())).Status);      // nothing says its version
+
+            // the whole check, and the result it keeps for the next window
+            var lib = new Library { Mods = { Named("Cape v2.0", File1()) } };
+            Assert.Equal("current", Updates.Check(lib).Single().Status);
+            Assert.Equal("current", Updates.Kept(lib).Single().Status);
+        }
+
+        /// <summary>What the site says of a mod keeps the page's newest version up to date with every
+        /// whole check (the user, 2026-11-05: 0.7.0 shown from the day the mod was matched, 0.13.4
+        /// on the page). Must live: 77's page now says 2.0, though twenty mods come before it in the
+        /// request (a page of 20 left it out). Must die: a page that says no version leaves the one
+        /// kept.</summary>
+        [Fact]
+        public void A_check_brings_the_pages_version_up_to_date()
+        {
+            var lib = new Library();
+            // 77 after twenty others: the answer is a page of 20 unless the query asks for more
+            for (int i = 0; i < 20; i++) lib.Mods.Add(new Mod { Id = "f" + i, Name = "Filler " + i, Nexus = new NexusRef { Game = "helldivers2", Mod = 1000 + i, File = 1 } });
+            lib.Mods.Add(new Mod { Id = "a", Name = "Cape", Nexus = new NexusRef { Game = "helldivers2", Mod = 77, File = 1 }, Site = new SiteInfo { Author = "Capey", Version = "1.0" } });
+            lib.Mods.Add(new Mod { Id = "b", Name = "Other", Nexus = new NexusRef { Game = "helldivers2", Mod = 78, File = 1 }, Site = new SiteInfo { Author = "Someone", Version = "3.0" } });
+            Updates.Check(lib);
+            Assert.Equal("2.0", lib.Mods.Single(x => x.Id == "a").Site.Version);
+            Assert.Equal("3.0", lib.Mods.Single(x => x.Id == "b").Site.Version);
+            Assert.Equal("2.0", Library.Load().Mods.Single(x => x.Id == "a").Site.Version);
         }
 
         /// <summary>The window's check at start (the user, 2026-11-04): on unless turned off, due once
@@ -2019,6 +2071,33 @@ namespace Hd2Mod.Tests
             Assert.Equal("Loader v0.9.0", m.RealName);            // the name it came with is the new one
             Assert.Equal("0.9.0", Origins.VersionOf(m).Version);  // what is installed, not the Nexus record
             Assert.Equal(17754, m.Nexus.Mod);                     // the page it comes from is kept
+        }
+
+        /// <summary>A replace with files that do not say where they came from keeps the page and drops
+        /// the old download's file and version (the user, 2026-11-05: they made every check call the
+        /// newest an update). Must live: the page kept, the file and version gone. Must die: a
+        /// download that says its source records that source.</summary>
+        [Fact]
+        public void A_replace_from_elsewhere_drops_the_old_downloads_file()
+        {
+            var one = Path.Combine(Root, "Loader v0.7.0.zip");
+            var two = Path.Combine(Root, "Loader v0.13.4.zip");
+            Zip(one, ("manifest.json", "{\"Version\": 1, \"Name\": \"Loader v0.7.0\"}"), (A + ".patch_0", "seven"));
+            Zip(two, ("manifest.json", "{\"Version\": 1, \"Name\": \"Loader v0.13.4\"}"), (A + ".patch_0", "thirteen"));
+            Cli("add", one);
+            var lib = Library.Load();
+            lib.Mods[0].Nexus = new NexusRef { Game = "helldivers2", Mod = 17754, File = 70611, Version = "0.7.0", Time = 1792816590 };
+            lib.Save();
+            Cli("replace", "Loader v0.7.0", two);
+            var m = Library.Load().Mods[0];
+            Assert.Equal((17754L, 0L, null, 0L), (m.Nexus.Mod, m.Nexus.File, m.Nexus.Version, m.Nexus.Time));
+
+            var three = Path.Combine(Root, "Loader 17754 0.14.0 2026-11-05T10-00Z 5V4g.zip");
+            Zip(three, ("manifest.json", "{\"Version\": 1, \"Name\": \"Loader v0.14.0\"}"), (A + ".patch_0", "fourteen"));
+            OnlineSources.Zone(three, "https://cf-files.nexusmods.com/cdn/x?md5=1", "https://www.nexusmods.com/helldivers2/mods/17754?tab=files");
+            Cli("replace", m.Id, three);
+            m = Library.Load().Mods[0];
+            Assert.Equal((17754L, "0.14.0"), (m.Nexus.Mod, m.Nexus.Version));
         }
 
         /// <summary>The library lives outside AppData, where a desktop AI assistant's writes are

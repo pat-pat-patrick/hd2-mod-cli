@@ -343,7 +343,7 @@ namespace QuickDeploy
             menu.Items.Add(new Separator());
             Item(Texts.Get("lp_open_folder"), () => OpenFolder(x.Path));
             menu.Items.Add(new Separator());
-            Item(Texts.Get("remove_menu"), () => { if (Dialog.Ask(this, Texts.F("remove_ask", x.Name), Texts.Get("remove_btn"))) Run("remove", x.Id); });
+            Item(Texts.Get("remove_menu"), () => RemoveFromLibrary(x));
             Item(Texts.Get("delete_menu"), () => DeleteFromDisk(x));
             menu.IsOpen = true;
         }

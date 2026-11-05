@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 using Hd2Mod;
 
 namespace QuickDeploy
@@ -157,28 +158,50 @@ namespace QuickDeploy
                 try { Clipboard.SetText(string.Join(Environment.NewLine, drawn.Select(x => (x.Time.Length > 0 ? x.Time + " " : "") + "[" + x.Level + "] " + x.Text))); }
                 catch (System.Runtime.InteropServices.COMException) { }
             };
-            var list = new StackPanel();
+            // one read-only document, a paragraph a line: it selects and copies across lines by itself,
+            // Ctrl+C or the menu, each line with its time and level. A text box for each part of each
+            // line made 1,200 of them and the settings' tab took most of a second to show (the user,
+            // 2026-11-06); a table of them took longer still (1.8 s for 400 lines, measured). The
+            // columns are the mono font's, padded; a long line wraps under its own words
+            var doc = new System.Windows.Documents.FlowDocument
+            {
+                PagePadding = new Thickness(0), FontFamily = Mono, FontSize = 12, Foreground = B("Ink"), TextAlignment = TextAlignment.Left,
+            };
             // the time's column as wide as the times shown: a log that writes only the hour has no gap
-            bool longTimes = v.FullTime && drawn.Any(x => x.Time.Length > 8);
+            string When(LoaderLogs.Entry e) => v.FullTime || e.Time.Length <= 8 ? e.Time : e.Time.Substring(e.Time.Length - 8);
+            int timeChars = drawn.Count == 0 ? 0 : drawn.Max(x => When(x).Length);
+            int levelChars = drawn.Count == 0 ? 0 : drawn.Select(x => x.Level).Distinct().Max(l => Texts.Get("lp_lv_" + l).Length);
+            // how far in the words start: the widest time and level as the mono font draws them
+            double indent = 0;
+            if (drawn.Count > 0)
+            {
+                var widest = drawn.OrderByDescending(x => When(x).Length).First();
+                var level = drawn.Select(x => Texts.Get("lp_lv_" + x.Level)).OrderByDescending(x => x.Length).First();
+                var probe = new FormattedText(When(widest).PadRight(timeChars) + "  " + level.PadRight(levelChars) + "  ",
+                    System.Globalization.CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
+                    new Typeface(Mono, FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal), 12, Brushes.Black, VisualTreeHelper.GetDpi(v.Box).PixelsPerDip);
+                indent = Math.Ceiling(probe.WidthIncludingTrailingWhitespace);
+            }
             foreach (var e in drawn)
             {
-                var row = new DockPanel { Margin = new Thickness(0, 1, 0, 1) };
-                // from the hour on in a narrow view: the date is in the session anyway
-                var when = v.FullTime || e.Time.Length <= 8 ? e.Time : e.Time.Substring(e.Time.Length - 8);
-                var time = new TextBlock { Text = when, FontFamily = Mono, FontSize = 11, Foreground = B("Muted"), Width = longTimes ? 132 : 62, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 1, 0, 0) };
-                DockPanel.SetDock(time, Dock.Left);
-                row.Children.Add(time);
-                var level = new TextBlock { Text = Texts.Get("lp_lv_" + e.Level), FontSize = 11, FontWeight = FontWeights.SemiBold, Foreground = B(LevelColour(e.Level)), Width = 44, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 1, 0, 0) };
-                DockPanel.SetDock(level, Dock.Left);
-                row.Children.Add(level);
-                var text = Selectable.Text(e.Text, 12, e.Level == "error" ? "Red" : e.Level == "warn" ? "Yellow" : e.Level == "debug" ? "Muted" : "Ink", Mono);
-                row.Children.Add(text);
-                list.Children.Add(row);
+                var para = new System.Windows.Documents.Paragraph { Margin = new Thickness(indent, 1, 0, 1), TextIndent = -indent };
+                para.Inlines.Add(new System.Windows.Documents.Run(When(e).PadRight(timeChars) + "  ") { Foreground = B("Muted") });
+                para.Inlines.Add(new System.Windows.Documents.Run(Texts.Get("lp_lv_" + e.Level).PadRight(levelChars) + "  ") { Foreground = B(LevelColour(e.Level)), FontWeight = FontWeights.SemiBold });
+                para.Inlines.Add(new System.Windows.Documents.Run(e.Text) { Foreground = B(e.Level == "error" ? "Red" : e.Level == "warn" ? "Yellow" : e.Level == "debug" ? "Muted" : "Ink") });
+                doc.Blocks.Add(para);
             }
-            if (drawn.Count == 0) list.Children.Add(Small(Texts.Get(entries.Count == 0 ? "lp_log_empty" : "lp_log_none_shown"), new Thickness(0)));
-            var scroll = new ScrollViewer { Content = list, MaxHeight = v.Height, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
-            v.Box.Children.Add(new Border { BorderBrush = B("Grid"), BorderThickness = new Thickness(1), Background = B("Ground700"), Padding = new Thickness(10, 8, 10, 8), Child = scroll });
-            scroll.Loaded += (s, e) => scroll.ScrollToEnd();
+            if (drawn.Count == 0) doc.Blocks.Add(new System.Windows.Documents.Paragraph(new System.Windows.Documents.Run(Texts.Get(entries.Count == 0 ? "lp_log_empty" : "lp_log_none_shown")))
+            { FontFamily = (FontFamily)Application.Current.Resources["Ui"], Foreground = B("Muted"), Margin = new Thickness(0) });
+            var text = new RichTextBox
+            {
+                Document = doc, IsReadOnly = true, IsReadOnlyCaretVisible = false, Background = Brushes.Transparent, BorderThickness = new Thickness(0),
+                Padding = new Thickness(0), MaxHeight = v.Height, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, SelectionBrush = B("Blue"), SelectionOpacity = 0.45,
+                FocusVisualStyle = null, Foreground = B("Ink"),
+            };
+            Selectable.Menu(text, () => text.Selection.IsEmpty ? new System.Windows.Documents.TextRange(doc.ContentStart, doc.ContentEnd).Text : text.Selection.Text);
+            v.Box.Children.Add(new Border { BorderBrush = B("Grid"), BorderThickness = new Thickness(1), Background = B("Ground700"), Padding = new Thickness(10, 8, 10, 8), Child = text });
+            text.Loaded += (s, e) => text.ScrollToEnd();
             var note = Texts.F(lines.Count > v.Most ? "lp_log_count_cut" : "lp_log_count", drawn.Count, lines.Count, src.Path);
             if (Texts.Hints && !entries.Any(e => e.Written)) note += " " + Texts.Get("lp_level_note");
             v.Box.Children.Add(Small(note, new Thickness(0, 6, 0, 0)));

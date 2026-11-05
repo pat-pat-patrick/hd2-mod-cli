@@ -31,7 +31,7 @@ namespace QuickDeploy
         // more than one mod taken at once, with Ctrl or Shift (the user, 2026-10-24); the one
         // the details show is selectedId, which is also where a Shift range starts
         readonly HashSet<string> picked = new HashSet<string>();
-        bool busy, overMax, acrylic, descOpen, checking;
+        bool busy, overMax, acrylic, checking;
         // what was just done, for the bottom line: said by every state read in the next 10 s, so
         // the read the folder watcher starts after our own write does not put "pending" over it
         // at once (the MDL3 drop picture, 2026-11-01)
@@ -108,6 +108,10 @@ namespace QuickDeploy
         {
             Mark("window made");
             InitializeComponent();
+            // the pages' text selects and copies across lines (the user, 2026-11-06); not the mod
+            // list, whose rows are dragged to reorder
+            foreach (var page in new FrameworkElement[] { Detail, LuaBox, Storages, TagsBox, Downloads, SettingsBox, PluginsBox })
+                Selectable.Group(page);
             Mark("window laid out");
             Words();
             if (startSearch != null) SearchBox.Text = startSearch;
@@ -118,6 +122,9 @@ namespace QuickDeploy
                 if (dragRow != null) return;            // a row in hand: the list stays as it is
                 if (busy || DateTime.Now <= quietUntil) return;   // not now: the timer tries again
                 settle.Stop();
+                // the files as the last read found them: that read has shown them already. Our own
+                // command's write was read twice, the list drawn twice (the user, 2026-11-06)
+                if (!refreshing && Written() == readStamp) return;
                 Refresh();
             };
             // a row dragged to another place follows the pointer until the button is let go
@@ -495,6 +502,409 @@ namespace QuickDeploy
                 var t11 = new DispatcherTimer { Interval = TimeSpan.FromSeconds(4) };
                 t11.Tick += (s, e) => { t11.Stop(); DetailScroll.ScrollToEnd(); };
                 t11.Start();
+                return;
+            }
+            if (Environment.GetEnvironmentVariable("HD2QD_CLICK_TEST") == "groupmove")
+            {
+                // "groupmove": the first mod at the top level of the group view put into the first
+                // group, as a drop does; whether the column shows it there at once, and how often
+                // the state is drawn in the 4 s after (the user, 2026-11-06: twice, "卡卡的"), go
+                // to HD2QD_WHEEL_OUT
+                var path = Environment.GetEnvironmentVariable("HD2QD_WHEEL_OUT");
+                var t17 = new DispatcherTimer { Interval = TimeSpan.FromSeconds(6) };
+                t17.Tick += (s, e) =>
+                {
+                    t17.Stop();
+                    if (path == null || st == null) return;
+                    var g = st.Groups.FirstOrDefault(x => x.Parent == null);
+                    var m = st.Mods.FirstOrDefault(x => x.Group != g?.Id);
+                    if (g == null || m == null) { System.IO.File.WriteAllText(path, "nothing to move\r\n"); return; }
+                    var lines = new List<string> { "mod\t" + m.Name, "into\t" + g.Name };
+                    int before = renders;
+                    DropInto("mod", m.Id, g.Id);
+                    lines.Add("group_at_once\t" + (st.Mods.First(x => x.Id == m.Id).Group == g.Id));
+                    lines.Add("draws_at_once\t" + (renders - before));
+                    var t18 = new DispatcherTimer { Interval = TimeSpan.FromSeconds(4) };
+                    t18.Tick += (s2, e2) =>
+                    {
+                        t18.Stop();
+                        lines.Add("state_draws_in_4s\t" + (renders - before));
+                        lines.Add("group_after_read\t" + (st.Mods.First(x => x.Id == m.Id).Group == g.Id));
+                        System.IO.File.WriteAllText(path, string.Join("\r\n", lines) + "\r\n");
+                    };
+                    t18.Start();
+                };
+                t17.Start();
+                return;
+            }
+            if (Environment.GetEnvironmentVariable("HD2QD_CLICK_TEST") == "storagetick")
+            {
+                // "storagetick": the storage page, then the first mod's tick clicked as a player does,
+                // on and off: from the click to the frame that shows it, and whether the page was
+                // made anew (the user, 2026-11-06: the tick felt sticky). To HD2QD_WHEEL_OUT
+                var path = Environment.GetEnvironmentVariable("HD2QD_WHEEL_OUT");
+                var lines = new List<string>();
+                int round = 0;
+                var t25 = new DispatcherTimer { Interval = TimeSpan.FromSeconds(8) };
+                t25.Tick += (s, e) =>
+                {
+                    t25.Interval = TimeSpan.FromMilliseconds(800);
+                    if (path == null || st == null) return;
+                    if (round == 0) { ShowPage("storage"); round++; return; }
+                    if (round > 4) { t25.Stop(); System.IO.File.WriteAllText(path, string.Join("\r\n", lines) + "\r\n"); return; }
+                    round++;
+                    var firstChild = Storages.Children.Count > 0 ? Storages.Children[0] : null;
+                    var tick = Motion.Under<CheckBox>(Storages).Where(c => c.Style == FindResource("Tick") && !(c.Content is TextBlock)).FirstOrDefault();
+                    if (tick == null) { lines.Add("no tick"); return; }
+                    var clock = System.Diagnostics.Stopwatch.StartNew();
+                    tick.IsChecked = tick.IsChecked != true;
+                    tick.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+                    UpdateLayout();
+                    EventHandler frame = null;
+                    frame = (s2, e2) =>
+                    {
+                        CompositionTarget.Rendering -= frame;
+                        Dispatcher.BeginInvoke(new Action(() =>
+                            lines.Add(string.Format("tick {0}: on screen {1} ms, page made anew: {2}, buttons: {3}", tick.IsChecked == true ? "on " : "off",
+                                clock.ElapsedMilliseconds, Storages.Children.Count == 0 || Storages.Children[0] != firstChild,
+                                string.Join(" | ", Motion.Under<Button>(Storages).Where(b => b.Content is string t && (t.Contains("(") || t.Contains("（"))).Select(b => (string)b.Content))))), DispatcherPriority.Background);
+                    };
+                    CompositionTarget.Rendering += frame;
+                };
+                t25.Start();
+                return;
+            }
+            if (Environment.GetEnvironmentVariable("HD2QD_CLICK_TEST") == "pagetimes")
+            {
+                // "pagetimes": every page opened as its button does, twice round, each timed from the
+                // click to its first frame on screen: building it, laying it out, drawing it (the
+                // user, 2026-11-06: Download, Storage and About took about a second); with how many
+                // elements and text boxes it holds. To HD2QD_WHEEL_OUT
+                var path = Environment.GetEnvironmentVariable("HD2QD_WHEEL_OUT");
+                var pages = new List<(string Name, Action Open)>
+                {
+                    ("deploy", () => ShowPage("deploy")), ("lua", () => ShowPage("lua")), ("download", () => ShowPage("download")),
+                    ("storage", () => ShowPage("storage")), ("tags", () => ShowPage("tags")),
+                    ("settings", () => { settingsTab = "general"; ShowPage("settings"); }),
+                    ("about", () => { settingsTab = "about"; ShowPage("settings"); }),
+                    ("plugins", () => ShowPage("plugins")),
+                };
+                var lines = new List<string>();
+                int at = 0;
+                var t24 = new DispatcherTimer { Interval = TimeSpan.FromSeconds(8) };
+                t24.Tick += (s, e) =>
+                {
+                    t24.Interval = TimeSpan.FromMilliseconds(1500);
+                    if (path == null || st == null) return;
+                    if (at >= pages.Count * 2)
+                    {
+                        t24.Stop();
+                        System.IO.File.WriteAllText(path, string.Join("\r\n", lines) + "\r\n");
+                        return;
+                    }
+                    var (name, open) = pages[at++ % pages.Count];
+                    var clock = System.Diagnostics.Stopwatch.StartNew();
+                    open();
+                    long built = clock.ElapsedMilliseconds;
+                    UpdateLayout();
+                    long laid = clock.ElapsedMilliseconds;
+                    EventHandler frame = null;
+                    frame = (s2, e2) =>
+                    {
+                        CompositionTarget.Rendering -= frame;
+                        // the frame after this one is the first with the page drawn
+                        Dispatcher.BeginInvoke(new Action(() =>
+                        {
+                            var page = PageOf(shownPage);
+                            int all = page == null ? 0 : Motion.Under<FrameworkElement>(page).Count();
+                            int boxes = page == null ? 0 : Motion.Under<TextBox>(page).Count();
+                            lines.Add(string.Format("{0,-9} built {1,4} ms  laid out {2,4} ms  on screen {3,4} ms  elements {4,5}  text boxes {5,4}", name, built, laid, clock.ElapsedMilliseconds, all, boxes));
+                        }), DispatcherPriority.Background);
+                    };
+                    CompositionTarget.Rendering += frame;
+                };
+                t24.Start();
+                return;
+            }
+            if (Environment.GetEnvironmentVariable("HD2QD_CLICK_TEST") == "abouttab")
+            {
+                // "abouttab": the settings' About and diagnostics tab opened as its button does, timed:
+                // drawing it, then laying it out; the general tab the same (the user, 2026-11-06:
+                // about a second before it showed); to HD2QD_WHEEL_OUT
+                var path = Environment.GetEnvironmentVariable("HD2QD_WHEEL_OUT");
+                var t23 = new DispatcherTimer { Interval = TimeSpan.FromSeconds(7) };
+                t23.Tick += (s, e) =>
+                {
+                    t23.Stop();
+                    if (path == null) return;
+                    var lines = new List<string>();
+                    ShowPage("settings");
+                    foreach (var tab in new[] { "general", "about", "general", "about" })
+                    {
+                        var clock = System.Diagnostics.Stopwatch.StartNew();
+                        settingsTab = tab;
+                        RenderSettings();
+                        long drawn = clock.ElapsedMilliseconds;
+                        UpdateLayout();
+                        lines.Add(tab + "\tdrawn " + drawn + " ms\tlaid out " + clock.ElapsedMilliseconds + " ms\ttext boxes " + Motion.Under<TextBox>(SettingsBox).Count());
+                    }
+                    System.IO.File.WriteAllText(path, string.Join("\r\n", lines) + "\r\n");
+                };
+                t23.Start();
+                return;
+            }
+            if (Environment.GetEnvironmentVariable("HD2QD_CLICK_TEST") == "transitions")
+            {
+                // "transitions": one after another, what the window does on a click (the user,
+                // 2026-11-06: "缺少过渡动画"), each pictured by the window itself 60 ms after it
+                // began, mid-way, and once more when it is over; into the folder HD2QD_WHEEL_OUT
+                // names, with a list of what was done and any error
+                var dir = Environment.GetEnvironmentVariable("HD2QD_WHEEL_OUT");
+                var log = new List<string>();
+                void Picture(string name)
+                {
+                    try
+                    {
+                        var dpi = VisualTreeHelper.GetDpi(this);
+                        var bmp = new RenderTargetBitmap((int)(ActualWidth * dpi.DpiScaleX), (int)(ActualHeight * dpi.DpiScaleY), dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
+                        bmp.Render((Visual)Content);
+                        var enc = new PngBitmapEncoder();
+                        enc.Frames.Add(BitmapFrame.Create(bmp));
+                        using (var f = System.IO.File.Create(System.IO.Path.Combine(dir, name + ".png"))) enc.Save(f);
+                    }
+                    catch (Exception x) { log.Add("picture " + name + ": " + x.Message); }
+                }
+                var steps = new List<(string Name, Action Do)>
+                {
+                    ("page_lua", () => ShowPage("lua")),
+                    ("page_deploy", () => ShowPage("deploy")),
+                    ("open_group", () => { var g = st.Groups.First(x => x.Parent == null); groupPath.Clear(); groupPath.Add(g.Id); selectedId = null; groupCol = 0; RenderGroups(); RenderDetail(); }),
+                    ("other_mod", () => { selectedId = st.Mods.First(x => x.Group == groupPath.LastOrDefault()).Id; RenderList(); RenderDetail(); }),
+                    ("switch", () => { var m = st.Mods.First(x => x.Id == selectedId); Change(m.Id, c => c.Enabled = !c.Enabled, m.Enabled ? "disable" : "enable", m.Id); }),
+                    ("view_order", () => View_Click(ViewOrder, null)),
+                    ("filter_on", () => Nav.Children.OfType<Button>().ElementAt(2).RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent))),
+                    ("filter_all", () => Nav.Children.OfType<Button>().ElementAt(0).RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent))),
+                    ("expand", () =>
+                    {
+                        var row = rows[selectedId ?? Seen().First().Id].Row;
+                        var chev = Motion.Under<Button>(row).First(b => b.Width == 36);
+                        chev.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+                    }),
+                    ("remove", () => { var m = st.Mods.First(x => x.Id == selectedId); _ = Gone(m, false, null, new[] { "remove", m.Id }); }),
+                    ("dialog", () => Dispatcher.BeginInvoke(new Action(() => Dialog.Tell(this, "A dialog for the test.")))),
+                };
+                int at = 0;
+                var t22 = new DispatcherTimer { Interval = TimeSpan.FromSeconds(7) };
+                t22.Tick += (s, e) =>
+                {
+                    t22.Interval = TimeSpan.FromMilliseconds(900);
+                    if (dir == null || st == null) return;
+                    if (at >= steps.Count)
+                    {
+                        t22.Stop();
+                        foreach (Window w in OwnedWindows) w.Close();
+                        log.Add("done");
+                        System.IO.File.WriteAllText(System.IO.Path.Combine(dir, "log.txt"), string.Join("\r\n", log) + "\r\n");
+                        return;
+                    }
+                    var (name, act) = steps[at++];
+                    try { act(); log.Add(name); }
+                    catch (Exception x) { log.Add(name + ": " + x.GetType().Name + " " + x.Message); }
+                    var mid = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(60) };
+                    mid.Tick += (s2, e2) =>
+                    {
+                        mid.Stop();
+                        Picture(name + "_mid");
+                        // what is moving, mid-way: the page, the list, the details, a new column, a switch's knob
+                        string X(UIElement u) => u == null ? "-" : u.Opacity.ToString("0.00") + (u.RenderTransform is TranslateTransform t ? "@" + t.X.ToString("0") + "," + t.Y.ToString("0") : "");
+                        var lastCol = GroupCols.Children.OfType<Border>().LastOrDefault();
+                        var knob = RowsShowing(selectedId ?? "").SelectMany(r => Motion.Under<CheckBox>(r)).Select(c => c.Template?.FindName("knob", c) as Border).FirstOrDefault(k => k != null);
+                        log.Add("   mid: page " + X(PageOf(shownPage)) + "  list " + X(ListShown) + "  details " + X(Detail) + "  last column " + X(lastCol) + "  knob " + X(knob));
+                    };
+                    mid.Start();
+                    var end = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(600) };
+                    end.Tick += (s2, e2) => { end.Stop(); Picture(name + "_end"); };
+                    end.Start();
+                };
+                t22.Start();
+                return;
+            }
+            if (Environment.GetEnvironmentVariable("HD2QD_CLICK_TEST") == "deletemod")
+            {
+                // "deletemod": the chosen mod deleted from the disk as the question's yes does (run on
+                // a library whose folders are copies); every draw of the state and of the list in the
+                // 8 s after, with its time, goes to HD2QD_WHEEL_OUT (the user, 2026-11-06: the list
+                // was drawn again after the row had gone)
+                var path = Environment.GetEnvironmentVariable("HD2QD_WHEEL_OUT");
+                var t20 = new DispatcherTimer { Interval = TimeSpan.FromSeconds(8) };
+                t20.Tick += (s, e) =>
+                {
+                    t20.Stop();
+                    var m = st?.Mods.FirstOrDefault(x => x.Id == selectedId);
+                    if (path == null || m == null) return;
+                    drawLog = new List<string> { drawClock.ElapsedMilliseconds + "\tdelete " + m.Name };
+                    DeleteNow(m);
+                    var t21 = new DispatcherTimer { Interval = TimeSpan.FromSeconds(8) };
+                    t21.Tick += (s2, e2) =>
+                    {
+                        t21.Stop();
+                        drawLog.Add(drawClock.ElapsedMilliseconds + "\tend; in the library: " + st.Mods.Any(x => x.Name == m.Name));
+                        System.IO.File.WriteAllText(path, string.Join("\r\n", drawLog) + "\r\n");
+                    };
+                    t21.Start();
+                };
+                t20.Start();
+                return;
+            }
+            if (Environment.GetEnvironmentVariable("HD2QD_CLICK_TEST") == "strike")
+            {
+                // "strike": the chosen mod's row struck through as a delete does, nothing deleted; the
+                // picture is taken by the script once HD2QD_WHEEL_OUT says how many rows it drew on
+                var path = Environment.GetEnvironmentVariable("HD2QD_WHEEL_OUT");
+                var t19 = new DispatcherTimer { Interval = TimeSpan.FromSeconds(6) };
+                t19.Tick += async (s, e) =>
+                {
+                    t19.Stop();
+                    if (path == null || selectedId == null) return;
+                    var drawn = await StrikeOut(selectedId);
+                    System.IO.File.WriteAllText(path, "rows\t" + drawn.Count + "\r\n");
+                };
+                t19.Start();
+                return;
+            }
+            if (Environment.GetEnvironmentVariable("HD2QD_CLICK_TEST") == "selectmouse")
+            {
+                // "selectmouse": a drag through all of WPF's input (the user, 2026-11-06: selectacross
+                // drove the group by itself and passed, while a real drag stayed in one line): raw
+                // mouse reports handed to the input manager, as the window's own mouse messages are
+                // (posted messages are dropped for a window the real cursor is not over). It checks
+                // what broke: the pressed text box keeps the mouse, and the moves still reach the
+                // group. Where a move points is read from the real cursor by WPF, so the pieces it
+                // reaches are not the ones aimed at; that the selection spans pieces and copies as
+                // lines is what counts. What is selected and what Ctrl+C copies (to a test sink,
+                // never the clipboard) go to HD2QD_WHEEL_OUT
+                var path = Environment.GetEnvironmentVariable("HD2QD_WHEEL_OUT");
+                var t13 = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+                t13.Tick += (s, e) =>
+                {
+                    t13.Stop();
+                    if (path == null) return;
+                    var found = new List<TextBox>();
+                    void Walk(DependencyObject o)
+                    {
+                        if (o is TextBox tb && tb.Style == FindResource("Copyable")) found.Add(tb);
+                        for (int i = 0; i < VisualTreeHelper.GetChildrenCount(o); i++) Walk(VisualTreeHelper.GetChild(o, i));
+                    }
+                    Walk(Detail);
+                    var view = DetailScroll;
+                    // the first changed line near the top of the view
+                    var line = found.FirstOrDefault(x => x.Text.StartsWith("Fixed:") || x.Text.StartsWith("New:") || x.Text.StartsWith("Changed:"));
+                    if (line != null)
+                    {
+                        var top = line.TransformToAncestor(Detail).Transform(new Point(0, 0)).Y;
+                        view.ScrollToVerticalOffset(Math.Max(0, top - 60));
+                        view.UpdateLayout();
+                    }
+                    bool Shown(TextBox tb)
+                    {
+                        var r = tb.TransformToAncestor(view).TransformBounds(new Rect(0, 0, tb.ActualWidth, tb.ActualHeight));
+                        return r.Top >= 0 && r.Bottom <= view.ViewportHeight;
+                    }
+                    var shown = found.Where(x => x.IsVisible && Shown(x)).ToList();
+                    int first = shown.FindIndex(x => x.Text.StartsWith("Fixed:") || x.Text.StartsWith("New:") || x.Text.StartsWith("Changed:"));
+                    var log = new List<string>();
+                    if (first < 0 || first + 3 >= shown.Count) { System.IO.File.WriteAllText(path, "no lines to drag over\r\n"); return; }
+                    var a = shown[first];
+                    var b = shown[first + 3];
+                    log.Add("from\t" + a.Text);
+                    log.Add("to\t" + b.Text);
+                    var dev = PresentationSource.FromVisual(this).CompositionTarget.TransformToDevice;
+                    var from = dev.Transform(a.TranslatePoint(new Point(40, a.ActualHeight / 2), this));
+                    var to = dev.Transform(b.TranslatePoint(new Point(b.ActualWidth / 2, b.ActualHeight / 2), this));
+                    var keys = new byte[256];
+                    TestInput.GetKeyboardState(keys);
+                    keys[0x01] = 0x80;      // VK_LBUTTON down
+                    TestInput.SetKeyboardState(keys);
+                    var src = PresentationSource.FromVisual(this);
+                    TestInput.Mouse(src, TestInput.Activate | TestInput.Move, from);
+                    TestInput.Mouse(src, TestInput.Move | TestInput.Press, from);
+                    // a real press makes the text box take the mouse (its own handler, run even for a
+                    // handled press); this thread's button state reads "released" off-screen, so the
+                    // text box skipped it here, and the test takes the mouse for it as it would
+                    log.Add("captured_by_press	" + (Mouse.Captured as TextBox)?.Text);
+                    if (!(Mouse.Captured is TextBox)) a.CaptureMouse();
+                    int step = 0;
+                    var t15 = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(60) };
+                    t15.Tick += (s2, e2) =>
+                    {
+                        step++;
+                        if (step <= 10) { TestInput.Mouse(src, TestInput.Move, new Point(from.X + (to.X - from.X) * step / 10, from.Y + (to.Y - from.Y) * step / 10)); return; }
+                        t15.Stop();
+                        keys[0x01] = 0;
+                        TestInput.SetKeyboardState(keys);
+                        TestInput.Mouse(src, TestInput.Move | TestInput.Release, to);
+                        var t16 = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
+                        t16.Tick += (s3, e3) =>
+                        {
+                            t16.Stop();
+                            string copied = null;
+                            Selectable.TestSink = x => copied = x;
+                            foreach (var tb in found.Where(x => x.SelectionLength > 0)) log.Add("selected\t" + tb.SelectedText.Replace("\n", " "));
+                            var focused = Keyboard.FocusedElement as TextBox;
+                            log.Add("focused\t" + (focused?.Text ?? "(none)"));
+                            if (focused != null) ApplicationCommands.Copy.Execute(null, focused);
+                            log.Add("copied\t" + (copied ?? "(nothing)").Replace("\r\n", "\\n"));
+                            System.IO.File.WriteAllText(path, string.Join("\r\n", log) + "\r\n");
+                        };
+                        t16.Start();
+                    };
+                    t15.Start();
+                };
+                t13.Start();
+                return;
+            }
+            if (Environment.GetEnvironmentVariable("HD2QD_CLICK_TEST") == "selectacross")
+            {
+                // "selectacross": in the chosen mod's details, a drag from the middle of the first
+                // changed line to the middle of the fourth piece after it, as Selectable makes it;
+                // what Ctrl+C on the first piece and the menu on the last then copy go to
+                // HD2QD_WHEEL_OUT (the user, 2026-11-06: one line at a time before)
+                var t12 = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+                t12.Tick += (s, e) =>
+                {
+                    t12.Stop();
+                    var path = Environment.GetEnvironmentVariable("HD2QD_WHEEL_OUT");
+                    if (path == null) return;
+                    DetailScroll.ScrollToEnd();
+                    DetailScroll.UpdateLayout();
+                    var found = new List<TextBox>();
+                    void Walk(DependencyObject o)
+                    {
+                        if (o is TextBox tb && tb.Style == FindResource("Copyable")) found.Add(tb);
+                        for (int i = 0; i < VisualTreeHelper.GetChildrenCount(o); i++) Walk(VisualTreeHelper.GetChild(o, i));
+                    }
+                    Walk(Detail);
+                    string copied = null;
+                    Selectable.TestSink = x => copied = x;      // the player's clipboard is left alone
+                    var lines = new List<string> { "found=" + found.Count };
+                    int first = found.FindIndex(x => x.Text.StartsWith("Fixed:") || x.Text.StartsWith("New:") || x.Text.StartsWith("Changed:"));
+                    if (first >= 0 && first + 4 < found.Count)
+                    {
+                        var a = found[first];
+                        var b = found[first + 4];
+                        var said = Selectable.TestDrag(Detail, a, a.Text.Length / 2, b, b.Text.Length / 2);
+                        lines.Add("selection=" + said.Replace("\r\n", "\\n"));
+                        a.Focus();
+                        ApplicationCommands.Copy.Execute(null, a);
+                        lines.Add("ctrl_c_same=" + (copied == said));
+                        copied = null;
+                        ((MenuItem)b.ContextMenu.Items[0]).RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+                        lines.Add("menu_same=" + (copied == said));
+                        lines.Add("pieces_selected=" + found.Count(x => x.SelectionLength > 0));
+                    }
+                    System.IO.File.WriteAllText(path, string.Join("\r\n", lines) + "\r\n");
+                };
+                t12.Start();
                 return;
             }
             if (Environment.GetEnvironmentVariable("HD2QD_CLICK_TEST") == "copy")
@@ -1185,6 +1595,8 @@ namespace QuickDeploy
 
         readonly DispatcherTimer beat = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
         string beatSaw;
+        // the state files as the last state read began (Written), set on the read's own thread
+        volatile string readStamp;
 
         /// <summary>The files whose change is a change of the state the window shows.</summary>
         static readonly HashSet<string> StateFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -1195,11 +1607,11 @@ namespace QuickDeploy
 #endif
         };
 
-        /// <summary>The size and time of the library and the deploy record, as one string.</summary>
+        /// <summary>The size and time of the files that hold the state (StateFiles), as one string.</summary>
         static string Written()
         {
             var out_ = new System.Text.StringBuilder();
-            foreach (var name in new[] { "library.json", "deployed.json" })
+            foreach (var name in StateFiles.OrderBy(x => x, StringComparer.OrdinalIgnoreCase))
                 try
                 {
                     var f = new FileInfo(Store.PathOf(name));
@@ -1236,7 +1648,8 @@ namespace QuickDeploy
                     refreshAgain = false;
                     Mark("state read: start");
                     int readNo = ++readsStarted;
-                    var r = await Queued(() => Cli.Run("state"));
+                    var r = await Queued(() => { readStamp = Written(); return Cli.Run("state"); });
+                    beatSaw = readStamp;
                     Mark("state read: done");
                     if (!r.Ok)
                     {
@@ -1278,7 +1691,46 @@ namespace QuickDeploy
             {
                 setupDone = true;
                 Setup();
+                WarmPages();
             }
+        }
+
+        /// <summary>The pages behind the buttons built and laid out once the window is idle after it
+        /// opens, one at a time, so the first click on each shows it at once: the first visit made
+        /// their controls and pictures for the first time and took a quarter of a second (the user,
+        /// 2026-11-06). Once a session; a page drawn since is left as it is.</summary>
+        void WarmPages()
+        {
+            var pages = new Queue<string>(new[] { "storage", "download", "tags", "plugins" });
+            void Next()
+            {
+                if (pages.Count == 0 || st == null) return;
+                var page = pages.Dequeue();
+                var el = PageOf(page);
+                if (el != null && el.Visibility != Visibility.Visible && !PageFresh(page))
+                {
+                    if (page == "storage") RenderStorage();
+                    else if (page == "download") RenderDownloads();
+                    else if (page == "tags") RenderTags();
+                    else if (page == "plugins") RenderPlugins();
+                    // measured and arranged while hidden, then put away again
+                    el.Visibility = Visibility.Hidden;
+                    el.UpdateLayout();
+                    if (shownPage != page) el.Visibility = Visibility.Collapsed;
+                }
+                Dispatcher.BeginInvoke(new Action(Next), DispatcherPriority.ApplicationIdle);
+            }
+            Dispatcher.BeginInvoke(new Action(Next), DispatcherPriority.ApplicationIdle);
+        }
+
+        /// <summary>Whether the page was last drawn for the state on show, in this language (and
+        /// marks it so when it was not: the caller draws it now).</summary>
+        bool PageFresh(string p)
+        {
+            var key = (st?.ReadNo ?? -1) + "|" + Texts.Lang + "|" + Texts.Hints + "|" + Texts.TopWins;
+            if (pageDrawn.TryGetValue(p, out var was) && was == key) return true;
+            pageDrawn[p] = key;
+            return false;
         }
 
         bool setupDone;
@@ -1532,6 +1984,12 @@ namespace QuickDeploy
                 foreach (var p in st.Mods.Where(x => x.OffWith == m.Id && !x.Enabled)) { p.Enabled = true; p.Assumed = "pending"; }
             RenderList();
             if (id == selectedId) RenderDetail();
+            // the switches of the row drawn anew slide over, as one clicked does (the user, 2026-11-06)
+            var sw = (Style)FindResource("Switch");
+            foreach (var row in RowsShowing(id, false))
+                foreach (var c in Motion.Under<CheckBox>(row).Where(x => x.Style == sw)) Motion.Slide(c);
+            if (id == selectedId)
+                foreach (var c in Motion.Under<CheckBox>(Detail).Where(x => x.Style == sw)) Motion.Slide(c);
             waiting++;
             var r = await Queued(() => Cli.Run(args));
             waiting--;
@@ -1824,7 +2282,7 @@ namespace QuickDeploy
             {
                 var t = Selectable.Text(text, 14, colour);
                 t.Margin = new Thickness(0, 2, 0, 2);
-                if (whole != null) Selectable.Menu(t, () => t.SelectionLength > 0 ? t.SelectedText : whole);
+                if (whole != null) Selectable.Menu(t, () => Selectable.Selection(t) ?? whole);
                 box.Children.Add(t);
             }
             var running = RunningLabel();
@@ -2110,7 +2568,7 @@ namespace QuickDeploy
                 Placement = System.Windows.Controls.Primitives.PlacementMode.Absolute,
                 // closed by the window (CloseLoaderInfo), not by the popup itself: its own rule closed it
                 // when the copy menu of a line in it opened
-                StaysOpen = true, AllowsTransparency = true, PopupAnimation = System.Windows.Controls.Primitives.PopupAnimation.None,
+                StaysOpen = true, AllowsTransparency = true, PopupAnimation = System.Windows.Controls.Primitives.PopupAnimation.Fade,
                 Child = LoaderInfoBox(),
             };
             pop.KeyDown += (s, e) => { if (e.Key == Key.Escape) pop.IsOpen = false; };
@@ -2306,6 +2764,7 @@ namespace QuickDeploy
             switch (filter)
             {
                 case "options": return m.Options.Count > 0;
+                case "on": return m.Enabled;
                 case "off": return !m.Enabled;
                 case "conflict": return m.InConflict;
                 case "broken": return m.Error != null;
@@ -2316,8 +2775,17 @@ namespace QuickDeploy
             }
         }
 
+        // how often the state was drawn: the window's own tests count it (groupmove)
+        int renders;
+
+        // when the window's own test asks: each draw of the state and of the list, with its time
+        List<string> drawLog;
+        readonly System.Diagnostics.Stopwatch drawClock = System.Diagnostics.Stopwatch.StartNew();
+
         void Render()
         {
+            renders++;
+            drawLog?.Add(drawClock.ElapsedMilliseconds + "\tstate");
             // labels remembered from the last time that no mod carries any more filter nothing
             if (!fromSaved && !filtersPruned)
             {
@@ -2387,6 +2855,7 @@ namespace QuickDeploy
                 // little (the user, 2026-11-03); the Deploy button counts them
                 ("all", scope.Count),
                 ("updates", scope.Count(HasUpdate)),
+                ("on", scope.Count(m => m.Enabled)),
                 ("off", scope.Count(m => !m.Enabled)),
                 ("conflict", scope.Count(m => m.InConflict)), ("broken", scope.Count(m => m.Error != null)),
                 ("norun", scope.Count(m => NoRun(m) != null)),
@@ -2416,10 +2885,13 @@ namespace QuickDeploy
                 btn.Click += (s, e) =>
                 {
                     bool order = OrderShown;
+                    bool swap = filter != key;
                     filter = key;
                     RenderNav();
                     FollowList();
+                    listSwap = swap;
                     RenderList();
+                    if (swap) Motion.In(ListShown, 0, 6);
                     // into or out of the conflicts: the same mod's details change (OrderShown)
                     if (OrderShown != order) RenderDetail();
                 };
@@ -2883,8 +3355,18 @@ namespace QuickDeploy
 
         /// <summary>One of the pages: "deploy", "download", "storage", "tags", or "settings" (the
         /// gear; a page of its own since 2026-10-27, the window was taller than the main one).</summary>
+        // the page on show, so a page that comes in fades in (Motion); the window opens on the deploy page
+        string shownPage = "deploy";
+        // what each page was last drawn for by ShowPage (state read, language, hints, direction)
+        readonly Dictionary<string, string> pageDrawn = new Dictionary<string, string>();
+
+        UIElement PageOf(string page) => page == "deploy" ? Body : page == "download" ? DownloadPage : page == "lua" ? LuaPage
+            : page == "storage" ? StoragePage : page == "tags" ? TagsPage : page == "settings" ? SettingsPage : page == "plugins" ? (UIElement)PluginsPage : null;
+
         void ShowPage(string page)
         {
+            if (shownPage != null && shownPage != page) Motion.In(PageOf(page), 0, 6, 120, 0.35);
+            shownPage = page;
             if ((page == "settings" || page == "plugins") && SettingsPage.Visibility != Visibility.Visible && PluginsPage.Visibility != Visibility.Visible)
                 pageBack = StoragePage.IsVisible ? "storage" : TagsPage.IsVisible ? "tags" : DownloadPage.IsVisible ? "download" : LuaPage.IsVisible ? "lua" : "deploy";
             PageDeploy.IsChecked = page == "deploy";
@@ -2906,12 +3388,17 @@ namespace QuickDeploy
             PluginsBtn.Background = page == "plugins" ? B("Yellow") : Brushes.Transparent;
             PluginsBtn.BorderBrush = page == "plugins" ? B("Yellow") : B("Grid");
             PlugGlyph.Foreground = page == "plugins" ? B("TapeInk") : B("Ink");
-            if (page == "download") RenderDownloads();
-            if (page == "storage") RenderStorage();
+            // a page drawn for the state on show, in this language, is shown as it is: each was drawn
+            // again on every visit, and Storage, Download, Plugins and Settings took up to a second to
+            // come (the user, 2026-11-06). The Lua page and the settings carry logs that grow, and are
+            // always drawn
+            bool Fresh(string p) => PageFresh(p);
+            if (page == "download" && !Fresh("download")) RenderDownloads();
+            if (page == "storage" && !Fresh("storage")) RenderStorage();
             if (page == "lua") RenderLua();
-            if (page == "tags") RenderTags();
+            if (page == "tags" && !Fresh("tags")) RenderTags();
             if (page == "settings") { RenderSettings(); SettingsPage.ScrollToTop(); }
-            if (page == "plugins") { RenderPlugins(); PluginsPage.ScrollToTop(); RefreshListSoon(false); }
+            if (page == "plugins") { if (!Fresh("plugins")) RenderPlugins(); PluginsPage.ScrollToTop(); RefreshListSoon(false); }
         }
 
         void Page_Click(object sender, RoutedEventArgs e) =>
@@ -2987,7 +3474,11 @@ namespace QuickDeploy
         {
             Storages.Children.Clear();
             var lib = Library.Load();
-            var folders = Storage.Folders(lib, GameDir());
+            // each mod's size as the last state read found it: the page walked every mod folder on
+            // the disk twice to draw (the user, 2026-11-06: a second to open)
+            var known = st?.Mods.GroupBy(x => x.Id).ToDictionary(g => g.Key, g => g.First().LibraryBytes) ?? new Dictionary<string, long>();
+            long? Known(Mod x) => x.Id != null && known.TryGetValue(x.Id, out var b) ? b : (long?)null;
+            var folders = Storage.Folders(lib, GameDir(), Known);
             if (storageSel == null || folders.All(f => !string.Equals(f.Path, storageSel, StringComparison.OrdinalIgnoreCase)))
                 storageSel = (folders.FirstOrDefault(f => f.Mods.Count > 0) ?? folders.FirstOrDefault())?.Path;
 
@@ -3107,11 +3598,24 @@ namespace QuickDeploy
                 IsChecked = sel.Mods.Count > 0 && sel.Mods.All(m => ticked.Contains(m.Id)), VerticalAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(17, 0, 0, 0),   // the card's border and padding, so it lines up with the ticks in it
             };
+            // a tick changes the ticks and the two buttons' counts, nothing else: it drew the whole
+            // page again, the folder list read from the disk and every row made anew, and the tick
+            // felt sticky (the user, 2026-11-06)
+            var boxes = new List<(string Id, CheckBox Box)>();
+            void Ticks()
+            {
+                moveBtn.Content = Texts.F("st_move_n", ticked.Count);
+                moveBtn.IsEnabled = ticked.Count > 0;
+                delBtn.Content = Texts.F("st_delete_n", ticked.Count);
+                delBtn.IsEnabled = ticked.Count > 0;
+                all.IsChecked = sel.Mods.Count > 0 && sel.Mods.All(m => ticked.Contains(m.Id));
+                foreach (var (bid, b) in boxes) b.IsChecked = ticked.Contains(bid);
+            }
             all.Click += (s, e) =>
             {
                 if (all.IsChecked == true) foreach (var m in sel.Mods) ticked.Add(m.Id);
                 else ticked.Clear();
-                RenderStorage();
+                Ticks();
             };
             bar.Children.Add(all);
             Storages.Children.Add(bar);
@@ -3121,7 +3625,7 @@ namespace QuickDeploy
             // the window down while it is only drawing a list (the user, 2026-10-24)
             var sizes = new Dictionary<string, long>();
             foreach (var x in sel.Mods)
-                sizes[x.Id ?? ""] = Directory.Exists(x.Path) ? StateDoc.LibraryBytes(new DirectoryInfo(x.Path)) : 0L;
+                sizes[x.Id ?? ""] = Known(x) ?? (Directory.Exists(x.Path) ? StateDoc.LibraryBytes(new DirectoryInfo(x.Path)) : 0L);
             var shown = storageSort == "name"
                 ? sel.Mods.OrderBy(x => x.Name, StringComparer.CurrentCultureIgnoreCase).ToList()
                 : sel.Mods.OrderByDescending(x => sizes.TryGetValue(x.Id ?? "", out var b) ? b : 0L).ToList();
@@ -3149,7 +3653,8 @@ namespace QuickDeploy
                 words.Children.Add(title);
                 words.Children.Add(Selectable.Text(IOPath.GetFileName(m.Path.TrimEnd('\\')), 11, "Muted", Mono));
                 line.Children.Add(words);
-                box.Click += (s, e) => { if (box.IsChecked == true) ticked.Add(id); else ticked.Remove(id); RenderStorage(); };
+                box.Click += (s, e) => { if (box.IsChecked == true) ticked.Add(id); else ticked.Remove(id); Ticks(); };
+                boxes.Add((id, box));
                 list.Children.Add(Band(line, band++));
             }
             Storages.Children.Add(Card(list));
@@ -3187,11 +3692,21 @@ namespace QuickDeploy
                     FontSize = 12, FontWeight = FontWeights.SemiBold, Foreground = B("Muted"),
                 },
             };
+            // ticks change the ticks and the button, as in the mods above
+            var prevBoxes = new List<(string Id, CheckBox Box)>();
+            void PrevTicks()
+            {
+                int n = kept.Count(m => prevPick.Contains(m.Id));
+                drop.Content = n > 0 ? Texts.F("st_old_drop_n", n) : Texts.Get("st_old_drop");
+                drop.IsEnabled = n > 0;
+                every.IsChecked = n == kept.Count;
+                foreach (var (bid, b) in prevBoxes) b.IsChecked = prevPick.Contains(bid);
+            }
             every.Click += (s, e) =>
             {
                 if (every.IsChecked == true) foreach (var m in kept) prevPick.Add(m.Id);
                 else prevPick.Clear();
-                RenderStorage();
+                PrevTicks();
             };
             bar.Children.Add(every);
             box.Children.Add(bar);
@@ -3205,8 +3720,9 @@ namespace QuickDeploy
                 tick.Click += (s, e) =>
                 {
                     if (tick.IsChecked == true) prevPick.Add(id); else prevPick.Remove(id);
-                    RenderStorage();
+                    PrevTicks();
                 };
+                prevBoxes.Add((id, tick));
                 DockPanel.SetDock(tick, Dock.Left);
                 line.Children.Add(tick);
                 var acts = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(12, 0, 0, 0) };
@@ -3309,11 +3825,20 @@ namespace QuickDeploy
                     FontSize = 12, FontWeight = FontWeights.SemiBold, Foreground = B("Muted"),
                 },
             };
+            var oldBoxes = new List<(string Path, CheckBox Box)>();
+            void OldTicks()
+            {
+                int n = left.Count(l => oldPick.Contains(l.Path));
+                drop.Content = n > 0 ? Texts.F("st_old_drop_n", n) : Texts.Get("st_old_drop");
+                drop.IsEnabled = n > 0;
+                every.IsChecked = n == left.Count;
+                foreach (var (bp, b) in oldBoxes) b.IsChecked = oldPick.Contains(bp);
+            }
             every.Click += (s, e) =>
             {
                 if (every.IsChecked == true) foreach (var l in left) oldPick.Add(l.Path);
                 else foreach (var l in left) oldPick.Remove(l.Path);
-                RenderStorage();
+                OldTicks();
             };
             bar.Children.Add(every);
             box.Children.Add(bar);
@@ -3330,8 +3855,9 @@ namespace QuickDeploy
                 tick.Click += (s, e) =>
                 {
                     if (tick.IsChecked == true) oldPick.Add(path); else oldPick.Remove(path);
-                    RenderStorage();
+                    OldTicks();
                 };
+                oldBoxes.Add((path, tick));
                 DockPanel.SetDock(tick, Dock.Left);
                 line.Children.Add(tick);
                 var size = new TextBlock
@@ -4050,7 +4576,25 @@ namespace QuickDeploy
 
         // ---------------------------------------------------------------- the list
 
+        // rows and group columns built anew, for the window's own tests (deletemod)
+        int rowsBuilt;
+
         void RenderList()
+        {
+            int builtBefore = rowsBuilt;
+            try { RenderListNow(); }
+            finally { drawLog?.Add(drawClock.ElapsedMilliseconds + "\tlist, built anew: " + (rowsBuilt - builtBefore)); }
+        }
+
+        // the list swapped whole (another filter, the other view): it fades in as one, its rows do not
+        bool listSwap;
+        // the mods the load order showed last, so one new to it comes in (an add, a filter's change)
+        HashSet<string> orderShown;
+
+        /// <summary>What shows the list now: the group columns or the load order.</summary>
+        UIElement ListShown => groupView && filter != "conflict" ? (UIElement)GroupScroll : ListScroll;
+
+        void RenderListNow()
         {
             if (dragRow != null) EndDrag(false);         // the rows are about to be built again
             bool profiled = st.ProfilesOn;
@@ -4081,11 +4625,26 @@ namespace QuickDeploy
             foreach (var m in Seen())
             {
                 var sig = Sig(m);
-                if (!rows.TryGetValue(m.Id, out var had) || had.Sig != sig) rows[m.Id] = had = (sig, Row(m));
+                if (!rows.TryGetValue(m.Id, out var had) || had.Sig != sig)
+                {
+                    if (drawLog != null && had.Sig != null)
+                    {
+                        var a = had.Sig.Split(''); var b = sig.Split('');
+                        var diff = Enumerable.Range(0, Math.Min(a.Length, b.Length)).Where(k => a[k] != b[k]).Select(k => k + ":" + a[k] + "->" + b[k]);
+                        drawLog.Add("   rebuilt " + m.Name + " " + string.Join(" ", diff));
+                    }
+                    rows[m.Id] = had = (sig, Row(m)); rowsBuilt++;
+                }
                 want.Add(had.Row);
                 seen.Add(m.Id);
             }
             foreach (var gone in rows.Keys.Where(k => !seen.Contains(k)).ToList()) rows.Remove(gone);
+            // a row new to the load order comes into its place
+            if (orderShown != null && !listSwap)
+                foreach (var m in Seen().Where(x => !orderShown.Contains(x.Id)))
+                    if (rows.TryGetValue(m.Id, out var nr)) Motion.In(nr.Row, 0, 6);
+            orderShown = seen;
+            listSwap = false;
             picked.RemoveWhere(id => !seen.Contains(id));
             if (want.Count == 0 && searchWords.Length > 0)
             {
@@ -4160,7 +4719,19 @@ namespace QuickDeploy
                 Data = Geometry.Parse("M9 5l7 7-7 7"), Stroke = B(isOpen ? "Yellow" : "Muted"), StrokeThickness = 2.5, Width = 16, Height = 16, Stretch = Stretch.Uniform,
                 RenderTransformOrigin = new Point(0.5, 0.5), RenderTransform = new RotateTransform(isOpen ? 90 : 0), Margin = new Thickness(10),
             };
-            chev.Click += (s, e) => { if (!open.Remove(m.Id)) open.Add(m.Id); Current(m.Id); RenderList(); RenderDetail(); };
+            chev.Click += async (s, e) =>
+            {
+                // closing: what it shows under its head fades out first (the user, 2026-11-06)
+                if (open.Contains(m.Id) && rows.TryGetValue(m.Id, out var was) && was.Row.Child is Border we && we.Child is StackPanel wc)
+                    await Task.WhenAll(wc.Children.Cast<UIElement>().Skip(1).Select(x => Motion.Out(x, 100)));
+                if (!open.Remove(m.Id)) open.Add(m.Id);
+                Current(m.Id);
+                RenderList();
+                RenderDetail();
+                // opened: it comes in under the head
+                if (open.Contains(m.Id) && rows.TryGetValue(m.Id, out var now) && now.Row.Child is Border ne && ne.Child is StackPanel nc)
+                    foreach (var x in nc.Children.Cast<UIElement>().Skip(1)) Motion.In(x, 0, -6);
+            };
             DockPanel.SetDock(chev, Dock.Left);
             line.Children.Add(chev);
             // on / off
@@ -4409,7 +4980,6 @@ namespace QuickDeploy
                 picked.Clear();
                 if (selectedId == m.Id) { RenderList(); return; }
                 selectedId = m.Id;
-                descOpen = false;
             }
             if (picked.Count == 1) picked.Clear();
             RenderList();
@@ -4733,9 +5303,15 @@ namespace QuickDeploy
 
         // ---------------------------------------------------------------- the chosen mod
 
+        // what the details showed last (a mod's id, or "g:" and a group's), so others fade in
+        string detailFor;
+
         void RenderDetail()
         {
             FillPreview();
+            var showing = selectedId ?? (groupView && groupPath.Count > 0 ? "g:" + groupPath[groupPath.Count - 1] : "");
+            if (detailFor != null && showing != detailFor && showing.Length > 0) Motion.In(Detail, 0, 6);
+            detailFor = showing;
             Detail.Children.Clear();
             var m = st?.Mods.FirstOrDefault(x => x.Id == selectedId);
             if (m == null && st != null && groupView && groupPath.Count > 0)
@@ -4793,7 +5369,7 @@ namespace QuickDeploy
             bool longDesc = desc.Length > 90 || desc.Contains("\n");
             string descColour = string.IsNullOrWhiteSpace(desc) || (!fromSite && string.IsNullOrWhiteSpace(m.Description)) ? "Muted" : "Ink";
             bool hasDesc = descColour == "Ink";
-            if (longDesc && !descOpen)
+            if (longDesc)
             {
                 var dt = new TextBlock { Text = desc, Foreground = B(descColour), TextWrapping = TextWrapping.Wrap, LineHeight = 21, Margin = new Thickness(0, 12, 0, 0), MaxHeight = 42, TextTrimming = TextTrimming.WordEllipsis };
                 Selectable.Menu(dt, () => desc);
@@ -4806,12 +5382,8 @@ namespace QuickDeploy
                 man.Children.Add(dt);
             }
             else man.Children.Add(new TextBlock { Text = desc, Foreground = B(descColour), TextWrapping = TextWrapping.Wrap, LineHeight = 21, Margin = new Thickness(0, 12, 0, 0) });
-            if (longDesc)
-            {
-                var more = new Button { Content = Texts.Get(descOpen ? "less" : "more"), Template = Plain(), Foreground = B("Blue"), FontWeight = FontWeights.SemiBold, Cursor = Cursors.Hand, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 8, 0, 0) };
-                more.Click += (s, e) => { descOpen = !descOpen; RenderDetail(); };
-                man.Children.Add(more);
-            }
+            // the whole of it in the details window (the user, 2026-11-06), with the changes
+            if (longDesc) man.Children.Add(MoreButton(m));
             if (m.Error != null)
             {
                 var err = Selectable.Text(Texts.Get("broken") + ": " + m.Error, 14, "Yellow");
@@ -4868,7 +5440,7 @@ namespace QuickDeploy
                 facts.RowDefinitions.Add(new RowDefinition());
                 var acts = new WrapPanel { HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(-8, 0, 0, 6) };
                 var removeBtn = new Button { Content = Texts.Get("remove_btn"), Style = (Style)FindResource("Ghost"), MinHeight = 32, Margin = new Thickness(8, 4, 0, 0) };
-                removeBtn.Click += (s, e) => { if (Dialog.Ask(this, Texts.F("remove_ask", m.Name), Texts.Get("remove_btn"))) Run("remove", m.Id); };
+                removeBtn.Click += (s, e) => RemoveFromLibrary(m);
                 // red: deleting from the disk cannot be undone
                 var deleteBtn = new Button { Content = Texts.Get("delete_btn"), Style = (Style)FindResource("Danger"), MinHeight = 32, Margin = new Thickness(8, 4, 0, 0) };
                 deleteBtn.Click += (s, e) => DeleteFromDisk(m);
@@ -5270,7 +5842,7 @@ namespace QuickDeploy
             // the same questions as the details' buttons, asked once the menu has closed
             Item("remove_menu", () => Dispatcher.BeginInvoke(new Action(() =>
             {
-                if (Dialog.Ask(this, Texts.F("remove_ask", m.Name), Texts.Get("remove_btn"))) Run("remove", m.Id);
+                RemoveFromLibrary(m);
             }), DispatcherPriority.ContextIdle));
             Item("delete_menu", () => Dispatcher.BeginInvoke(new Action(() => DeleteFromDisk(m)), DispatcherPriority.ContextIdle), true);
             return menu;
@@ -5328,21 +5900,6 @@ namespace QuickDeploy
             name = name.Trim();
             if (name.Length == 0 || name == m.Name) return;
             Run("rename", m.Id, name);
-        }
-
-        /// <summary>A mod off the disk for good, after a red question that names its folder:
-        /// out of the library and the game (a deploy), its folder deleted.</summary>
-        void DeleteFromDisk(ModRow m)
-        {
-            if (!Dialog.AskDanger(this, Texts.F("delete_ask", m.Name, m.Path), Texts.Get("delete_btn"))) return;
-            var id = m.Id;
-            _ = Act(() => Cli.Call(() =>
-            {
-                var lib = Library.Load();
-                var mod = lib.Mods.FirstOrDefault(x => x.Id == id) ?? throw new ModError("not in the library any more: " + m.Name);
-                var r = Ops.DeleteMod(lib, mod, Store.GameDir());
-                return Texts.F("deleted_mod", mod.Name, Texts.Size(r.Bytes));
-            }), true);
         }
 
         // ---------------------------------------------------------------- the buttons
@@ -5625,7 +6182,7 @@ namespace QuickDeploy
                 said.Margin = new Thickness(0, 8, 0, 0);
                 box.Children.Add(said);
             }
-            if (apply && u.Changes.Count > 0) box.Children.Add(ChangesList(u.Changes));
+            if (apply && u.Changes.Count > 0) box.Children.Add(ChangesList(u.Changes, m));
 
             // the buttons in two columns of the same width, the odd one last across both:
             // a row of them wrapped into a ragged second line (the user, 2026-10-24)
@@ -5683,33 +6240,115 @@ namespace QuickDeploy
         /// <summary>What each version since the installed one changed, as its author wrote it on
         /// Nexus Mods (the user, 2026-11-04), newest first: the newest few, then how many more the
         /// page has.</summary>
-        UIElement ChangesList(List<Change> changes)
+        /// <summary>What each version since the installed one changed, newest first. In the details
+        /// pane at most five lines of it (the user, 2026-11-06: many versions saved up made it very
+        /// long), the rest in the details window that more opens; there all of it.</summary>
+        UIElement ChangesList(List<Change> changes, ModRow more = null)
         {
-            const int Shown = 5;
+            const int Lines = 5;
+            int left = more == null ? int.MaxValue : Lines;
+            bool cut = false;
             var list = new StackPanel { Margin = new Thickness(0, 10, 0, 0) };
-            list.Children.Add(new TextBlock { Text = Texts.Get("up_changes"), FontSize = 12, Foreground = B("Muted"), Margin = new Thickness(0, 0, 0, 4) });
-            foreach (var c in changes.Take(Shown))
+            if (more != null) list.Children.Add(new TextBlock { Text = Texts.Get("up_changes"), FontSize = 12, Foreground = B("Muted"), Margin = new Thickness(0, 0, 0, 4) });
+            double size = more == null ? 14 : 12;
+            bool first = true;
+            foreach (var c in changes)
             {
-                list.Children.Add(new TextBlock { Text = V(c.Version ?? ""), FontSize = 12, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 6, 0, 2) });
+                if (left <= 0) { cut = true; break; }
+                var ver = Selectable.Text(V(c.Version ?? ""), size);
+                ver.FontWeight = FontWeights.SemiBold;
+                ver.Margin = new Thickness(0, first ? 0 : more != null ? 6 : 14, 0, 2);
+                first = false;
+                list.Children.Add(ver);
                 foreach (var line in c.Lines)
                 {
+                    if (left <= 0) { cut = true; break; }
+                    left--;
                     var row = new DockPanel { Margin = new Thickness(0, 1, 0, 1) };
-                    var dot = new TextBlock { Text = "\u2022", FontSize = 12, Foreground = B("Muted"), Width = 14 };
+                    var dot = new TextBlock { Text = "•", FontSize = size, Foreground = B("Muted"), Width = size + 2 };
                     DockPanel.SetDock(dot, Dock.Left);
                     row.Children.Add(dot);
-                    var t = Selectable.Text(line, 12, "Ink");
-                    row.Children.Add(t);
+                    row.Children.Add(Selectable.Text(line, size, "Ink", null, more == null ? 21 : 0));
                     list.Children.Add(row);
                 }
             }
-            if (changes.Count > Shown)
+            if (cut)
             {
-                var more = Selectable.Text(Texts.F("up_changes_more", changes.Count - Shown), 12, "Muted");
-                more.Margin = new Thickness(0, 6, 0, 0);
-                list.Children.Add(more);
+                list.Children.Add(new TextBlock { Text = "…", FontSize = 12, Foreground = B("Muted") });
+                list.Children.Add(MoreButton(more));
             }
             return list;
         }
+
+        /// <summary>The button that opens the details window: under a description or a list of
+        /// changes cut short.</summary>
+        Button MoreButton(ModRow m)
+        {
+            var b = new Button { Content = Texts.Get("more"), Template = Plain(), Foreground = B("Blue"), FontWeight = FontWeights.SemiBold, Cursor = Cursors.Hand, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 8, 0, 0) };
+            b.Click += (s, e) => ShowModText(m);
+            return b;
+        }
+
+        Window modTextWindow;
+
+        /// <summary>The details window: the mod's whole description and, when there is an update,
+        /// everything each version since changed, scrolling when it is long (the user, 2026-11-06).
+        /// The text selects and copies across lines.</summary>
+        void ShowModText(ModRow m)
+        {
+            modTextWindow?.Close();
+            var root = new DockPanel { Margin = new Thickness(28, 20, 28, 20) };
+            var buttons = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 16, 0, 0) };
+            DockPanel.SetDock(buttons, Dock.Bottom);
+            root.Children.Add(buttons);
+
+            var body = new StackPanel();
+            bool fromSite = string.IsNullOrWhiteSpace(m.Description) && !string.IsNullOrWhiteSpace(m.SiteSummary);
+            string desc = fromSite ? m.SiteSummary.Trim() : (m.Description ?? "").Trim();
+            if (desc.Length > 0)
+            {
+                body.Children.Add(Tag(Texts.Get(fromSite ? "site_words" : "manifest")));
+                var dt = Selectable.Text(desc, 14, "Ink", null, 21);
+                dt.Margin = new Thickness(0, 12, 0, 0);
+                body.Children.Add(dt);
+            }
+            var u = Checked(m);
+            if (u != null && (u.Status == "update" || u.Status == "unknown") && u.Changes.Count > 0)
+            {
+                var head = Tag(Texts.Get("up_changes"));
+                head.Margin = new Thickness(0, desc.Length > 0 ? 28 : 0, 0, 0);
+                body.Children.Add(head);
+                var said = Selectable.Text(string.IsNullOrEmpty(u.Current) ? Texts.F("up_new_unknown", u.Latest) : Texts.F("up_new", u.Current, u.Latest), 12, "Muted");
+                said.Margin = new Thickness(0, 10, 0, 4);
+                body.Children.Add(said);
+                body.Children.Add(ChangesList(u.Changes));
+            }
+            Selectable.Group(body);
+            root.Children.Add(new Border
+            {
+                BorderBrush = B("Grid"), BorderThickness = new Thickness(0, 1, 0, 1), Padding = new Thickness(0, 14, 0, 14),
+                Child = new ScrollViewer { Content = body, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Padding = new Thickness(0, 0, 8, 0), Focusable = false },
+            });
+
+            var w = new ChromeWindow(this, m.Name, root)
+            {
+                Width = 680, SizeToContent = SizeToContent.Height, MinHeight = 220,
+                MaxHeight = Math.Max(360, Math.Min(820, ActualHeight - 60)), MinWidth = 480, ShowInTaskbar = false,
+            };
+            var close = new Button { Content = Texts.Get("close"), Style = (Style)FindResource("Ghost"), MinHeight = 38, Padding = new Thickness(18, 0, 18, 0) };
+            close.Click += (s, e) => w.Close();
+            buttons.Children.Add(close);
+            w.Closed += (s, e) => { if (modTextWindow == w) modTextWindow = null; };
+            modTextWindow = w;
+            w.Show();
+        }
+
+        /// <summary>A section's name on the yellow tape, as the details' "manifest" tag.</summary>
+        FrameworkElement Tag(string text) => new Border
+        {
+            HorizontalAlignment = HorizontalAlignment.Left, Background = B("Yellow"), Padding = new Thickness(8, 0, 8, 0),
+            Child = new TextBlock { Text = text, FontFamily = Mono, FontSize = 11, FontWeight = FontWeights.Bold, Foreground = B("TapeInk") },
+        };
 
         /// <summary>The newest version skipped, so the check stops offering it until a newer one
         /// comes, or offered again.</summary>
@@ -6975,7 +7614,9 @@ namespace QuickDeploy
             body.Children.Add(muLine);
             body.Children.Add(Small(Texts.Get("set_mod_updates_note"), new Thickness(0, 8, 0, 0)));
 
-            // About and diagnostics
+            // About and diagnostics, built only when it is the tab on show: built behind General every
+            // time, its log made General as slow to open as itself (the user, 2026-11-06)
+            if (settingsTab != "about") return;
             body = about;
 
             // this program's own updates (the user, 2026-10-25)
@@ -7060,9 +7701,12 @@ namespace QuickDeploy
             body.Children.Add(managerLogHead);
             if (Texts.Hints) body.Children.Add(Small(Texts.Get("set_log_note"), new Thickness(0, 0, 0, 10)));
             var mlog = ManagerLogView();
-            mlog.Box = new StackPanel();
+            mlog.Box = new StackPanel { MinHeight = 120 };
             body.Children.Add(mlog.Box);
-            RenderLog(mlog);
+            // the log once the tab is on screen: laying out its few hundred lines took a fifth of a
+            // second, and the tab waited for it (the user, 2026-11-06)
+            var logBox = mlog.Box;
+            Dispatcher.BeginInvoke(new Action(() => { if (mlog.Box == logBox && logBox.IsVisible) RenderLog(mlog); }), DispatcherPriority.Background);
 
             // who made it, and where it comes from (last)
             body.Children.Add(Label("set_about", new Thickness(0, 20, 0, 6)));

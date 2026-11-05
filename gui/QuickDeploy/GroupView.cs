@@ -96,7 +96,9 @@ namespace QuickDeploy
             SaveView();
             if (groupView) RevealSelected();
             else if (selectedId == null) selectedId = Seen().FirstOrDefault()?.Id;
+            listSwap = true;
             RenderList();
+            Motion.In(ListShown, 0, 6);
             RenderDetail();
         }
 
@@ -236,16 +238,28 @@ namespace QuickDeploy
             // restyled: a click drew every column again, and each list flashed back to its top
             // (the user, 2026-11-03)
             var had = GroupCols.Children.OfType<Border>().ToList();
+            var hadParents = new HashSet<string>(had.Select(c => c.Tag is GroupDrop gd ? gd.Group ?? "" : null).Where(x => x != null));
             var want = new List<Border>();
             for (int i = 0; i < parents.Count; i++)
             {
                 var sig = ColumnSig(parents[i], shown, under, Visible, narrowed);
-                if (i < had.Count && had[i].Tag is GroupDrop d && d.St == st && d.Group == parents[i] && d.Sig == sig)
+                // the same look, whichever state read drew it: a column was drawn again on every read,
+                // so a change showed twice, the second time with the lists back at their top for a
+                // frame (the user, 2026-11-06). Its items act by id, so a kept one acts on the mod
+                // as it is now
+                if (i < had.Count && had[i].Tag is GroupDrop d && d.Group == parents[i] && d.Sig == sig)
                 {
                     Restyle(d, i);
                     want.Add(had[i]);
                 }
-                else want.Add(GroupColumn(i, parents[i], shown, under, Visible, narrowed, sig));
+                else
+                {
+                    var made = GroupColumn(i, parents[i], shown, under, Visible, narrowed, sig);
+                    want.Add(made);
+                    rowsBuilt++;
+                    // a column just opened comes in from the right (the user, 2026-11-06)
+                    if (had.Count > 0 && !listSwap && !hadParents.Contains(parents[i] ?? "")) Motion.In(made, 24, 0);
+                }
             }
             for (int i = 0; i < want.Count; i++)
             {
@@ -255,6 +269,7 @@ namespace QuickDeploy
                 GroupCols.Children.Insert(i, want[i]);
             }
             while (GroupCols.Children.Count > want.Count) GroupCols.Children.RemoveAt(GroupCols.Children.Count - 1);
+            listSwap = false;
             while (GroupCols.ColumnDefinitions.Count < want.Count) GroupCols.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             while (GroupCols.ColumnDefinitions.Count > want.Count) GroupCols.ColumnDefinitions.RemoveAt(GroupCols.ColumnDefinitions.Count - 1);
             FitColumns();
@@ -267,7 +282,7 @@ namespace QuickDeploy
                 FitColumns();       // laid out now: the first drawing had no width to share yet
                 foreach (var c in GroupCols.Children.OfType<Border>())
                     if (c.Tag is GroupDrop d && c.Child is ScrollViewer sv && colOffsets.TryGetValue(d.Group ?? "", out var y)) sv.ScrollToVerticalOffset(y);
-                if (parents.Count > hadCols) GroupScroll.ScrollToRightEnd();
+                if (parents.Count > hadCols) { if (hadCols > 0) Motion.ScrollX(GroupScroll, GroupScroll.ScrollableWidth); else GroupScroll.ScrollToRightEnd(); }
                 else GroupScroll.ScrollToHorizontalOffset(hadX);
             }), System.Windows.Threading.DispatcherPriority.Loaded);
         }
@@ -297,11 +312,24 @@ namespace QuickDeploy
             var sb = new System.Text.StringBuilder();
             void Add(object x) => sb.Append(x).Append('\u001f');
             Add(parent); Add(narrowed);
-            foreach (var g in st.Groups.Where(g => g.Parent == parent && visible(g))) { Add(g.Id); Add(g.Name); Add(under[g.Id].Count); Add(under[g.Id].Count(m => m.Enabled)); }
+            Add(st.ProfilesOn);
+            foreach (var g in st.Groups.Where(g => g.Parent == parent && visible(g)))
+            {
+                Add(g.Id); Add(g.Name); Add(under[g.Id].Count); Add(under[g.Id].Count(m => m.Enabled));
+                Add(under[g.Id].Any(m => m.Enabled && m.Conflicts > 0));
+            }
+            // everything an item shows (ModItem, PackLine): the column is kept from one state read
+            // to the next while it looks the same
             foreach (var m in shown.Where(m => m.Group == parent))
             {
-                Add(m.Id);
-                foreach (var p in PacksOf(m)) { Add(p.Id); Add(p.Id == selectedId); }      // a pack line shows itself chosen
+                Add(m.Id); Add(m.Name); Add(m.Enabled); Add(m.InProfile); Add(m.Icon); Add(m.Options.Count); Add(m.Chosen); Add(m.Choices);
+                Add(string.Join(",", m.Tags)); Add(m.Lua); Add(m.Conflicts); Add(m.Error);
+                foreach (var (text, tip, colour) in NotesOf(m)) { Add(text); Add(tip); Add(colour); }
+                foreach (var p in PacksOf(m))
+                {
+                    Add(p.Id); Add(p.Id == selectedId);      // a pack line shows itself chosen
+                    Add(p.Name); Add(p.Enabled); Add(p.InProfile); Add(p.Index); Add(NoRun(p)?.Text);
+                }
             }
             return sb.ToString();
         }
@@ -324,6 +352,8 @@ namespace QuickDeploy
 
         // the items of the column being drawn (GroupColumn), for its GroupDrop
         List<Shell> shells;
+        // what each group's column held when it was last drawn ("" the top), so an item new to it comes in
+        readonly Dictionary<string, HashSet<string>> colItems = new Dictionary<string, HashSet<string>>();
 
         Border GroupColumn(int index, string parent, List<ModRow> shown, Dictionary<string, List<ModRow>> under,
                                      Func<GroupRow, bool> visible, bool narrowed, string sig)
@@ -376,6 +406,10 @@ namespace QuickDeploy
                 add.Click += (s, e) => NewGroup(parent);
                 list.Children.Add(add);
             }
+            var key = parent ?? "";
+            if (colItems.TryGetValue(key, out var before) && !listSwap)
+                foreach (var sh in shells.Where(x => !before.Contains(x.Id))) Motion.In(sh.Item, 0, 6);
+            colItems[key] = new HashSet<string>(shells.Select(x => x.Id));
             shells = null;
             return col;
         }
@@ -618,7 +652,7 @@ namespace QuickDeploy
             var groups = mods.Select(x => x.Group).Distinct().ToList();
             // mods from several groups: none of them is ticked
             string current = groups.Count == 1 ? groups[0] : "several";
-            void Put(string g) => Run(new[] { "group-put" }.Concat(ids).Concat(g == null ? new[] { "--top" } : new[] { "--in", g }).ToArray());
+            void Put(string g) => PutInGroup(ids, g);
             void MakeAndPut(string parent) => AfterMenu(() =>
             {
                 var name = Dialog.AskText(this, Texts.Get("g_rename_ask"), Texts.Get("g_create"), Texts.Get("g_new_name"))?.Trim();
@@ -646,7 +680,7 @@ namespace QuickDeploy
             bool May(string into) => into != g.Id && !(into != null && PathTo(into).Any(x => x.Id == g.Id)) &&
                                      (into == null ? 0 : LevelOf(into)) + 1 + below(g.Id) <= Groups.Depth;
             menu.Items.Add(GroupPicker(Texts.Get("g_move_to"), g.Parent, May,
-                                       into => Run(into == null ? new[] { "group-move", g.Id, "--top" } : new[] { "group-move", g.Id, "--in", into }),
+                                       into => MoveGroup(g.Id, into),
                                        null, "g_put_here", true));
             var rename = new MenuItem { Header = Texts.Get("g_rename") };
             rename.Click += (s, e) => RenameGroup(g);
@@ -879,11 +913,10 @@ namespace QuickDeploy
 
         void DropInto(string kind, string id, string group)
         {
-            var where = group == null ? new[] { "--top" } : new[] { "--in", group };
-            if (kind == "group") { Run(new[] { "group-move", id }.Concat(where).ToArray()); return; }
+            if (kind == "group") { MoveGroup(id, group); return; }
             var m = st.Mods.FirstOrDefault(x => x.Id == id);
             var ids = m != null ? Taken(m).Select(x => x.Id) : new[] { id };
-            Run(new[] { "group-put" }.Concat(ids).Concat(where).ToArray());
+            PutInGroup(ids, group);
         }
 
         // ---------------------------------------------------------------- a test from outside

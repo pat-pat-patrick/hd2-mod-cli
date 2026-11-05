@@ -90,7 +90,9 @@ namespace QuickDeploy
             col.Children.Add(new Border { Height = 3, Background = B("Yellow") });
             body = new StackPanel { Margin = new Thickness(24, 20, 24, 20) };
             col.Children.Add(body);
+            Selectable.Group(body);
             w.Content = col;
+            w.Loaded += (s, e) => Motion.In(col, 0, 6);
             w.MouseLeftButtonDown += (s, e) => { if (e.ButtonState == MouseButtonState.Pressed) w.DragMove(); };
             w.KeyDown += (s, e) => { if (e.Key == Key.Escape) w.Close(); };
             Redraw(w);
@@ -133,8 +135,10 @@ namespace QuickDeploy
             col.Children.Add(new Border { Height = 3, Background = B("Yellow") });
             body = new StackPanel { Margin = new Thickness(24, 20, 24, 20) };
             col.Children.Add(body);
+            Selectable.Group(body);
             body.Children.Add(Selectable.Text(text, 15, "Ink", null, 22));      // a message can be copied
             w.Content = col;
+            w.Loaded += (s, e) => Motion.In(col, 0, 6);
             w.MouseLeftButtonDown += (s, e) => { if (e.ButtonState == MouseButtonState.Pressed) w.DragMove(); };
             Redraw(w);
             return w;
@@ -177,6 +181,7 @@ namespace QuickDeploy
             col.Children.Add(new Border { Height = 3, Background = B("Yellow") });      // the window's tape
             var body = new StackPanel { Margin = new Thickness(24, 20, 24, 20) };
             col.Children.Add(body);
+            Selectable.Group(body);
             body.Children.Add(Selectable.Text(text, 15, "Ink", null, 22));      // a message can be copied
             if (input != null) body.Children.Add(input);
             var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 24, 0, 0) };
@@ -192,6 +197,7 @@ namespace QuickDeploy
                 buttons.Children.Add(yes);
             }
             w.Content = col;
+            w.Loaded += (s, e) => Motion.In(col, 0, 6);
             // moved by any place that is not a button
             w.MouseLeftButtonDown += (s, e) => { if (e.ButtonState == MouseButtonState.Pressed) w.DragMove(); };
             w.Loaded += (s, e) => { if (input != null) input.Focus(); else no.Focus(); };

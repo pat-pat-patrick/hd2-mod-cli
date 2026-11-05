@@ -70,6 +70,8 @@ namespace QuickDeploy
             dock.Children.Add(body);
             frame = new Border { BorderBrush = Brush("Grid"), BorderThickness = new Thickness(1), Child = dock };
             Content = frame;
+            // what it shows comes in (Motion), as the window's dialogs do
+            Loaded += (s, e) => Motion.In(body, 0, 6);
 
             StateChanged += (s, e) => FitMax();
             KeyDown += (s, e) => { if (e.Key == Key.Escape) Close(); };

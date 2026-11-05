@@ -516,6 +516,8 @@
       <Setter Property="Foreground" Value="{StaticResource Ink}"/>
       <Setter Property="SelectionBrush" Value="{StaticResource Blue}"/>
       <Setter Property="SelectionOpacity" Value="0.45"/>
+      <!-- the pieces without the focus draw their part of a selection across pieces themselves
+           (Selectable.Marks): IsInactiveSelectionHighlightEnabled did not show it -->
       <Setter Property="TextWrapping" Value="Wrap"/>
       <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
       <Setter Property="Template">

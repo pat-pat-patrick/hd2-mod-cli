@@ -631,11 +631,17 @@ namespace Hd2Mod
             mod.Path = folder;
             mod.Source = Paths.Abs(a.Pos["path"]);
             mod.ArchiveMd5 = Fingerprints.OfArchive(a.Pos["path"]);
-            if (File.Exists(a.Pos["path"]))
+            var fresh = new Mod();
+            if (File.Exists(a.Pos["path"])) Origins.FromFile(fresh, a.Pos["path"]);
+            if (fresh.Nexus != null || fresh.GitHub != null || fresh.Page != null) { mod.Nexus = fresh.Nexus; mod.GitHub = fresh.GitHub; mod.Page = fresh.Page; }
+            else
             {
-                var fresh = new Mod();
-                Origins.FromFile(fresh, a.Pos["path"]);
-                if (fresh.Nexus != null || fresh.GitHub != null || fresh.Page != null) { mod.Nexus = fresh.Nexus; mod.GitHub = fresh.GitHub; mod.Page = fresh.Page; }
+                // files that do not say where they came from: the page stays, the old download's file
+                // and version go, for they are not what is installed now. Kept, they made every check
+                // call the newest version an update (the user, 2026-11-05); without them the check
+                // learns the file from the archive's MD5 (Fingerprints), or the version from the name
+                if (mod.Nexus != null) mod.Nexus = new NexusRef { Game = mod.Nexus.Game, Mod = mod.Nexus.Mod };
+                if (mod.GitHub != null) mod.GitHub = new GitHubRef { Owner = mod.GitHub.Owner, Repo = mod.GitHub.Repo };
             }
             if (!string.IsNullOrEmpty(a.Value("--name"))) mod.Name = a.Value("--name");
             else if (!string.IsNullOrEmpty(manifest?.Name))

@@ -94,8 +94,9 @@ namespace Hd2Mod
             bool busy = false;
             // when each Nexus mod was last updated there, asked once for the whole check
             Dictionary<long, long> recent = null;
+            var pageVersions = new Dictionary<long, string>();
             if (lib.Mods.Any(m => m.Nexus != null))
-                try { recent = UpdatedAt(lib.Mods.Where(m => m.Nexus != null).Select(m => m.Nexus)); }
+                try { recent = UpdatedAt(lib.Mods.Where(m => m.Nexus != null).Select(m => m.Nexus), pageVersions); }
                 catch (ModError e) { busy = e.Kind == "nexus_busy"; }
             foreach (var m in lib.Mods)
             {
@@ -107,14 +108,37 @@ namespace Hd2Mod
                 u = busy && m.Nexus != null
                     ? new UpdateInfo { ModId = m.Id, Name = m.Name, Channel = Origins.Of(m).Channel, Page = Origins.Of(m).Page, Status = "error", Why = "nexus_busy" }
                     : One(m, false);
-                Versions.Skipped(m, u);
+                Versions.Skipped(m, Installed(m, u));
                 busy |= u.Why == "nexus_busy";
                 out_.Add(u);
                 progress?.Invoke(++i, lib.Mods.Count);
             }
             SaveChecks();
             Keep(lib.Mods, out_, true);
+            if (PageVersions(lib, pageVersions, out_)) lib.Save();
             return out_;
+        }
+
+        /// <summary>The page's newest version kept with what the site says of the mod (Site.Version),
+        /// brought up to date by every check: it was written once, when the mod was matched with its
+        /// page, and stayed (the user, 2026-11-05: Boot Mod Loader's page said 0.13.4, the details
+        /// 0.7.0, the version on the page the day it was matched). Nexus Mods: the page's own
+        /// version, asked with the times the check asks for anyway; GitHub: the latest release's
+        /// tag. Whether a mod's changed.</summary>
+        static bool PageVersions(Library lib, Dictionary<long, string> nexus, List<UpdateInfo> results)
+        {
+            bool changed = false;
+            var by = results.Where(u => u.ModId != null).GroupBy(u => u.ModId).ToDictionary(g => g.Key, g => g.First());
+            foreach (var m in lib.Mods.Where(x => x.Site != null))
+            {
+                string now = null;
+                if (m.Nexus != null) nexus.TryGetValue(m.Nexus.Mod, out now);
+                else if (m.GitHub != null && by.TryGetValue(m.Id, out var u) && u.Channel == "GitHub" && u.Status != "error") now = u.Latest;
+                if (string.IsNullOrWhiteSpace(now) || string.Equals(now.Trim(), m.Site.Version, StringComparison.Ordinal)) continue;
+                m.Site.Version = now.Trim();
+                changed = true;
+            }
+            return changed;
         }
 
         /// <summary>Origins learnt before a check: the one HD2 Arsenal recorded, then what Nexus Mods
@@ -132,8 +156,30 @@ namespace Hd2Mod
         /// result too: "no_source", "no_check", or "error" with its reason in Why.</summary>
         public static UpdateInfo One(Mod m)
         {
-            var u = Versions.Skipped(m, One(m, true));
+            var u = Versions.Skipped(m, Installed(m, One(m, true)));
             Keep(new[] { m }, new List<UpdateInfo> { u }, false);
+            return u;
+        }
+
+        /// <summary>The installed files' own version over a record that no longer describes them.
+        /// A record is the file downloaded; files put in its place from elsewhere (a replace, a
+        /// drop of a zip without its download source) left the old file's record, and every check
+        /// then called the newest version an update (the user, 2026-11-05: "即使是最新版也会测成
+        /// 旧版", players said the same; Boot Mod Loader 0.13.4 installed, 0.7.0 recorded). When
+        /// the version the folder or the name says is not the record's, or there is no record of
+        /// the file, and it is the newest's version written the same way, the mod is current. A
+        /// record that does describe the files keeps its answer: a file re-uploaded under the
+        /// same version is still an update.</summary>
+        static UpdateInfo Installed(Mod m, UpdateInfo u)
+        {
+            if ((u.Status != "update" && u.Status != "unknown") || string.IsNullOrWhiteSpace(u.Latest)) return u;
+            var (mine, from) = Origins.VersionOf(m);
+            if (mine == null || from == "nexus" || from == "github") return u;
+            if (!string.Equals(mine.Trim().TrimStart('v', 'V'), u.Latest.Trim().TrimStart('v', 'V'), StringComparison.OrdinalIgnoreCase)) return u;
+            u.Status = "current";
+            u.Current = mine;
+            u.Latest = null; u.Download = null; u.LatestFile = 0; u.LatestTime = 0;
+            u.Changes = new List<Change>();
             return u;
         }
 
@@ -203,7 +249,7 @@ namespace Hd2Mod
                     Current = Json.Str(d, "current"), Latest = Json.Str(d, "latest"), Why = Json.Str(d, "why"), Download = Json.Str(d, "download"),
                     LatestFile = Json.Long(d, "latest_file"), LatestTime = Json.Long(d, "latest_time"),
                     Changes = Json.List(d, "changes").OfType<Dictionary<string, object>>()
-                        .Select(c => new Change { Version = Json.Str(c, "version"), Lines = Json.List(c, "lines").OfType<string>().ToList() }).ToList(),
+                        .Select(c => new Change { Version = Json.Str(c, "version"), Lines = Json.List(c, "lines").OfType<string>().Select(Words).Where(x => x.Length > 0).ToList() }).ToList(),
                 };
                 // a skip taken back, or a skip made, since the check
                 if (u.Status == "skipped") u.Status = "update";
@@ -237,7 +283,7 @@ namespace Hd2Mod
         // share its groupId; the files' categories say which are main and which are old.
 
         const string FilesQuery = "query Files($mod: ID!, $game: ID!) { modFiles(modId: $mod, gameId: $game) { fileId name version category date groupId changelogText } }";
-        const string UpdatedQuery = "query Updated($ids: [CompositeDomainWithIdInput!]!) { legacyModsByDomain(ids: $ids) { nodes { modId updatedAt } } }";
+        const string UpdatedQuery = "query Updated($ids: [CompositeDomainWithIdInput!]!) { legacyModsByDomain(ids: $ids, count: 50) { nodes { modId updatedAt version } } }";
         const string GameQuery = "query Game($domain: String) { game(domainName: $domain) { id } }";
 
         static readonly Dictionary<string, long> gameIds = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
@@ -263,8 +309,11 @@ namespace Hd2Mod
             return Json.List(d, "modFiles").OfType<Dictionary<string, object>>().ToList();
         }
 
-        /// <summary>When each mod was last updated on Nexus Mods (Unix seconds), fifty mods a request.</summary>
-        static Dictionary<long, long> UpdatedAt(IEnumerable<NexusRef> refs)
+        /// <summary>When each mod was last updated on Nexus Mods (Unix seconds), and the page's own
+        /// version, fifty mods a request. The answer is a page of 20 unless asked for more: without
+        /// count, a library of 36 Nexus mods got 16 of them back without a time, each then asked for
+        /// its files on every check, and Boot Mod Loader's page version never came (2026-11-05).</summary>
+        static Dictionary<long, long> UpdatedAt(IEnumerable<NexusRef> refs, Dictionary<long, string> versions = null)
         {
             var out_ = new Dictionary<long, long>();
             var all = refs.GroupBy(r => (r.Game, r.Mod)).Select(g => g.First()).ToList();
@@ -273,7 +322,10 @@ namespace Hd2Mod
                 var ids = all.Skip(at).Take(50).Select(r => (object)new Dictionary<string, object> { ["gameDomain"] = r.Game, ["modId"] = r.Mod }).ToList();
                 var d = Nexus.PostGraphQL(UpdatedQuery, new Dictionary<string, object> { ["ids"] = ids });
                 foreach (var n in Json.List(Json.Obj(d, "legacyModsByDomain"), "nodes").OfType<Dictionary<string, object>>())
+                {
                     out_[Json.Long(n, "modId")] = Unix(Json.Str(n, "updatedAt"));
+                    if (versions != null) versions[Json.Long(n, "modId")] = Json.Str(n, "version");
+                }
             }
             return out_;
         }
@@ -363,7 +415,7 @@ namespace Hd2Mod
             var out_ = new List<Change>();
             foreach (var f in shown.OrderByDescending(f => Json.Long(f, "date")))
             {
-                var lines = Json.List(f, "changelogText").OfType<string>().Select(x => x.Trim()).Where(x => x.Length > 0).ToList();
+                var lines = Json.List(f, "changelogText").OfType<string>().Select(Words).Where(x => x.Length > 0).ToList();
                 var version = Json.Str(f, "version") ?? Json.Str(f, "name") ?? "";
                 // one version uploaded twice (an old and an archived copy) says it once
                 if (lines.Count == 0 || out_.Any(c => c.Version == version && c.Lines.SequenceEqual(lines))) continue;
@@ -438,8 +490,19 @@ namespace Hd2Mod
                 Current = Json.Str(d, "current"), Latest = Json.Str(d, "latest"), Download = Json.Str(d, "download"),
                 LatestFile = Json.Long(d, "latest_file"), LatestTime = Json.Long(d, "latest_time"),
                 Changes = Json.List(d, "changes").OfType<Dictionary<string, object>>()
-                    .Select(c => new Change { Version = Json.Str(c, "version"), Lines = Json.List(c, "lines").OfType<string>().ToList() }).ToList(),
+                    .Select(c => new Change { Version = Json.Str(c, "version"), Lines = Json.List(c, "lines").OfType<string>().Select(Words).Where(x => x.Length > 0).ToList() }).ToList(),
             };
+        }
+
+        /// <summary>A changelog line as words: the page keeps it as HTML, so "&amp;" stood in the
+        /// window for "&" (HUDdle 0.7.1, the user, 2026-11-06). Line breaks become spaces, other
+        /// tags go, the characters' names become the characters.</summary>
+        internal static string Words(string line)
+        {
+            if (string.IsNullOrEmpty(line)) return "";
+            var x = System.Text.RegularExpressions.Regex.Replace(line, @"<br\s*/?>", " ", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            x = System.Text.RegularExpressions.Regex.Replace(x, @"</?[A-Za-z][^<>]*>", "");
+            return WebUtility.HtmlDecode(x).Trim();
         }
 
         static Dictionary<string, object> NewestMain(List<Dictionary<string, object>> files) =>
