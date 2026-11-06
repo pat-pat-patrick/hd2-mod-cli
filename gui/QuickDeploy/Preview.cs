@@ -17,6 +17,21 @@ namespace QuickDeploy
     public partial class MainWindow
     {
         Window preview;
+        // the Tag of the layer that holds a picture and its hover ring (PictureOpensPreview)
+        const string RingHost = "ringHost";
+
+        /// <summary>A picture's frame given what it shows: under its hover ring when it has one.</summary>
+        static void PictureSet(Border frame, UIElement shows)
+        {
+            if (frame.Child is Grid host && host.Tag as string == RingHost)
+            {
+                if (host.Children.Count > 1) host.Children.RemoveAt(0);
+                host.Children.Insert(0, shows);
+            }
+            else frame.Child = shows;
+        }
+        // the name of a mod's picture that opens the preview: a second quick press on it renames nothing
+        const string OpensPreview = "opensPreview";
         ScrollViewer previewScroll;
         string previewOf;
         // the options' cards drawn large, with their pictures at full size (Card)
@@ -32,6 +47,72 @@ namespace QuickDeploy
             if (st.Mods.All(m => m.Id != selectedId)) return;
             e.Handled = true;       // not the focused button's press
             if (preview != null) preview.Close(); else OpenPreview();
+        }
+
+        /// <summary>A mod's picture in the list opens its preview, as Space does, in the groups and
+        /// in the order alike (the user, 2026-11-06). The click chooses the mod first, as a click on
+        /// its line does; the preview opens once that has been drawn.</summary>
+        void PictureOpensPreview(FrameworkElement pic, ModRow m)
+        {
+            pic.Name = OpensPreview;
+            pic.Cursor = Cursors.Hand;
+            pic.ToolTip = Texts.Get("pv_pic_tip");
+            // under the pointer a blue ring fades in over its frame, so it is clear what a click
+            // there does (the user, 2026-11-06: "一点确定性都没有"). The ring lies over the grey line and
+            // one pixel inside it: nothing around it moves. Its own layer over the picture, which
+            // Later puts in under it once the cover is read (PictureSet)
+            if (pic is Border frame && frame.Width > 0)
+            {
+                var host = new Grid { Tag = RingHost };
+                var inner = frame.Child;
+                frame.Child = null;
+                if (inner != null) host.Children.Add(inner);
+                var ring = new Border
+                {
+                    BorderBrush = B("Blue"), BorderThickness = new Thickness(2), Margin = new Thickness(-1),
+                    Opacity = 0, IsHitTestVisible = false,
+                };
+                host.Children.Add(ring);
+                frame.Child = host;
+                frame.MouseEnter += (s, e) => Motion.FadeTo(ring, 1, 100);
+                frame.MouseLeave += (s, e) => Motion.FadeTo(ring, 0, 160);
+                // made under the pointer (drawn anew after a click on it): lit from its first frame
+                frame.Loaded += (s, e) => { if (frame.IsMouseOver) ring.Opacity = 1; };
+            }
+            // the press is taken here and the release at the window: in the order the line is a
+            // button, which takes the mouse when pressed, and the release never reached the picture
+            // (the user, 2026-11-06: a click on a picture in the order did nothing)
+            pic.PreviewMouseLeftButtonDown += (s, e) => { picDown = e.ClickCount == 1 ? (pic, m) : (null, null); };
+            if (!picUpHooked)
+            {
+                picUpHooked = true;
+                AddHandler(PreviewMouseLeftButtonUpEvent, new MouseButtonEventHandler((s, e) => PictureReleased()), true);
+            }
+        }
+
+        // the picture pressed last (PictureOpensPreview), until the release
+        (FrameworkElement Pic, ModRow Mod) picDown;
+        bool picUpHooked;
+        // where the pointer is over an element; a test sets its own, as its window is off the screen
+        // and the real pointer elsewhere
+        internal Func<FrameworkElement, Point> PointerOn = el => Mouse.GetPosition(el);
+
+        /// <summary>The left button let go anywhere: on the picture pressed, its mod's preview opens,
+        /// once the click has chosen the mod and been drawn (the order's line is a button, drawn anew
+        /// by the click, and focus leaving it made the window active again, which closes the
+        /// preview). Not after a drag, nor when the pointer left the picture first.</summary>
+        void PictureReleased()
+        {
+            var (pic, m) = picDown;
+            picDown = (null, null);
+            if (pic == null || gDragging || dragRow != null || !pic.IsVisible) return;
+            var at = PointerOn(pic);
+            if (at.X < 0 || at.Y < 0 || at.X >= pic.ActualWidth || at.Y >= pic.ActualHeight) return;
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (st == null || selectedId != m.Id || st.Mods.All(x => x.Id != m.Id)) return;
+                if (preview == null) OpenPreview(); else preview.Activate();
+            }), System.Windows.Threading.DispatcherPriority.Background);
         }
 
         void OpenPreview()

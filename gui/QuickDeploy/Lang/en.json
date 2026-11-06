@@ -658,6 +658,7 @@
   "view_groups": "Groups",
   "view_order": "Order",
   "pv_open": "Choose options",
+  "pv_pic_tip": "Show the cover and options (Space)",
   "lua_same_title": "Same script name as another mod",
   "lua_same_info": "These mods declare the same script name ({0}); only one of them runs.",
   "pick_wins_label": "Whose version of the resources they share comes first:",

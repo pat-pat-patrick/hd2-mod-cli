@@ -254,7 +254,9 @@ namespace QuickDeploy
                 }
                 else
                 {
-                    var made = GroupColumn(i, parents[i], shown, under, Visible, narrowed, sig);
+                    // the same group in the same place: filled again in place, its scroll as it is
+                    var same = i < had.Count && had[i].Tag is GroupDrop sd && sd.Group == parents[i] ? had[i] : null;
+                    var made = GroupColumn(i, parents[i], shown, under, Visible, narrowed, sig, same);
                     want.Add(made);
                     rowsBuilt++;
                     // a column just opened comes in from the right (the user, 2026-11-06)
@@ -352,15 +354,43 @@ namespace QuickDeploy
 
         // the items of the column being drawn (GroupColumn), for its GroupDrop
         List<Shell> shells;
+
+        // each column's items as last drawn, by what they show ("" the top): a column drawn again
+        // keeps the items that look the same and makes only the others. A switch drew its whole
+        // column again, every item made anew, and the one under the pointer lost its highlight for
+        // a frame (the user, 2026-11-06: "开关mod还会闪")
+        readonly Dictionary<string, Dictionary<string, (string Sig, UIElement Item, Shell Shell)>> colKept =
+            new Dictionary<string, Dictionary<string, (string, UIElement, Shell)>>();
+
+        /// <summary>What a mod's item shows (ModItem), apart from being chosen: the same, the item is kept.</summary>
+        string ItemSig(ModRow m)
+        {
+            var sb = new System.Text.StringBuilder();
+            void Add(object x) => sb.Append(x).Append('\u001f');
+            Add(m.Id); Add(m.Name); Add(m.Enabled); Add(m.InProfile); Add(st.ProfilesOn); Add(m.Icon); Add(m.Options.Count); Add(m.Chosen); Add(m.Choices);
+            Add(string.Join(",", m.Tags)); Add(m.Lua); Add(m.Conflicts); Add(m.Error); Add(m.Group); Add(LevelOf(m.Group));
+            foreach (var (text, tip, colour) in NotesOf(m)) { Add(text); Add(tip); Add(colour); }
+            return sb.ToString();
+        }
         // what each group's column held when it was last drawn ("" the top), so an item new to it comes in
         readonly Dictionary<string, HashSet<string>> colItems = new Dictionary<string, HashSet<string>>();
 
+        /// <summary>A column of the group view. reuse: the column that shows this group in this place
+        /// now, filled again in place: a column made anew starts scrolled to its top, and showed its
+        /// first items for a frame before its scroll came back (the user, 2026-11-06: a switch flashed
+        /// the top of a long group's list).</summary>
         Border GroupColumn(int index, string parent, List<ModRow> shown, Dictionary<string, List<ModRow>> under,
-                                     Func<GroupRow, bool> visible, bool narrowed, string sig)
+                                     Func<GroupRow, bool> visible, bool narrowed, string sig, Border reuse = null)
         {
             bool active = index == groupCol;
-            var list = new StackPanel { Margin = new Thickness(0, 6, 0, 12) };
             shells = new List<Shell>();
+            if (reuse != null && reuse.Tag is GroupDrop was && reuse.Child is ScrollViewer wsv && wsv.Content is StackPanel wlist)
+            {
+                wlist.Children.Clear();
+                reuse.Tag = new GroupDrop { Group = parent, St = st, Sig = sig, Items = shells };
+                return FillColumn(reuse, wlist, index, parent, shown, under, visible, narrowed, active);
+            }
+            var list = new StackPanel { Margin = new Thickness(0, 6, 0, 12) };
             var col = new Border
             {
                 // every column one width, the room after them empty, as Finder: the last one
@@ -383,7 +413,13 @@ namespace QuickDeploy
                 RenderDetail();
             };
             col.ContextMenu = ColumnMenu(parent);
+            return FillColumn(col, list, index, parent, shown, under, visible, narrowed, active);
+        }
 
+        /// <summary>A column's items, into its list (empty): its groups, its mods, the new-group line.</summary>
+        Border FillColumn(Border col, StackPanel list, int index, string parent, List<ModRow> shown, Dictionary<string, List<ModRow>> under,
+                          Func<GroupRow, bool> visible, bool narrowed, bool active)
+        {
             var groups = st.Groups.Where(g => g.Parent == parent && visible(g)).ToList();
             var mods = shown.Where(m => m.Group == parent).ToList();
             if (groups.Count == 0 && mods.Count == 0)
@@ -392,13 +428,41 @@ namespace QuickDeploy
                     Text = Texts.Get(narrowed ? "g_none" : "g_empty"), FontSize = 13, Foreground = B("Muted"),
                     Margin = new Thickness(14, 8, 14, 8), TextWrapping = TextWrapping.Wrap,
                 });
-            foreach (var g in groups) list.Children.Add(FolderItem(g, index, active, under[g.Id]));
+            var keptHere = colKept.TryGetValue(parent ?? "", out var had) ? had : new Dictionary<string, (string, UIElement, Shell)>();
+            var keep = new Dictionary<string, (string, UIElement, Shell)>();
+            // an item as it was when it shows the same, else made anew
+            UIElement Item(string key, string sig, bool chosen, Func<UIElement> make)
+            {
+                if (keptHere.TryGetValue(key, out var k) && k.Item1 == sig)
+                {
+                    (VisualTreeHelper.GetParent(k.Item2) as Panel)?.Children.Remove(k.Item2);
+                    if (k.Item3 != null) { shells.Add(k.Item3); ShowChosen(k.Item3, chosen, active); }
+                    keep[key] = k;
+                    return k.Item2;
+                }
+                int before = shells.Count;
+                if (keptHere.Count > 0) drawLog?.Add("   item made anew: " + key.Substring(0, 1) + " " + (st.Mods.FirstOrDefault(x => x.Id == key.Substring(1))?.Name ?? key));
+                var made = make();
+                keep[key] = (sig, made, shells.Count > before ? shells[shells.Count - 1] : null);
+                return made;
+            }
+            foreach (var g in groups)
+            {
+                var mods2 = under[g.Id];
+                var gsig = string.Join("\u001f", g.Id, g.Name, mods2.Count, mods2.Count(m => m.Enabled), mods2.Any(m => m.Enabled && m.Conflicts > 0), index, ColourOf(g.Id));
+                list.Children.Add(Item("g" + g.Id, gsig, index < groupPath.Count && groupPath[index] == g.Id, () => FolderItem(g, index, active, mods2)));
+            }
             foreach (var m in mods)
             {
-                list.Children.Add(ModItem(m, index, active));
+                list.Children.Add(Item("m" + m.Id, ItemSig(m) + index, (m.Id == selectedId || picked.Contains(m.Id)) && index == groupPath.Count, () => ModItem(m, index, active)));
                 // its translation packs under it, as in the load order (PackLine)
-                foreach (var p in PacksOf(m)) list.Children.Add(PackLine(p, true));
+                foreach (var p in PacksOf(m))
+                {
+                    var psig = string.Join("\u001f", p.Id, p.Name, p.Enabled, p.InProfile, p.Index, p.Id == selectedId, NoRun(p)?.Text);
+                    list.Children.Add(Item("p" + p.Id, psig, false, () => PackLine(p, true)));
+                }
             }
+            colKept[parent ?? ""] = keep;
             if (parent == null || LevelOf(parent) < Groups.Depth)
             {
                 var add = new Button { Template = Plain(), Cursor = Cursors.Hand, FocusVisualStyle = null, HorizontalContentAlignment = HorizontalAlignment.Left };
@@ -427,6 +491,14 @@ namespace QuickDeploy
             shells?.Add(sh);
             item.MouseEnter += (s, e) => { if (!sh.Chosen) item.Background = B("Band"); };
             item.MouseLeave += (s, e) => { if (!sh.Chosen) item.Background = Brushes.Transparent; };
+            // made under the pointer (drawn anew after a click in it): lit from its first frame, not
+            // once the pointer moves
+            item.Loaded += (s, e) =>
+            {
+                if (sh.Chosen) return;
+                var at = Mouse.GetPosition(item);
+                if (at.X >= 0 && at.Y >= 0 && at.X < item.ActualWidth && at.Y < item.ActualHeight) item.Background = B("Band");
+            };
             return item;
         }
 
@@ -503,6 +575,17 @@ namespace QuickDeploy
             Child = new TextBlock { Text = Texts.Get("g_clash"), FontSize = 10, FontWeight = FontWeights.Bold, Foreground = B("Yellow") },
         };
 
+        /// <summary>Whether a press at from is on something of its own inside item: a button (a
+        /// switch, a tick) or the mod's picture (PictureOpensPreview). Two quick presses there are
+        /// its own, not a rename.</summary>
+        static bool OnButton(DependencyObject from, DependencyObject item)
+        {
+            for (var d = from; d != null && d != item;
+                 d = d is Visual || d is System.Windows.Media.Media3D.Visual3D ? VisualTreeHelper.GetParent(d) : LogicalTreeHelper.GetParent(d))
+                if (d is System.Windows.Controls.Primitives.ButtonBase || d is FrameworkElement f && f.Name == OpensPreview) return true;
+            return false;
+        }
+
         Border ModItem(ModRow m, int index, bool active)
         {
             bool chosen = (m.Id == selectedId || picked.Contains(m.Id)) && index == groupPath.Count;
@@ -519,6 +602,7 @@ namespace QuickDeploy
             DockPanel.SetDock(sw, Dock.Left);
             line.Children.Add(sw);
             var pic = Picture(m.Icon, GlyphMod, 40, m.Enabled ? "Blue" : "Muted", 24);
+            PictureOpensPreview(pic, m);
             pic.Opacity = m.Enabled ? 1 : 0.55;
             DockPanel.SetDock(pic, Dock.Left);
             line.Children.Add(pic);
@@ -559,6 +643,10 @@ namespace QuickDeploy
             };
             item.PreviewMouseLeftButtonDown += (s, e) =>
             {
+                // presses on its switch are the switch's: two quick ones switch it twice, and
+                // neither renames nor drags (the user, 2026-11-06: quick clicks on the switch
+                // opened the rename window); the picture's open the preview
+                if (OnButton(e.OriginalSource as DependencyObject, item)) return;
                 if (e.ClickCount == 2) { e.Handled = true; RenameMod(m); return; }
                 gDragFrom = ("mod", m.Id, m.Name, e.GetPosition(GroupScroll));
             };

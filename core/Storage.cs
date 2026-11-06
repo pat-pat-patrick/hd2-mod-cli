@@ -71,7 +71,7 @@ namespace Hd2Mod
         public static FolderFinds Look(string folder, Library lib)
         {
             var root = Paths.Abs(folder).TrimEnd('\\');
-            string Key(string p) => Paths.Abs(p ?? "").TrimEnd('\\');
+            string Key(string p) => Paths.AbsOrEmpty(p).TrimEnd('\\');
             bool Inside(string p)
             {
                 var x = Key(p);
@@ -149,7 +149,7 @@ namespace Hd2Mod
         public static List<Mod> AddLoose(Library lib, IEnumerable<string> folders)
         {
             var added = new List<Mod>();
-            var paths = new HashSet<string>(lib.Mods.Select(m => Paths.Abs(m.Path ?? "").TrimEnd('\\')), StringComparer.OrdinalIgnoreCase);
+            var paths = new HashSet<string>(lib.Mods.Select(m => Paths.AbsOrEmpty(m.Path).TrimEnd('\\')), StringComparer.OrdinalIgnoreCase);
             foreach (var f in folders)
             {
                 if (!paths.Add(Paths.Abs(f).TrimEnd('\\'))) continue;
@@ -174,7 +174,8 @@ namespace Hd2Mod
             int followed = 0, missing = 0;
             foreach (var m in lib.Mods)
             {
-                var p = Paths.Abs(m.Path ?? "").TrimEnd('\\');
+                var p = Paths.AbsOrEmpty(m.Path).TrimEnd('\\');
+                if (p.Length == 0) continue;
                 if (!string.Equals(p, a, StringComparison.OrdinalIgnoreCase) && !p.StartsWith(a + "\\", StringComparison.OrdinalIgnoreCase)) continue;
                 var q = b + p.Substring(a.Length);
                 if (Directory.Exists(q)) { m.Path = q; followed++; }
@@ -183,7 +184,8 @@ namespace Hd2Mod
             // the versions kept for a rollback follow too, without being counted as mods
             foreach (var m in lib.Mods.Where(m => m.Previous != null))
             {
-                var p = Paths.Abs(m.Previous.Path ?? "").TrimEnd('\\');
+                var p = Paths.AbsOrEmpty(m.Previous.Path).TrimEnd('\\');
+                if (p.Length == 0) continue;
                 if (!p.StartsWith(a + "\\", StringComparison.OrdinalIgnoreCase)) continue;
                 var q = b + p.Substring(a.Length);
                 if (Directory.Exists(q)) m.Previous.Path = q;
@@ -192,7 +194,7 @@ namespace Hd2Mod
             var list = Json.List(cfg, "library_folders").OfType<string>()
                            .Select(x => string.Equals(Paths.Abs(x).TrimEnd('\\'), a, StringComparison.OrdinalIgnoreCase) ? b : x).ToList();
             if (!list.Contains(b, StringComparer.OrdinalIgnoreCase)) list.Add(b);
-            if (string.Equals(Paths.Abs(Json.Str(cfg, "mods_dir") ?? "").TrimEnd('\\'), a, StringComparison.OrdinalIgnoreCase)) cfg["mods_dir"] = b;
+            if (string.Equals(Paths.AbsOrEmpty(Json.Str(cfg, "mods_dir")).TrimEnd('\\'), a, StringComparison.OrdinalIgnoreCase)) cfg["mods_dir"] = b;
             SaveRegistered(cfg, list);
             return (followed, missing);
         }

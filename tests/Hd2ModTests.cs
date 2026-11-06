@@ -2686,6 +2686,36 @@ namespace Hd2Mod.Tests
             Assert.Throws<ModError>(() => Storage.ChangeFolder(Library.Load(), now, Path.Combine(Root, "Nowhere")));
         }
 
+        /// <summary>A library folder's path changed by a player who never chose a default mod folder
+        /// (a player, 2026-11-06: "路径的形式不合法", whatever the path): the empty setting was read as a
+        /// path and Windows refused it. Must live: the mods follow, the default stays unset. Must die:
+        /// before, the command stopped on that error. A mod with no path in the library is skipped.</summary>
+        [Fact]
+        public void A_library_folder_path_changes_with_no_default_folder_chosen()
+        {
+            var old = Path.Combine(Root, "Old Place");
+            foreach (var n in new[] { "One", "Two" })
+            {
+                Directory.CreateDirectory(Path.Combine(old, n));
+                File.WriteAllText(Path.Combine(old, n, A + ".patch_0"), n);
+                Cli("add", Path.Combine(old, n));
+            }
+            Cli("folder-add", old);
+            var cfg = Store.Config();                                              // never chosen: the
+            cfg.Remove("mods_dir");                                                // fixture sets one
+            Store.Save("config.json", cfg);
+            Assert.Null(Json.Str(Store.Config(), "mods_dir"));
+            var lib = Library.Load();
+            lib.Mods.Single(m => m.Name == "Two").Path = null;                     // no path at all
+            lib.Save();
+            var now = Path.Combine(Root, "New Place");
+            Directory.Move(old, now);
+            Assert.Contains("1 mods now in " + now, Cli("folder-path", old, now));
+            Assert.Equal(Path.Combine(now, "One"), Library.Load().Mods.Single(m => m.Name == "One").Path);
+            Assert.Contains(now, Storage.Registered());
+            Assert.Null(Json.Str(Store.Config(), "mods_dir"));                    // still not chosen
+        }
+
         [Fact]
         public void ImportsMergeWithoutDuplicates()
         {

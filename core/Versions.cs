@@ -34,7 +34,7 @@ namespace Hd2Mod
         public static bool Keep(Library lib, Dictionary<string, object> cfg, Mod mod, string now)
         {
             if (!KeepOn(cfg) || string.IsNullOrEmpty(mod.Path) || !Directory.Exists(mod.Path)) return false;
-            if (string.Equals(Paths.Abs(mod.Path), Paths.Abs(now ?? ""), StringComparison.OrdinalIgnoreCase)) return false;
+            if (string.Equals(Paths.Abs(mod.Path), Paths.AbsOrEmpty(now), StringComparison.OrdinalIgnoreCase)) return false;
             if (!StateDoc.HasLua(new DirectoryInfo(mod.Path)).Lua) return false;
             var folder = mod.Path;
             // a folder of the player's own, outside the library folder, may be changed or deleted by
@@ -48,7 +48,7 @@ namespace Hd2Mod
             };
             // the one kept before goes, unless it is the very version coming (a rollback, then the
             // same update again: the same archive unpacks into the same folder)
-            if (older != null && !string.Equals(Paths.Abs(older.Path ?? ""), Paths.Abs(now ?? ""), StringComparison.OrdinalIgnoreCase))
+            if (older != null && !string.Equals(Paths.AbsOrEmpty(older.Path), Paths.AbsOrEmpty(now), StringComparison.OrdinalIgnoreCase))
                 Drop(lib, cfg, older.Path);
             return true;
         }

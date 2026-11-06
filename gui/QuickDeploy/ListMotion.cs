@@ -66,7 +66,8 @@ namespace QuickDeploy
                     if (col.Tag is GroupDrop d && d.Items != null)
                         found.AddRange(d.Items.Where(sh => !sh.IsGroup && sh.Id == id).Select(sh => sh.Item));
             }
-            else if (rows.TryGetValue(id, out var r)) found.Add(r.Row);
+            // a row is kept while another filter hides its mod: only one in the list is showing
+            else if (rows.TryGetValue(id, out var r) && r.Row.Parent == List) found.Add(r.Row);
             // a row drawn a moment ago is not laid out yet (a switch's row, drawn anew after its click)
             return laidOut ? found.Where(b => b.IsVisible).ToList() : found;
         }

@@ -537,6 +537,467 @@ namespace QuickDeploy
                 t17.Start();
                 return;
             }
+            if (Environment.GetEnvironmentVariable("HD2QD_CLICK_TEST") == "flicker")
+            {
+                // "flicker": each thing done to the list, the way a click does it, then every frame for
+                // 3 s pictured by the window itself: the list and the details hashed, and each new look
+                // saved. A look that comes after the first change has settled, or comes back, is the
+                // list flickering (the user, 2026-11-06: "开关mod还会闪"). The draws of the state, the
+                // list and the details are logged with what they made anew. Into the folder
+                // HD2QD_WHEEL_OUT names
+                var dir = Environment.GetEnvironmentVariable("HD2QD_WHEEL_OUT");
+                var log = new List<string>();
+                drawLog = log;
+                ModRow First(Func<ModRow, bool> where) => (groupView ? GroupShown().Where(x => x.Group == groupPath.LastOrDefault()) : Seen()).FirstOrDefault(where);
+                var steps = new List<(string Name, Action Do)>
+                {
+                    ("order_read", () => { if (groupView) View_Click(ViewOrder, null); Refresh(); }),
+                    ("order_toggle", () => { var m = First(x => !x.Loader); Change(m.Id, c => c.Enabled = !c.Enabled, m.Enabled ? "disable" : "enable", m.Id); }),
+                    ("order_toggle_back", () => { var m = First(x => !x.Loader); Change(m.Id, c => c.Enabled = !c.Enabled, m.Enabled ? "disable" : "enable", m.Id); }),
+                    ("order_select", () => Take(Seen().Skip(2).First())),
+                    ("order_option", () =>
+                    {
+                        var m = st.Mods.FirstOrDefault(x => x.Options.Count > 0 && x.Options[0].Subs.Count == 0);
+                        if (m == null) { log.Add("no mod with a plain option"); return; }
+                        var o = m.Options[0];
+                        bool on = !o.Enabled;
+                        Change(m.Id, c => c.Options[0].Enabled = on, "set", m.Id, "1", on ? "on" : "off");
+                    }),
+                    ("order_move", () => { var m = Seen().Skip(1).First(); Run("move", m.Id, "--bottom"); }),
+                    ("group_view", () => View_Click(ViewGroups, null)),
+                    ("group_open", () => { var g = st.Groups.First(x => x.Parent == null && st.Mods.Any(m => m.Group == x.Id)); groupPath.Clear(); groupPath.Add(g.Id); selectedId = null; groupCol = 0; RenderGroups(); RenderDetail(); }),
+                    ("group_select", () => { var m = First(x => true); groupCol = groupPath.Count; Take(m); RenderGroups(); }),
+                    ("group_toggle", () => { var m = First(x => !x.Loader); Change(m.Id, c => c.Enabled = !c.Enabled, m.Enabled ? "disable" : "enable", m.Id); }),
+                    ("group_toggle_back", () => { var m = First(x => !x.Loader); Change(m.Id, c => c.Enabled = !c.Enabled, m.Enabled ? "disable" : "enable", m.Id); }),
+                    ("group_read", () => Refresh()),
+                    ("scrolled_open", () =>
+                    {
+                        var g = st.Groups.OrderByDescending(x => st.Mods.Count(m => m.Group == x.Id)).First();
+                        groupPath.Clear(); groupPath.Add(g.Id); selectedId = null; groupCol = 0; RenderGroups(); RenderDetail();
+                    }),
+                    ("scrolled_end", () =>
+                    {
+                        var sv = GroupCols.Children.OfType<Border>().Last().Child as ScrollViewer;
+                        sv?.ScrollToEnd();
+                        log.Add("   column: offset after scroll asked, extent " + sv?.ExtentHeight + ", view " + sv?.ViewportHeight);
+                    }),
+                    ("scrolled_toggle", () =>
+                    {
+                        var sv = GroupCols.Children.OfType<Border>().Last().Child as ScrollViewer;
+                        log.Add("   column offset before " + sv?.VerticalOffset);
+                        var m = GroupShown().Where(x => x.Group == groupPath.LastOrDefault() && !x.Loader).Last();
+                        Change(m.Id, c => c.Enabled = !c.Enabled, m.Enabled ? "disable" : "enable", m.Id);
+                        var after = GroupCols.Children.OfType<Border>().Last().Child as ScrollViewer;
+                        log.Add("   same scroll box: " + ReferenceEquals(sv, after) + ", offset now " + after?.VerticalOffset);
+                    }),
+                    ("scrolled_toggle_back", () =>
+                    {
+                        var m = GroupShown().Where(x => x.Group == groupPath.LastOrDefault() && !x.Loader).Last();
+                        Change(m.Id, c => c.Enabled = !c.Enabled, m.Enabled ? "disable" : "enable", m.Id);
+                    }),
+                };
+                int at = 0;
+                string Hash(FrameworkElement e, string save)
+                {
+                    if (e == null || e.ActualWidth < 1 || e.ActualHeight < 1) return "-";
+                    var bmp = new RenderTargetBitmap((int)e.ActualWidth, (int)e.ActualHeight, 96, 96, PixelFormats.Pbgra32);
+                    bmp.Render(e);
+                    var px = new byte[(int)e.ActualWidth * (int)e.ActualHeight * 4];
+                    bmp.CopyPixels(px, (int)e.ActualWidth * 4, 0);
+                    ulong h = 1469598103934665603;
+                    for (int i = 0; i < px.Length; i += 4) { h ^= (ulong)(px[i] | px[i + 1] << 8 | px[i + 2] << 16); h *= 1099511628211; }
+                    var key = h.ToString("x16").Substring(0, 8);
+                    if (save != null && !System.IO.File.Exists(System.IO.Path.Combine(dir, save + "_" + key + ".png")))
+                    {
+                        var enc = new PngBitmapEncoder();
+                        enc.Frames.Add(BitmapFrame.Create(bmp));
+                        using (var f = System.IO.File.Create(System.IO.Path.Combine(dir, save + "_" + key + ".png"))) enc.Save(f);
+                    }
+                    return key;
+                }
+                var t26 = new DispatcherTimer { Interval = TimeSpan.FromSeconds(8) };
+                t26.Tick += (s, e) =>
+                {
+                    t26.Interval = TimeSpan.FromMilliseconds(3600);
+                    if (dir == null || st == null) return;
+                    if (at >= steps.Count)
+                    {
+                        t26.Stop();
+                        drawLog = null;
+                        System.IO.File.WriteAllText(System.IO.Path.Combine(dir, "log.txt"), string.Join("\r\n", log) + "\r\n");
+                        return;
+                    }
+                    var (name, act) = steps[at++];
+                    var clock = System.Diagnostics.Stopwatch.StartNew();
+                    string lastList = Hash(ListArea, null), lastDetail = Hash(DetailScroll, null);
+                    log.Add("== " + name + "   list " + lastList + "  details " + lastDetail);
+                    drawClock.Restart();
+                    try { act(); }
+                    catch (Exception x) { log.Add("   " + x.GetType().Name + " " + x.Message); }
+                    EventHandler frame = null;
+                    frame = (s2, e2) =>
+                    {
+                        if (clock.ElapsedMilliseconds > 3000) { CompositionTarget.Rendering -= frame; return; }
+                        var l = Hash(ListArea, name + "_list");
+                        var d = Hash(DetailScroll, name + "_details");
+                        if (l != lastList || d != lastDetail)
+                            log.Add(string.Format("   {0,5} ms  list {1}{2}  details {3}{4}", clock.ElapsedMilliseconds, l, l != lastList ? "*" : " ", d, d != lastDetail ? "*" : " "));
+                        lastList = l; lastDetail = d;
+                    };
+                    CompositionTarget.Rendering += frame;
+                };
+                t26.Start();
+                return;
+            }
+            if (Environment.GetEnvironmentVariable("HD2QD_CLICK_TEST") == "quickpress")
+            {
+                // "quickpress": presses on a mod's line in the group view and in the order, as the
+                // mouse sends them: a second quick press (ClickCount 2) on its switch, its picture and
+                // its name, and a click on its picture. Only the name renames; the picture's click
+                // opens the preview (the user, 2026-11-06: quick clicks on the switch renamed; the
+                // picture should open the preview). Each window opened is listed and closed. To
+                // HD2QD_WHEEL_OUT
+                var path = Environment.GetEnvironmentVariable("HD2QD_WHEEL_OUT");
+                var lines = new List<string>();
+                async System.Threading.Tasks.Task Press(string what, FrameworkElement at, int clicks, bool release, Action between = null)
+                {
+                    var opened = new List<string>();
+                    var close = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(600) };
+                    close.Tick += (s2, e2) =>
+                    {
+                        close.Stop();
+                        foreach (Window w in Application.Current.Windows)
+                            if (w != this && w.IsVisible) { opened.Add(w == preview ? "preview" : "another window"); w.Close(); }
+                    };
+                    close.Start();
+                    var down = new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left) { RoutedEvent = Mouse.PreviewMouseDownEvent };
+                    typeof(MouseButtonEventArgs).GetProperty("ClickCount").GetSetMethod(true).Invoke(down, new object[] { clicks });
+                    at.RaiseEvent(down);
+                    if (!down.Handled)
+                    {
+                        var down2 = new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left) { RoutedEvent = Mouse.MouseDownEvent };
+                        typeof(MouseButtonEventArgs).GetProperty("ClickCount").GetSetMethod(true).Invoke(down2, new object[] { clicks });
+                        at.RaiseEvent(down2);
+                    }
+                    between?.Invoke();
+                    if (release)
+                    {
+                        // the release goes where the mouse sends it: to the element holding the mouse
+                        // when one does (the order's line, a button), else to the one under the pointer
+                        var to = Mouse.Captured as UIElement ?? at;
+                        if (to != at) lines.Add("   released on " + to.GetType().Name + ", which holds the mouse");
+                        to.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left) { RoutedEvent = Mouse.PreviewMouseUpEvent });
+                        to.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left) { RoutedEvent = Mouse.MouseUpEvent });
+                        if (Mouse.Captured != null) Mouse.Capture(null);
+                    }
+                    await System.Threading.Tasks.Task.Delay(1000);
+                    lines.Add(string.Format("{0,-34} windows opened: {1}", what, opened.Count == 0 ? "none" : string.Join(",", opened)));
+                }
+                // the pointer over the middle of what is pressed: the window is off the screen
+                PointerOn = el => new Point(el.ActualWidth / 2, el.ActualHeight / 2);
+                var t27 = new DispatcherTimer { Interval = TimeSpan.FromSeconds(8) };
+                t27.Tick += async (s, e) =>
+                {
+                    t27.Stop();
+                    if (st == null) { System.IO.File.WriteAllText(path, "no state"); return; }
+                    try
+                    {
+                        View_Click(ViewGroups, null);
+                        var g = st.Groups.OrderByDescending(x => st.Mods.Count(m => m.Group == x.Id)).First();
+                        groupPath.Clear(); groupPath.Add(g.Id); selectedId = null; groupCol = 0; RenderGroups(); RenderDetail();
+                        await System.Threading.Tasks.Task.Delay(500);
+                        FrameworkElement Col() => GroupCols.Children.OfType<Border>().Last();
+                        CheckBox Sw() => Motion.Under<CheckBox>(Col()).First(c => c.Style == FindResource("Switch"));
+                        bool was = Sw().IsChecked == true;
+                        await Press("groups: switch, second press", (Sw().Template?.FindName("knob", Sw()) as FrameworkElement) ?? Sw(), 2, false);
+                        await Press("groups: picture, second press", Motion.Under<FrameworkElement>(Col()).First(f => f.Name == OpensPreview), 2, false);
+                        await Press("groups: name, second press", Motion.Under<TextBlock>((DependencyObject)Sw().Parent).First(t => t.FontWeight == FontWeights.SemiBold), 2, false);
+                        selectedId = null; RenderGroups(); RenderDetail();
+                        await Press("groups: picture, click", Motion.Under<FrameworkElement>(Col()).First(f => f.Name == OpensPreview), 1, true);
+                        lines.Add("   chosen after the click: " + (st.Mods.FirstOrDefault(x => x.Id == selectedId)?.Name ?? "none") + "; switch unchanged " + (Sw().IsChecked == was));
+
+                        View_Click(ViewOrder, null);
+                        selectedId = null; RenderList(); RenderDetail();
+                        await System.Threading.Tasks.Task.Delay(500);
+                        FrameworkElement Pic() => Motion.Under<FrameworkElement>(ListArea).First(f => f.Name == OpensPreview);
+                        await Press("order: picture, second press", Pic(), 2, false);
+                        var pick = Motion.Under<Button>(ListArea).First(x => Motion.Under<FrameworkElement>(x).Contains(Pic()));
+                        var name = Motion.Under<TextBlock>(pick).First(t => !string.IsNullOrWhiteSpace(t.Text) && !Motion.Under<TextBlock>(Pic()).Contains(t));
+                        await Press("order: name, second press", name, 2, false);
+                        selectedId = null; RenderList(); RenderDetail();
+                        await System.Threading.Tasks.Task.Delay(300);
+                        // a raised press leaves the real button up, so the line's button neither takes the
+                        // mouse nor counts as pressed (ButtonBase reads Mouse.LeftButton): both done here,
+                        // as a real press does
+                        var row = Motion.Under<Button>(ListArea).First(x => Motion.Under<FrameworkElement>(x).Contains(Pic()));
+                        void HoldLikeAPress()
+                        {
+                            row.CaptureMouse();
+                            typeof(System.Windows.Controls.Primitives.ButtonBase).GetMethod("SetIsPressed", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).Invoke(row, new object[] { true });
+                            lines.Add("   the line holds the mouse: " + row.IsMouseCaptured);
+                        }
+                        await Press("order: picture, click", Pic(), 1, true, HoldLikeAPress);
+                        lines.Add("   chosen after the click: " + (st.Mods.FirstOrDefault(x => x.Id == selectedId)?.Name ?? "none"));
+                        // let go after the pointer left the picture: no preview
+                        selectedId = null; RenderList(); RenderDetail();
+                        await System.Threading.Tasks.Task.Delay(300);
+                        row = Motion.Under<Button>(ListArea).First(x => Motion.Under<FrameworkElement>(x).Contains(Pic()));
+                        PointerOn = el => new Point(-5, -5);
+                        await Press("order: picture, let go off it", Pic(), 1, true, HoldLikeAPress);
+                        PointerOn = el => new Point(el.ActualWidth / 2, el.ActualHeight / 2);
+                        // the filters show the order too: the updates, the ones on, the ones off
+                        foreach (var key in new[] { "on", "off" })
+                        {
+                            filter = key; selectedId = null; RenderNav(); RenderList(); RenderDetail();
+                            await System.Threading.Tasks.Task.Delay(400);
+                            if (!Motion.Under<FrameworkElement>(ListArea).Any(f => f.Name == OpensPreview && f.IsVisible)) { lines.Add("filter " + key + ": no mods"); continue; }
+                            row = Motion.Under<Button>(ListArea).First(x => Motion.Under<FrameworkElement>(x).Contains(Pic()));
+                            await Press("order, filter " + key + ": picture, click", Pic(), 1, true, HoldLikeAPress);
+                        }
+                        filter = "all";
+
+                        // the conflicts: a mod's line there takes it to the details; its picture opens the preview
+                        filter = "conflict"; selectedId = null; RenderNav(); RenderList(); RenderDetail();
+                        await System.Threading.Tasks.Task.Delay(500);
+                        var cpics = Motion.Under<FrameworkElement>(ListArea).Where(f => f.Name == OpensPreview && f.IsVisible).ToList();
+                        lines.Add("conflicts: " + cpics.Count + " pictures");
+                        if (cpics.Count > 1)
+                        {
+                            await Press("conflicts: picture, second press", cpics[1], 2, false);
+                            selectedId = null; RenderList(); RenderDetail();
+                            await System.Threading.Tasks.Task.Delay(300);
+                            cpics = Motion.Under<FrameworkElement>(ListArea).Where(f => f.Name == OpensPreview && f.IsVisible).ToList();
+                            await Press("conflicts: picture, click", cpics[1], 1, true);
+                            lines.Add("   chosen after the click: " + (st.Mods.FirstOrDefault(x => x.Id == selectedId)?.Name ?? "none"));
+                        }
+                    }
+                    catch (Exception x) { lines.Add(x.GetType().Name + " " + x.Message + " " + x.StackTrace); }
+                    System.IO.File.WriteAllText(path, string.Join("\r\n", lines) + "\r\n");
+                };
+                t27.Start();
+                return;
+            }
+            if (Environment.GetEnvironmentVariable("HD2QD_CLICK_TEST") == "viewtimes")
+            {
+                // "viewtimes": the list's two views swapped as their switch does, from the view the
+                // window opened in, six times: each timed from the click to its first frame on screen,
+                // split into the draw, the layout and the frame, with the rows and items made anew (the
+                // user, 2026-11-06: the first swap to the order after the window opened was slow). The
+                // first swap is the one that counts. To HD2QD_WHEEL_OUT
+                var path = Environment.GetEnvironmentVariable("HD2QD_WHEEL_OUT");
+                var lines = new List<string>();
+                int round = 0;
+                var t28 = new DispatcherTimer { Interval = TimeSpan.FromSeconds(Environment.GetEnvironmentVariable("HD2QD_VIEW_WAIT") == "short" ? 2 : 8) };
+                t28.Tick += (s, e) =>
+                {
+                    t28.Interval = TimeSpan.FromMilliseconds(1500);
+                    if (path == null || st == null) return;
+                    if (round >= 6)
+                    {
+                        t28.Stop();
+                        lines.Add("the other view warmed at idle in " + warmedSteps + " steps, the longest " + warmedViewMs + " ms");
+                        System.IO.File.WriteAllText(path, string.Join("\r\n", lines) + "\r\n");
+                        return;
+                    }
+                    if (round == 5 && !groupView)
+                    {
+                        // the order as the warm-up made it, then made anew from nothing: the same picture
+                        string Hash()
+                        {
+                            UpdateLayout();
+                            var bmp = new RenderTargetBitmap((int)ListArea.ActualWidth, (int)ListArea.ActualHeight, 96, 96, PixelFormats.Pbgra32);
+                            bmp.Render(ListArea);
+                            var px = new byte[(int)ListArea.ActualWidth * (int)ListArea.ActualHeight * 4];
+                            bmp.CopyPixels(px, (int)ListArea.ActualWidth * 4, 0);
+                            ulong h = 1469598103934665603;
+                            foreach (var b in px) { h ^= b; h *= 1099511628211; }
+                            return h.ToString("x16");
+                        }
+                        ListScroll.ScrollToEnd();
+                        var warm = Hash();
+                        rows.Clear(); List.Children.Clear(); RenderList();
+                        ListScroll.ScrollToEnd();
+                        lines.Add("order as warmed " + warm + ", made anew " + Hash() + (warm == Hash() ? "  same" : "  DIFFERENT"));
+                    }
+                    round++;
+                    var to = groupView ? ViewOrder : ViewGroups;
+                    string name = groupView ? "to order " : "to groups";
+                    int built = rowsBuilt, boxes = 0;
+                    var clock = System.Diagnostics.Stopwatch.StartNew();
+                    View_Click(to, null);
+                    long drawn = clock.ElapsedMilliseconds;
+                    UpdateLayout();
+                    long laid = clock.ElapsedMilliseconds;
+                    boxes = Motion.Under<FrameworkElement>(groupView ? (FrameworkElement)GroupCols : ListShown).Count();
+                    EventHandler frame = null;
+                    frame = (s2, e2) =>
+                    {
+                        CompositionTarget.Rendering -= frame;
+                        lines.Add(string.Format("{0}  {1}\tdrawn {2} ms\tlaid out {3} ms\tframe {4} ms\trows made {5}\telements {6}",
+                            round, name, drawn, laid, clock.ElapsedMilliseconds, rowsBuilt - built, boxes));
+                    };
+                    CompositionTarget.Rendering += frame;
+                };
+                t28.Start();
+                return;
+            }
+            if (Environment.GetEnvironmentVariable("HD2QD_CLICK_TEST") == "picring")
+            {
+                // "picring": a mod's picture in the groups and in the order, the pointer brought over
+                // it and taken away as the mouse reports it: its frame's colour read on its outer line,
+                // its middle and one pixel outside, at the start, halfway in, hovered and after, and
+                // the frame's place before and after (nothing may move). Pictures of the line saved.
+                // To HD2QD_WHEEL_OUT, pictures beside it
+                var path = Environment.GetEnvironmentVariable("HD2QD_WHEEL_OUT");
+                var dir = System.IO.Path.GetDirectoryName(path);
+                var lines = new List<string>();
+                string Px(byte[] px, int stride, int x, int y) { int i = y * stride + x * 4; return px[i + 2].ToString("x2") + px[i + 1].ToString("x2") + px[i].ToString("x2"); }
+                string Look(string name, FrameworkElement pic)
+                {
+                    var line = (FrameworkElement)VisualTreeHelper.GetParent(pic);
+                    UpdateLayout();
+                    // a picture of a visual keeps the visual's own offset in its parent (its margin)
+                    var off = VisualTreeHelper.GetOffset(line);
+                    var at = pic.TransformToAncestor(line).Transform(new Point(off.X, off.Y));
+                    var bmp = new RenderTargetBitmap((int)(line.ActualWidth + off.X) * 2, (int)(line.ActualHeight + off.Y) * 2, 192, 192, PixelFormats.Pbgra32);
+                    bmp.Render(line);
+                    int stride = bmp.PixelWidth * 4;
+                    var px = new byte[stride * bmp.PixelHeight];
+                    bmp.CopyPixels(px, stride, 0);
+                    var enc = new PngBitmapEncoder();
+                    enc.Frames.Add(BitmapFrame.Create(bmp));
+                    using (var f = System.IO.File.Create(System.IO.Path.Combine(dir, "picring_" + name + ".png"))) enc.Save(f);
+                    int x0 = (int)Math.Round(at.X * 2), y0 = (int)Math.Round(at.Y * 2), w = (int)Math.Round(pic.ActualWidth * 2);
+                    int ym = y0 + w / 2;
+                    return string.Format("frame at {0:0.#},{1:0.#} size {2:0.#}   left edge: outside {3} line {4} {5} inside {6} {7} {8}   top middle {9}",
+                        at.X, at.Y, pic.ActualWidth, x0 > 0 ? Px(px, stride, x0 - 1, ym) : "-", Px(px, stride, x0, ym), Px(px, stride, x0 + 1, ym),
+                        Px(px, stride, x0 + 2, ym), Px(px, stride, x0 + 3, ym), Px(px, stride, x0 + 5, ym), Px(px, stride, x0 + w / 2, y0));
+                }
+                async System.Threading.Tasks.Task Hover(string view, FrameworkElement pic)
+                {
+                    lines.Add(view + " before   " + Look(view + "_0_before", pic));
+                    pic.RaiseEvent(new MouseEventArgs(Mouse.PrimaryDevice, Environment.TickCount) { RoutedEvent = Mouse.MouseEnterEvent });
+                    await System.Threading.Tasks.Task.Delay(45);
+                    lines.Add(view + " 45 ms    " + Look(view + "_1_half", pic));
+                    await System.Threading.Tasks.Task.Delay(300);
+                    lines.Add(view + " hovered  " + Look(view + "_2_hovered", pic));
+                    pic.RaiseEvent(new MouseEventArgs(Mouse.PrimaryDevice, Environment.TickCount) { RoutedEvent = Mouse.MouseLeaveEvent });
+                    await System.Threading.Tasks.Task.Delay(400);
+                    lines.Add(view + " left     " + Look(view + "_3_left", pic));
+                }
+                var t29 = new DispatcherTimer { Interval = TimeSpan.FromSeconds(8) };
+                t29.Tick += async (s, e) =>
+                {
+                    t29.Stop();
+                    if (st == null) { System.IO.File.WriteAllText(path, "no state"); return; }
+                    try
+                    {
+                        lines.Add("blue is " + ((SolidColorBrush)B("Blue")).Color + ", the grey line " + ((SolidColorBrush)B("Grid")).Color);
+                        View_Click(ViewGroups, null);
+                        var g = st.Groups.OrderByDescending(x => st.Mods.Count(m => m.Group == x.Id)).First();
+                        groupPath.Clear(); groupPath.Add(g.Id); selectedId = null; groupCol = 0; RenderGroups(); RenderDetail();
+                        await System.Threading.Tasks.Task.Delay(1500);
+                        await Hover("groups", Motion.Under<FrameworkElement>(GroupCols.Children.OfType<Border>().Last()).First(f => f.Name == OpensPreview));
+                        View_Click(ViewOrder, null);
+                        await System.Threading.Tasks.Task.Delay(1500);
+                        await Hover("order", Motion.Under<FrameworkElement>(ListArea).Where(f => f.Name == OpensPreview).Skip(1).First());
+                        filter = "conflict"; selectedId = null; RenderNav(); RenderList(); RenderDetail();
+                        await System.Threading.Tasks.Task.Delay(1500);
+                        await Hover("conflicts", Motion.Under<FrameworkElement>(ListArea).Where(f => f.Name == OpensPreview && f.IsVisible).Skip(1).First());
+                    }
+                    catch (Exception x) { lines.Add(x.GetType().Name + " " + x.Message + " " + x.StackTrace); }
+                    System.IO.File.WriteAllText(path, string.Join("\r\n", lines) + "\r\n");
+                };
+                t29.Start();
+                return;
+            }
+            if (Environment.GetEnvironmentVariable("HD2QD_CLICK_TEST") == "filtertimes")
+            {
+                // "filtertimes": the library's filters on the left clicked as a player does, All, On,
+                // Off and back, twice round, in the order and in the groups: each timed from the click
+                // to its first frame on screen, split into the draw, the layout and the frame, with the
+                // rows made anew (the user, 2026-11-06: half a second each). To HD2QD_WHEEL_OUT
+                var path = Environment.GetEnvironmentVariable("HD2QD_WHEEL_OUT");
+                var lines = new List<string>();
+                var plan = new List<(string View, string Key)>();
+                foreach (var view in new[] { "order", "groups" })
+                    for (int r = 0; r < 2; r++)
+                        foreach (var k in new[] { "on", "off", "all" }) plan.Add((view, k));
+                int at = 0;
+                var t30 = new DispatcherTimer { Interval = TimeSpan.FromSeconds(8) };
+                t30.Tick += (s, e) =>
+                {
+                    t30.Interval = TimeSpan.FromMilliseconds(1200);
+                    if (path == null || st == null) return;
+                    if (at >= plan.Count)
+                    {
+                        t30.Stop();
+                        try
+                        {
+                            View_Click(ViewOrder, null);
+                            // a press on a row starts a drag in the full list only, filters kept rows or not
+                            foreach (var key2 in new[] { "on", "all", "off", "all" })
+                            {
+                                filter = key2; RenderNav(); RenderList(); UpdateLayout();
+                                var r0 = rows[Seen().Skip(1).First().Id].Row;
+                                dragFrom = null;
+                                r0.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left) { RoutedEvent = Mouse.PreviewMouseDownEvent });
+                                lines.Add("press on a row, filter " + key2 + ": drag " + (dragFrom != null ? "ready" : "not offered") + ", rows take drops " + r0.AllowDrop);
+                                dragFrom = null;
+                            }
+                            // the full list as kept across the filters, then made anew from nothing: the same picture
+                            string Hash()
+                            {
+                                UpdateLayout();
+                                var bmp = new RenderTargetBitmap((int)ListArea.ActualWidth, (int)ListArea.ActualHeight, 96, 96, PixelFormats.Pbgra32);
+                                bmp.Render(ListArea);
+                                var px = new byte[(int)ListArea.ActualWidth * (int)ListArea.ActualHeight * 4];
+                                bmp.CopyPixels(px, (int)ListArea.ActualWidth * 4, 0);
+                                ulong h = 1469598103934665603;
+                                foreach (var b in px) { h ^= b; h *= 1099511628211; }
+                                return h.ToString("x16");
+                            }
+                            foreach (var key2 in new[] { "all", "off" })
+                            {
+                                filter = key2; RenderNav(); RenderList();
+                                ListScroll.ScrollToVerticalOffset(300);
+                                var kept = Hash();
+                                rows.Clear(); List.Children.Clear(); RenderList();
+                                ListScroll.ScrollToVerticalOffset(300);
+                                var anew = Hash();
+                                lines.Add("filter " + key2 + " as kept " + kept + ", made anew " + anew + (kept == anew ? "  same" : "  DIFFERENT"));
+                            }
+                        }
+                        catch (Exception x) { lines.Add(x.GetType().Name + " " + x.Message + " " + x.StackTrace); }
+                        System.IO.File.WriteAllText(path, string.Join("\r\n", lines) + "\r\n");
+                        return;
+                    }
+                    var (view, key) = plan[at++];
+                    if ((view == "groups") != groupView) { View_Click(view == "groups" ? ViewGroups : ViewOrder, null); lines.Add("-- " + view); return; }
+                    var btn = Nav.Children.OfType<Button>().FirstOrDefault(b => Motion.Under<TextBlock>(b).Any(t => t.Text == Texts.Get("f_" + key)));
+                    if (btn == null) { lines.Add("no button " + key); return; }
+                    int built = rowsBuilt;
+                    var clock = System.Diagnostics.Stopwatch.StartNew();
+                    drawLog = new List<string>(); drawClock.Restart();
+                    btn.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+                    long drawn = clock.ElapsedMilliseconds;
+                    UpdateLayout();
+                    long laid = clock.ElapsedMilliseconds;
+                    var log = drawLog; drawLog = null;
+                    EventHandler frame = null;
+                    frame = (s2, e2) =>
+                    {
+                        CompositionTarget.Rendering -= frame;
+                        lines.Add(string.Format("{0,-6} {1,-4}\tdrawn {2} ms\tlaid out {3} ms\tframe {4} ms\trows made {5}\tshown {6}",
+                            view, key, drawn, laid, clock.ElapsedMilliseconds, rowsBuilt - built, groupView ? GroupShown().Count() : Seen().Count()));
+                        foreach (var l in log.Where(x => !x.StartsWith("   rebuilt")).Take(8)) lines.Add("        " + l);
+                        foreach (var l in log.Where(x => x.StartsWith("   rebuilt")).Take(3)) lines.Add("        " + l);
+                    };
+                    CompositionTarget.Rendering += frame;
+                };
+                t30.Start();
+                return;
+            }
             if (Environment.GetEnvironmentVariable("HD2QD_CLICK_TEST") == "storagetick")
             {
                 // "storagetick": the storage page, then the first mod's tick clicked as a player does,
@@ -1698,14 +2159,17 @@ namespace QuickDeploy
         /// <summary>The pages behind the buttons built and laid out once the window is idle after it
         /// opens, one at a time, so the first click on each shows it at once: the first visit made
         /// their controls and pictures for the first time and took a quarter of a second (the user,
-        /// 2026-11-06). Once a session; a page drawn since is left as it is.</summary>
+        /// 2026-11-06). Once a session; a page drawn since is left as it is. The list's other view
+        /// first: the first swap from the groups to the order made its rows and took 0.75 s on 94
+        /// mods, the other way 0.17 s (the user, 2026-11-06).</summary>
         void WarmPages()
         {
-            var pages = new Queue<string>(new[] { "storage", "download", "tags", "plugins" });
+            var pages = new Queue<string>(new[] { "view", "storage", "download", "tags", "plugins" });
             void Next()
             {
                 if (pages.Count == 0 || st == null) return;
                 var page = pages.Dequeue();
+                if (page == "view") { WarmOtherView(); Dispatcher.BeginInvoke(new Action(Next), DispatcherPriority.ApplicationIdle); return; }
                 var el = PageOf(page);
                 if (el != null && el.Visibility != Visibility.Visible && !PageFresh(page))
                 {
@@ -1722,6 +2186,64 @@ namespace QuickDeploy
             }
             Dispatcher.BeginInvoke(new Action(Next), DispatcherPriority.ApplicationIdle);
         }
+
+        /// <summary>The list's view not on show drawn and laid out while hidden, in the list's place:
+        /// the first swap to it shows it at once. The order's rows a few at a time, each step when
+        /// the window is idle, so none holds the window long: all at once they took 0.6 s on 94 mods.
+        /// Stops when the list is not on show, shows the conflicts, a row is dragged, or the view
+        /// was swapped meanwhile (RenderListNow then makes the rest).</summary>
+        void WarmOtherView()
+        {
+            bool Can() => st != null && filter != "conflict" && dragRow == null && !gDragging && Body.Visibility == Visibility.Visible;
+            if (!Can()) return;
+            if (!groupView)
+            {
+                var clock = System.Diagnostics.Stopwatch.StartNew();
+                RenderGroups();
+                GroupScroll.Visibility = Visibility.Hidden;
+                GroupScroll.UpdateLayout();
+                ShowView();
+                warmedViewMs = clock.ElapsedMilliseconds;
+                warmedSteps = 1;
+                return;
+            }
+            // the order's mods, as RenderListNow takes them, with the view switched only meanwhile
+            List<string> ids;
+            groupView = false;
+            try { ids = Seen().Select(m => m.Id).ToList(); }
+            finally { groupView = true; }
+            int at = 0;
+            warmedViewMs = 0; warmedSteps = 0;
+            void Step()
+            {
+                if (!groupView || !Can() || at >= ids.Count) return;
+                var clock = System.Diagnostics.Stopwatch.StartNew();
+                groupView = false;
+                try
+                {
+                    for (int k = 0; k < 10 && at < ids.Count; k++, at++)
+                    {
+                        var m = st.Mods.FirstOrDefault(x => x.Id == ids[at]);
+                        if (m == null) continue;
+                        var sig = Sig(m);
+                        if (!rows.TryGetValue(m.Id, out var had) || had.Sig != sig) { rows[m.Id] = had = (sig, Row(m)); rowsBuilt++; }
+                        if (!List.Children.Contains(had.Row)) List.Children.Add(had.Row);
+                    }
+                }
+                finally { groupView = true; }
+                ListScroll.Visibility = Visibility.Hidden;
+                ListScroll.UpdateLayout();
+                ShowView();
+                warmedViewMs = Math.Max(warmedViewMs, clock.ElapsedMilliseconds);
+                warmedSteps++;
+                if (at < ids.Count) Dispatcher.BeginInvoke(new Action(Step), DispatcherPriority.ApplicationIdle);
+            }
+            Step();
+        }
+
+        // the longest step of WarmOtherView and how many it took, for the "viewtimes" test
+        long warmedViewMs = -1;
+        int warmedSteps;
 
         /// <summary>Whether the page was last drawn for the state on show, in this language (and
         /// marks it so when it was not: the caller draws it now).</summary>
@@ -1886,15 +2408,33 @@ namespace QuickDeploy
         }
 
         /// <summary>A big change (deploy, purge, add, ...): the window held meanwhile.</summary>
+        /// <summary>A command, the window holding still meanwhile: it takes no clicks at once, and
+        /// greys and says it is working only when the command takes longer than 0.3 s. Greyed at
+        /// once, the whole list flashed grey and back for a command done in a tenth of a second (a
+        /// move to the top, a rename, Prefer this; the user, 2026-11-06: "列表闪来闪去").</summary>
         async Task<CliResult> Exec(Func<CliResult> work)
         {
             busy = true;
-            SetEnabled(false);
-            Foot(Texts.Get("working"), "Blue");
-            var r = await Queued(work);
-            quietUntil = DateTime.Now.AddSeconds(1.5);
-            busy = false;
-            SetEnabled(true);
+            Body.IsHitTestVisible = DeployBtn.IsHitTestVisible = LaunchBtn.IsHitTestVisible = false;
+            var slow = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
+            slow.Tick += (s, e) =>
+            {
+                slow.Stop();
+                if (!busy) return;
+                SetEnabled(false);
+                Foot(Texts.Get("working"), "Blue");
+            };
+            slow.Start();
+            CliResult r;
+            try { r = await Queued(work); }
+            finally
+            {
+                slow.Stop();
+                quietUntil = DateTime.Now.AddSeconds(1.5);
+                busy = false;
+                Body.IsHitTestVisible = DeployBtn.IsHitTestVisible = LaunchBtn.IsHitTestVisible = true;
+                SetEnabled(true);
+            }
             return r;
         }
 
@@ -4635,10 +5175,14 @@ namespace QuickDeploy
                     }
                     rows[m.Id] = had = (sig, Row(m)); rowsBuilt++;
                 }
+                had.Row.AllowDrop = CanDragRows;
                 want.Add(had.Row);
                 seen.Add(m.Id);
             }
-            foreach (var gone in rows.Keys.Where(k => !seen.Contains(k)).ToList()) rows.Remove(gone);
+            // the rows of mods another filter hides are kept for when it shows them again (the
+            // user, 2026-11-06: each filter made them anew); only those of mods gone are dropped
+            var present = new HashSet<string>(st.Mods.Select(x => x.Id));
+            foreach (var gone in rows.Keys.Where(k => !present.Contains(k)).ToList()) rows.Remove(gone);
             // a row new to the load order comes into its place
             if (orderShown != null && !listSwap)
                 foreach (var m in Seen().Where(x => !orderShown.Contains(x.Id)))
@@ -4666,11 +5210,17 @@ namespace QuickDeploy
         readonly Dictionary<string, (string Sig, Border Row)> rows = new Dictionary<string, (string, Border)>();
 
         /// <summary>Everything a row shows or acts on, as one string.</summary>
+        /// <summary>Whether the load order's rows can be dragged now: in the full list only, not
+        /// under a filter nor in the library's view.</summary>
+        bool CanDragRows => filter == "all" && !viewLibrary;
+
         string Sig(ModRow m)
         {
             var sb = new System.Text.StringBuilder();
             void Add(object x) => sb.Append(x).Append('\u001f');
-            Add(m.Id == selectedId); Add(picked.Contains(m.Id)); Add(open.Contains(m.Id)); Add(filter == "all");
+            // not the filter: a row is the same in every one (CanDragRows is asked when it is used),
+            // and with it every row was made anew at each filter, 0.7 s for 90 (the user, 2026-11-06)
+            Add(m.Id == selectedId); Add(picked.Contains(m.Id)); Add(open.Contains(m.Id));
             Add(m.InProfile); Add(viewLibrary); Add(st.Profile);
             Add(m.Index); Add(m.Name); Add(m.Path); Add(m.Enabled); Add(m.Icon); Add(m.Status); Add(m.Error); Add(m.Lua); Add(m.Loader); Add(string.Join("|", m.Notes.Select(n => n.Text + n.Colour))); Add(string.Join(",", m.Tags)); Add(HasUpdate(m)); Add(m.ShownVersion); Add(m.VersionFrom);
             Add(Checked(m)?.Status); Add(checkingOne.Contains(m.Id)); Add(checking); Add(updated.Contains(m.Id));
@@ -4691,7 +5241,7 @@ namespace QuickDeploy
             bool cur = m.Id == selectedId, isOpen = open.Contains(m.Id), alsoTaken = picked.Contains(m.Id);
             var item = new Border
             {
-                BorderBrush = B("Grid"), BorderThickness = new Thickness(0, 0, 0, 1), Tag = m, AllowDrop = filter == "all" && !viewLibrary,
+                BorderBrush = B("Grid"), BorderThickness = new Thickness(0, 0, 0, 1), Tag = m, AllowDrop = CanDragRows,
                 Background = cur || alsoTaken ? B("Ground900") : Brushes.Transparent,
             };
             var edge = new Border
@@ -4798,6 +5348,7 @@ namespace QuickDeploy
             var pick = new Button { Cursor = Cursors.Hand, Template = Plain(), FocusVisualStyle = null, HorizontalContentAlignment = HorizontalAlignment.Stretch, Opacity = m.Enabled ? 1 : 0.55, Foreground = B("Ink") };
             var who = new DockPanel { MinHeight = 56 };
             var pic = Picture(m.Icon, GlyphMod, 48, m.Enabled ? "Blue" : "Muted");
+            PictureOpensPreview(pic, m);
             DockPanel.SetDock(pic, Dock.Left);
             who.Children.Add(pic);
             var names = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(12, 0, 8, 0) };
@@ -4881,23 +5432,24 @@ namespace QuickDeploy
             pick.Content = who;
             pick.Click += (s, e) => Take(m);
             // a name of the player's own: two clicks on the mod (the user, 2026-10-24)
-            pick.PreviewMouseLeftButtonDown += (s, e) => { if (e.ClickCount == 2) { e.Handled = true; dragFrom = null; RenameMod(m); } };
+            pick.PreviewMouseLeftButtonDown += (s, e) =>
+            {
+                if (e.ClickCount == 2 && !OnButton(e.OriginalSource as DependencyObject, pick)) { e.Handled = true; dragFrom = null; RenameMod(m); }
+            };
             line.Children.Add(pick);
 
             if (isOpen) col.Children.Add(Options(m));
             foreach (var p in PacksOf(m)) col.Children.Add(PackLine(p));
 
-            // dragging changes the load order (in the full list only, not the library's)
-            if (filter == "all" && !viewLibrary)
+            // dragging changes the load order (in the full list only, not the library's): asked at
+            // the press, as the row is kept from one filter to the next
+            item.PreviewMouseLeftButtonDown += (s, e) => { if (CanDragRows) { dragStart = e.GetPosition(ListArea); dragFrom = m; } };
+            item.PreviewMouseMove += (s, e) =>
             {
-                item.PreviewMouseLeftButtonDown += (s, e) => { dragStart = e.GetPosition(ListArea); dragFrom = m; };
-                item.PreviewMouseMove += (s, e) =>
-                {
-                    if (dragFrom != m || dragRow != null || e.LeftButton != MouseButtonState.Pressed) return;
-                    if (Math.Abs(e.GetPosition(ListArea).Y - dragStart.Y) < 6) return;
-                    BeginDrag(m, item, e.GetPosition(ListArea), e.GetPosition(item).Y);
-                };
-            }
+                if (dragFrom != m || dragRow != null || e.LeftButton != MouseButtonState.Pressed || !CanDragRows) return;
+                if (Math.Abs(e.GetPosition(ListArea).Y - dragStart.Y) < 6) return;
+                BeginDrag(m, item, e.GetPosition(ListArea), e.GetPosition(item).Y);
+            };
             item.PreviewMouseLeftButtonUp += (s, e) => dragFrom = null;
             // built when it opens, not with the row: rows are kept while what they show does not
             // change, and a menu built with one held the labels there were then -- a label made
@@ -5308,6 +5860,7 @@ namespace QuickDeploy
 
         void RenderDetail()
         {
+            drawLog?.Add(drawClock.ElapsedMilliseconds + "\tdetails");
             FillPreview();
             var showing = selectedId ?? (groupView && groupPath.Count > 0 ? "g:" + groupPath[groupPath.Count - 1] : "");
             if (detailFor != null && showing != detailFor && showing.Length > 0) Motion.In(Detail, 0, 6);
@@ -5710,7 +6263,7 @@ namespace QuickDeploy
                                       || e is UnauthorizedAccessException || e is InvalidOperationException) { return; }
             if (img == null) return;
             images[file] = (written, img);
-            frame.Child = new Image { Source = img, Stretch = Stretch.UniformToFill };
+            PictureSet(frame, new Image { Source = img, Stretch = Stretch.UniformToFill });
         }
 
         Border Picture(string file, string glyph, double size, string tint, double glyphSize = 28)
@@ -7763,6 +8316,8 @@ namespace QuickDeploy
                     line.Children.Add(sw);
                 }
                 var pic = Picture(x.Icon, GlyphMod, 28, off ? "Muted" : "Blue", 18);
+                // its picture opens its preview, as in the groups and the order (the user, 2026-11-06)
+                PictureOpensPreview(pic, x);
                 pic.Opacity = off ? 0.55 : 1;
                 DockPanel.SetDock(pic, Dock.Left);
                 line.Children.Add(pic);

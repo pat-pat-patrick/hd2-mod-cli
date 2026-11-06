@@ -24,6 +24,15 @@ namespace QuickDeploy
         /// <summary>Whether Windows shows animations (Settings → Accessibility → Visual effects).</summary>
         public static bool On => SystemParameters.ClientAreaAnimation;
 
+        /// <summary>The element's opacity eased to a new value, from where it is now (a hover's ring
+        /// in and out); set at once when Windows shows no animations.</summary>
+        public static void FadeTo(UIElement e, double to, int ms = 120)
+        {
+            if (e == null) return;
+            if (!On) { e.BeginAnimation(UIElement.OpacityProperty, null); e.Opacity = to; return; }
+            e.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(to, TimeSpan.FromMilliseconds(ms)) { EasingFunction = Ease });
+        }
+
         /// <summary>The element faded in, coming the last dx, dy pixels into its place.</summary>
         public static void In(UIElement e, double dx = 0, double dy = 8, int ms = Ms, double from = 0)
         {

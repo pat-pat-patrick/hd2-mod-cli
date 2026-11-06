@@ -645,6 +645,7 @@
   "view_groups": "分组",
   "view_order": "顺序",
   "pv_open": "选择可选内容",
+  "pv_pic_tip": "查看大图和可选内容（空格键）",
   "lua_same_title": "脚本名称与其他 mod 相同",
   "lua_same_info": "这些 mod 声明了相同的脚本名称（{0}），只有其中一个会运行。",
   "pick_wins_label": "共同修改的资源，优先使用哪个 MOD 的版本：",

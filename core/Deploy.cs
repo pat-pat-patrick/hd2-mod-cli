@@ -1141,5 +1141,11 @@ namespace Hd2Mod
 
         /// <summary>os.path.abspath.</summary>
         public static string Abs(string path) => Norm(System.IO.Path.IsPathRooted(path) && Drive(path).Length > 0 ? path : System.IO.Path.GetFullPath(path));
+
+        /// <summary>Abs, and "" for no path: Windows refuses an empty one ("The path is not of a legal
+        /// form", in Chinese "路径的形式不合法"), and a setting never made, such as the default mod
+        /// folder, is no path. Changing a library folder's path stopped on it for every player who
+        /// had not chosen a default (a player, 2026-11-06). For comparing; "" matches no folder.</summary>
+        public static string AbsOrEmpty(string path) => string.IsNullOrWhiteSpace(path) ? "" : Abs(path);
     }
 }

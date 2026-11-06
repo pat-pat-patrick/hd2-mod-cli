@@ -121,7 +121,9 @@ namespace Hd2Mod
             var root = Path.GetFullPath(folder).TrimEnd('\\');
             bool Inside(string p)
             {
-                var x = Path.GetFullPath(p ?? "").TrimEnd('\\');
+                // an entry with no path is in no folder (an empty path is refused: Paths.AbsOrEmpty)
+                if (string.IsNullOrWhiteSpace(p)) return false;
+                var x = Path.GetFullPath(p).TrimEnd('\\');
                 return string.Equals(x, root, StringComparison.OrdinalIgnoreCase) || x.StartsWith(root + "\\", StringComparison.OrdinalIgnoreCase);
             }
             var (name, _, _) = ConfigOf(key);
