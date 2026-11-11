@@ -100,6 +100,12 @@
           <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
             <!-- no purge here: a deploy never needs one first (the user, 2026-10-24: break the
                  habit); it is at the bottom of the deploy target card -->
+            <!-- where the library deploys (Targets): the official game, or a target a plugin
+                 offers; shown only when a plugin offers one (the user, 2026-11-11) -->
+            <Border x:Name="TargetBar" Visibility="Collapsed" BorderBrush="{StaticResource Grid}" BorderThickness="1"
+                    Margin="0,0,12,0" VerticalAlignment="Center">
+              <StackPanel x:Name="TargetBox" Orientation="Horizontal"/>
+            </Border>
             <Button x:Name="DeployBtn" Style="{StaticResource Primary}" MinHeight="44" MinWidth="160" Click="Deploy_Click"/>
             <Button x:Name="LaunchBtn" Style="{StaticResource Ghost}" MinHeight="44" Margin="8,0,0,0" MinWidth="120" Click="Launch_Click"/>
           </StackPanel>

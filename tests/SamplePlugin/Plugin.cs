@@ -52,6 +52,42 @@ namespace Hd2Qd.Sample
             return 0;
         }
 
+        // ---------------------------------------------------------------- a deploy target ("sample")
+
+        /// <summary>A deploy target, found unless the settings folder holds sample_missing.txt.</summary>
+        public static Dictionary<string, object> Target(Dictionary<string, object> host) => new Dictionary<string, object>
+        {
+            ["id"] = "sample", ["title"] = "Sample game", ["found"] = !File.Exists(Path.Combine((string)host["home"], "sample_missing.txt")),
+            ["why"] = "no sample game",
+        };
+
+        static string Deployed(Dictionary<string, object> host) => Path.Combine((string)host["home"], "sample_target.txt");
+
+        static List<string> Lines(Dictionary<string, object> host) =>
+            ((Func<List<Dictionary<string, object>>>)host["mods"])().Select(m => m["id"] + " " + m["name"] + ": " +
+                string.Join(",", ((List<object>)m["files"]).Cast<Dictionary<string, object>>().Select(f => f["name"]))).ToList();
+
+        /// <summary>Pending: the list in use differs from what was deployed.</summary>
+        public static Dictionary<string, object> TargetStatus(Dictionary<string, object> host) => new Dictionary<string, object>
+        {
+            ["pending"] = File.Exists(Deployed(host)) && File.ReadAllLines(Deployed(host)).SequenceEqual(Lines(host)) ? 0L : 1L,
+            ["running"] = false,
+        };
+
+        /// <summary>Writes the list in use, one mod a line, into sample_target.txt.</summary>
+        public static Dictionary<string, object> TargetDeploy(Dictionary<string, object> host)
+        {
+            var lines = Lines(host);
+            File.WriteAllLines(Deployed(host), lines);
+            return new Dictionary<string, object> { ["said"] = "sample: " + lines.Count + " mods", ["refused"] = new List<object>() };
+        }
+
+        public static string TargetPurge(Dictionary<string, object> host)
+        {
+            File.Delete(Deployed(host));
+            return "sample: purged";
+        }
+
         /// <summary>Leaves a file in the settings folder, and says it changed something.</summary>
         public static bool Start(Dictionary<string, object> host)
         {

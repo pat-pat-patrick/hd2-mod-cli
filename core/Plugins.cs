@@ -390,21 +390,30 @@ namespace Hd2Mod
                 ["api"] = (long)PluginFiles.Api, ["home"] = Store.Home, ["appdata"] = AppData, ["lang"] = Lang(),
                 ["data"] = game != null ? Paths.Join(game, "data") : null,
                 ["mods"] = (Func<List<Dictionary<string, object>>>)(() => Mods(Library.Load())),
+                ["target"] = (Func<string>)(() => Targets.Current(Library.Load())),
                 ["library"] = (Func<List<Dictionary<string, object>>>)(() => LibraryMods(Library.Load())),
             };
         }
 
-        /// <summary>The enabled mods in load order, each {name, archives}.</summary>
+        /// <summary>The enabled mods in load order, each {name, archives, id, path, files}: archives,
+        /// the patch archives it deploys; files, every file a deploy puts in the game, each {src,
+        /// name}, its name numbered as the game folder would have it (a deploy target of a plugin
+        /// takes these, with the options and sub-options already chosen).</summary>
         public static List<Dictionary<string, object>> Mods(Library lib)
         {
             var mods = new List<Dictionary<string, object>>();
+            var paths = lib.Mods.GroupBy(m => m.Id ?? "").ToDictionary(g => g.Key, g => g.First().Path);
             foreach (var w in Deploy.Plan(lib, new Dictionary<string, string>()))
             {
-                if (!Deploy.Patch.IsMatch(w.Name)) continue;
                 var last = mods.Count > 0 ? mods[mods.Count - 1] : null;
-                if (last == null || (string)last["name"] != w.Mod)
-                    mods.Add(last = new Dictionary<string, object> { ["name"] = w.Mod, ["archives"] = new List<object>() });
-                ((List<object>)last["archives"]).Add(w.Src);
+                if (last == null || (string)last["name"] != w.Mod || (last["id"] as string) != w.ModId)
+                    mods.Add(last = new Dictionary<string, object>
+                    {
+                        ["name"] = w.Mod, ["archives"] = new List<object>(), ["id"] = w.ModId,
+                        ["path"] = w.ModId != null && paths.TryGetValue(w.ModId, out var p) ? p : null, ["files"] = new List<object>(),
+                    });
+                if (Deploy.Patch.IsMatch(w.Name)) ((List<object>)last["archives"]).Add(w.Src);
+                ((List<object>)last["files"]).Add(new Dictionary<string, object> { ["src"] = w.Src, ["name"] = w.Name });
             }
             return mods;
         }

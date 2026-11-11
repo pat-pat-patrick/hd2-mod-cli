@@ -11,6 +11,8 @@ namespace Hd2Mod
     public class Wanted
     {
         public string Name, Src, Mod;
+        /// <summary>The mod's library id (a deploy target of a plugin keeps each mod apart).</summary>
+        public string ModId;
     }
 
     /// <summary>What a deploy would do.</summary>
@@ -188,11 +190,11 @@ namespace Hd2Mod
                         counters.TryGetValue(archive, out var n);
                         counters[archive] = n + 1;
                         var target = archive + ".patch_" + n;
-                        out_.Add(new Wanted { Name = target, Src = Paths.Join(folder, f), Mod = mod.Name });
+                        out_.Add(new Wanted { Name = target, Src = Paths.Join(folder, f), Mod = mod.Name, ModId = mod.Id });
                         foreach (var ext in Companions)
                         {
                             var src = Paths.Join(folder, f + ext);
-                            if (File.Exists(src)) out_.Add(new Wanted { Name = target + ext, Src = src, Mod = mod.Name });
+                            if (File.Exists(src)) out_.Add(new Wanted { Name = target + ext, Src = src, Mod = mod.Name, ModId = mod.Id });
                         }
                     }
                 }

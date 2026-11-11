@@ -283,6 +283,36 @@ namespace Hd2Mod
         /// and its patch files and what a deploy would do to each, the files a deploy would
         /// delete, the totals (files and bytes), the hard links in the game folder, and the
         /// conflicts.</summary>
+        /// <summary>The deploy targets as the window shows them.</summary>
+        static Dictionary<string, object> TargetBlock(Library lib, Dictionary<string, object> host)
+        {
+            var now = Targets.Current(lib);
+            var offers = PluginTargets.All(host);
+            var d = new Dictionary<string, object>
+            {
+                ["id"] = now,
+                ["offers"] = offers.Select(o => (object)new Dictionary<string, object>
+                {
+                    ["id"] = o.Id, ["title"] = o.Title, ["found"] = o.Found, ["why"] = o.Why, ["file"] = o.File,
+                }).ToList(),
+            };
+            var inUse = offers.FirstOrDefault(o => o.Id == now);
+            if (now != Targets.Official)
+            {
+                d["offered"] = inUse != null;
+                if (inUse != null)
+                {
+                    d["title"] = inUse.Title;
+                    d["found"] = inUse.Found;
+                    var st = PluginTargets.Status(inUse, host);
+                    d["pending"] = Json.Long(st, "pending");
+                    d["running"] = Json.Bool(st, "running");
+                    d["said"] = Json.Str(st, "said");
+                }
+            }
+            return d;
+        }
+
         public static Dictionary<string, object> Build(Library lib, string game, bool verify = false)
         {
             using (Loaders.Pass()) return BuildNow(lib, game, verify);
@@ -698,6 +728,9 @@ namespace Hd2Mod
                 ["profiles"] = lib.Profiles.Select(p => (object)p.Name).ToList(),
                 ["deploying"] = Deploying(),
                 ["check"] = CheckBlock(check),
+                // where the library deploys (Targets): the one in use, the ones plugins offer, and
+                // for a plugin's target what its plugin says (pending: changes a deploy would make)
+                ["target"] = TargetBlock(lib, pluginHost),
                 // whether mods with a script keep the version they had (Versions)
                 ["keep_previous"] = Versions.KeepOn(),
                 ["leftovers"] = Ops.Leftovers(lib, null).Select(d => (object)new Dictionary<string, object>

@@ -110,6 +110,10 @@ namespace Hd2Mod
         public string Active;
         public HashSet<string> Members;
         HashSet<string> known;
+        /// <summary>The deploy target in use (Targets): null for the official game, else a plugin's
+        /// target id; and the lists of the targets not in use, by id.</summary>
+        public string Target;
+        public Dictionary<string, Targets.State> TargetStates = new Dictionary<string, Targets.State>();
 
         /// <summary>Every mod the library has now counts as known: mods an import put into chosen
         /// profiles must not also go into the profile in use when the library is saved.</summary>
@@ -119,6 +123,10 @@ namespace Hd2Mod
         {
             var d = Store.Load("library.json");
             var lib = new Library { ImportedFrom = Json.Str(d, "imported_from"), Active = Json.Str(d, "active_profile"), ProfilesOn = Json.Bool(d, "profiles_on") };
+            lib.Target = Json.Str(d, "target") is string target && target.Length > 0 && target != Hd2Mod.Targets.Official ? target : null;
+            foreach (var kv in Json.Obj(d, "targets") ?? new Dictionary<string, object>())
+                if (kv.Value is Dictionary<string, object> ts && kv.Key != (lib.Target ?? Hd2Mod.Targets.Official))
+                    lib.TargetStates[kv.Key] = Hd2Mod.Targets.FromJson(ts);
             foreach (var p in Json.List(d, "profiles").OfType<Dictionary<string, object>>())
             {
                 var profile = new Profile { Name = Json.Str(p, "name") ?? "" };
@@ -214,6 +222,8 @@ namespace Hd2Mod
         };
 
         static Dictionary<string, object> GitHubJson(GitHubRef g) => new Dictionary<string, object> { ["owner"] = g.Owner, ["repo"] = g.Repo, ["tag"] = g.Tag };
+
+        public static List<OptionChoice> ReadOptionsJson(List<object> list) => ReadOptions(list);
 
         static List<OptionChoice> ReadOptions(List<object> list)
         {
@@ -317,6 +327,8 @@ namespace Hd2Mod
                     ["options"] = p.Options.Where(kv => kv.Value.Count > 0).ToDictionary(kv => kv.Key, kv => (object)OptionsJson(kv.Value)),
                 }).ToList();
             }
+            if (Target != null) d["target"] = Target;
+            if (TargetStates.Count > 0) d["targets"] = TargetStates.ToDictionary(kv => kv.Key, kv => (object)Hd2Mod.Targets.ToJson(kv.Value));
             d["known"] = Mods.Select(m => (object)m.Id).ToList();
             known = new HashSet<string>(Mods.Select(m => m.Id));
             Store.Save("library.json", d);

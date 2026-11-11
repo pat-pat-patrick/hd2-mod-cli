@@ -138,6 +138,10 @@ namespace Hd2Mod
             Cmd("deploy", new Spec { Help = "make the game folder match the load order, touching only what differs",
                                      Flags = new[] { "--dry-run", "--copy", "--verify" }, Run = DeployCmd }),
             Cmd("status", new Spec { Help = "what a deploy would change", Flags = new[] { "--verify" }, Run = Status }),
+            Cmd("targets", new Spec { Help = "where the library can deploy: the official game, and the targets plugins offer (HellForge); * marks the one in use", Run = TargetCmd }),
+            Cmd("target", new Spec { Help = "deploy to another target (official, or a target a plugin offers): each target keeps its own list, " +
+                                            "so switching changes which mods are on, their order and options",
+                                     Positionals = new[] { "which" }, Run = TargetCmd }),
             Cmd("relink", new Spec { Help = "make the copies in the game folder hard links to the library (same drive): " +
                                             "their space comes back, nothing is written",
                                      Flags = new[] { "--dry-run", "--verify" }, Run = Relink }),
@@ -220,7 +224,7 @@ namespace Hd2Mod
         /// record or the game folder.</summary>
         static readonly HashSet<string> ReadOnly = new HashSet<string>
         {
-            "folders", "list", "tags", "groups", "status", "check", "which", "state", "conflicts", "profiles", "report", "nexus-info",
+            "folders", "list", "tags", "groups", "status", "check", "which", "state", "conflicts", "profiles", "report", "nexus-info", "targets",
         };
 
         static bool Writes(string command, Args a) =>
@@ -1495,6 +1499,7 @@ namespace Hd2Mod
         static void DeployCmd(Args a, TextWriter o)
         {
             var lib = Library.Load();
+            if (!Targets.IsOfficial(lib)) { TargetDeploy(lib, a, o); return; }
             var g = Store.GameDir();
             bool dry = a.Flag("--dry-run");
             var s = Deploy.Run(lib, g, dry, a.Flag("--copy"), a.Flag("--verify"), o.WriteLine);
@@ -1555,9 +1560,59 @@ namespace Hd2Mod
 
         static void Purge(Args a, TextWriter o)
         {
+            var lib = Library.Load();
+            if (!Targets.IsOfficial(lib))
+            {
+                var host = PluginHost.Make();
+                var offer = PluginTargets.Of(Targets.Current(lib), host);
+                if (!a.Flag("--yes")) throw new ModError("this takes every mod this program put into " + offer.Title + " out of it: add --yes");
+                o.WriteLine(PluginTargets.Purge(offer, host));
+                return;
+            }
             var g = Store.GameDir();
             if (!a.Flag("--yes")) throw new ModError("this deletes every patch file in " + Paths.Join(g, "data") + ": add --yes");
             o.WriteLine("deleted " + Deploy.Purge(g) + " files: the game is vanilla");
+        }
+
+        /// <summary>The targets, or another one put in use (Targets).</summary>
+        static void TargetCmd(Args a, TextWriter o)
+        {
+            var lib = Library.Load();
+            var host = PluginHost.Make();
+            var offers = PluginTargets.All(host);
+            a.Pos.TryGetValue("which", out var which);
+            if (string.IsNullOrEmpty(which))
+            {
+                var now = Targets.Current(lib);
+                o.WriteLine((now == Targets.Official ? "* " : "  ") + "official   the game folder" + (Store.GameDir(null, false) is string g ? ": " + g : " (not set)"));
+                foreach (var t in offers)
+                    o.WriteLine((now == t.Id ? "* " : "  ") + t.Id.PadRight(10) + " " + t.Title + " (" + t.File + ")" + (t.Found ? "" : ": " + (t.Why ?? "not found")) + (t.Running ? "; a session runs" : ""));
+                if (now != Targets.Official && offers.All(t => t.Id != now))
+                    o.WriteLine("* " + now + "  (no plugin offers it now)");
+                return;
+            }
+            if (which != Targets.Official)
+            {
+                var t = offers.FirstOrDefault(x => string.Equals(x.Id, which, StringComparison.OrdinalIgnoreCase))
+                        ?? throw new ModError("no plugin offers the deploy target " + Ops.Repr(which) + " (hd2qd target lists them)", "no_target", which);
+                which = t.Id;
+            }
+            var was = Targets.Current(lib);
+            Targets.Switch(lib, which);
+            lib.Save();
+            o.WriteLine("deploy target: " + which + (was == which ? " (already)" : " (was " + was + "); its own list is in use: deploy to bring it up to date"));
+        }
+
+        /// <summary>A deploy to a plugin's target: the plugin takes the list in use (PluginHost mods).</summary>
+        static void TargetDeploy(Library lib, Args a, TextWriter o)
+        {
+            if (a.Flag("--dry-run")) throw new ModError("--dry-run is for the game folder; the deploy target " + Targets.Current(lib) + " has none", "target_cannot", "--dry-run");
+            var host = PluginHost.Make();
+            var offer = PluginTargets.Of(Targets.Current(lib), host);
+            if (!offer.Found) throw new ModError(offer.Title + ": " + (offer.Why ?? "not found"), "target_missing", offer.Id);
+            var r = PluginTargets.Deploy(offer, host);
+            o.WriteLine(Json.Str(r, "said") ?? "deployed to " + offer.Title);
+            foreach (var x in Json.List(r, "refused").OfType<string>()) o.WriteLine("  not deployed: " + x);
         }
 
         static void UndoChanges(Args a, TextWriter o)

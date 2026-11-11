@@ -2634,6 +2634,17 @@ namespace QuickDeploy
         void FootState()
         {
             if (st == null) return;
+            if (!st.OnOfficial)
+            {
+                if (!st.TargetOffered) Foot(Texts.F("target_no_plugin", st.Target), "Yellow");
+                else if (!st.TargetFound) Foot(Texts.F("target_not_found", st.TargetTitle), "Yellow");
+                else if (st.TargetRunning) Foot(Texts.F("target_running", st.TargetTitle), "Yellow");
+                else if (lastDone != null) Foot(Texts.F("done", lastDone), "Blue");
+                else if (st.Pending == 0) Foot(Texts.F("target_synced", st.TargetTitle), "Blue");
+                else Foot(Texts.F("target_pending", st.TargetTitle), "Yellow");
+                if (DateTime.Now - doneAt > TimeSpan.FromSeconds(10)) doneLine = null;
+                return;
+            }
             if (st.GameDir == null) Foot(Texts.Get("no_game"), "Yellow");
             // another program is writing to the game folder: what was just read is a state on
             // its way somewhere, and its numbers are nobody's fault (the user, 2026-10-25)
@@ -2986,6 +2997,8 @@ namespace QuickDeploy
         {
             var lua = st.Lua;
             if (lua == null) return;
+            // a plugin's target loads Lua its own way (HellForge: Bingus Shared Loader only); its plugin says so on the rows
+            if (!st.OnOfficial) { if (loaderPop != null) loaderPop.IsOpen = false; return; }
             var loaders = st.Mods.Where(x => x.Loader).ToList();
             // no loader in the library: no panel at all (the user, 2026-10-26). No crash card either: it said
             // nothing a player could act on ("没有一点用"); the facts stay in hd2qd lua and the state for a
@@ -3352,6 +3365,15 @@ namespace QuickDeploy
             SummaryText.Visibility = st.GameDir == null ? Visibility.Visible : Visibility.Collapsed;
             DeployBtn.Content = st.Pending > 0 ? Texts.F("deploy_n", st.Pending) : Texts.Get("deploy");
             DeployBtn.IsEnabled = st.Deploying == null && !fromSaved;   // two at once would undo each other; a saved list is not the library yet
+            if (!st.OnOfficial)
+            {
+                SummaryText.Text = Texts.F("target_summary", st.TargetTitle ?? st.Target);
+                SummaryText.Visibility = Visibility.Visible;
+                // the target's game keeps the mods it started with (HellForge refuses changes then)
+                DeployBtn.IsEnabled = !fromSaved && st.TargetOffered && st.TargetFound && !st.TargetRunning;
+            }
+            if (!fromSaved) RenderTargets();
+            rowTarget = st.OnOfficial ? null : st.TargetTitle ?? st.Target;
             // what was just done comes first (a download leaves changes to deploy: the Deploy
             // button counts them); else whether the game folder matches
             FootState();
@@ -3453,6 +3475,7 @@ namespace QuickDeploy
             // the deploy target, without a heading: its state says what it is (the user, 2026-10-25)
             Nav.Children.Add(new Border { Height = 24 });
             var card = new StackPanel();
+            if (!st.OnOfficial) { TargetSide(card); return; }
             int far = st.Mods.Count(m => m.Exists && !m.SameDrive);
             string state = far == 0 ? "target_link" : far == st.Mods.Count(m => m.Exists) ? "target_copy" : "target_mixed";
             // the dot, then the title in the width that is left: in a horizontal StackPanel it had no
@@ -5736,8 +5759,12 @@ namespace QuickDeploy
             }, args.ToArray());
         }
 
+        /// <summary>The deploy target in use, for the rows' words (null: the official game).</summary>
+        static string rowTarget;
+
         static (string, string) StatusText(ModRow m)
         {
+            if (rowTarget != null) return m.Enabled ? (rowTarget, "Blue") : (Texts.Get("st_off"), "Muted");
             switch (m.Status)
             {
                 case "broken": return (Texts.Get("st_broken"), "Yellow");
@@ -6167,7 +6194,17 @@ namespace QuickDeploy
             Detail.Children.Add(UpdatePanel(m));
 
             // what a deploy does to it
-            if (m.Enabled && m.Changes > 0) Detail.Children.Add(Changes(m));
+            if (!st.OnOfficial)
+            {
+                var tbox = new StackPanel();
+                var tline = new StackPanel { Orientation = Orientation.Horizontal };
+                tline.Children.Add(new Ellipse { Width = 8, Height = 8, Fill = B(m.Enabled ? "Blue" : "Muted"), Margin = new Thickness(0, 0, 8, 0) });
+                tline.Children.Add(new TextBlock { Text = Texts.F(m.Enabled ? "target_detail_on" : "target_detail_off", st.TargetTitle), FontWeight = FontWeights.SemiBold });
+                tbox.Children.Add(tline);
+                tbox.Children.Add(Small(Texts.F(m.Enabled ? "target_detail_on_n" : "target_detail_off_n", st.TargetTitle), new Thickness(0, 8, 0, 0)));
+                Detail.Children.Add(Panel(tbox, new Thickness(0, 20, 0, 0)));
+            }
+            else if (m.Enabled && m.Changes > 0) Detail.Children.Add(Changes(m));
             else
             {
                 var ok = new StackPanel();
@@ -8681,11 +8718,12 @@ namespace QuickDeploy
 
         void Deploy_Click(object sender, RoutedEventArgs e)
         {
-            if (st != null && st.GameDir == null) ChooseGame();
+            if (st != null && !st.OnOfficial) _ = DeployNow();
+            else if (st != null && st.GameDir == null) ChooseGame();
             else _ = DeployNow();
         }
 
-        Task<bool> DeployNow() => Act(() => Cli.Call(() =>
+        Task<bool> DeployNow() => st != null && !st.OnOfficial ? DeployToTarget() : Act(() => Cli.Call(() =>
         {
             var r = Hd2Mod.Deploy.Run(Library.Load(), Store.GameDir());
             var said = Texts.F("deployed", Texts.N(r.Kept), Texts.N(r.Moved), Texts.N(r.Written), Texts.N(r.Linked), Texts.N(r.Copied),
@@ -8699,6 +8737,7 @@ namespace QuickDeploy
         async void Launch_Click(object sender, RoutedEventArgs e)
         {
             if (busy) return;
+            if (st != null && !st.OnOfficial) { await LaunchTarget(); return; }
             if (Hd2Mod.Deploy.GameRunning()) { Dialog.Tell(this, Texts.Get("game_already")); return; }
             if (st != null && st.GameDir != null && st.Pending > 0)
             {
@@ -8743,7 +8782,12 @@ namespace QuickDeploy
 
         void Purge_Click(object sender, RoutedEventArgs e)
         {
-            if (st != null && st.GameDir == null) ChooseGame();
+            if (st != null && !st.OnOfficial)
+            {
+                if (Dialog.Ask(this, Texts.F("target_purge_ask", st.TargetTitle), Texts.Get("purge")))
+                    _ = Act(() => Cli.Call(() => PluginTargets.Purge(PluginTargets.Of(st.Target, PluginHostHere()), PluginHostHere())), true);
+            }
+            else if (st != null && st.GameDir == null) ChooseGame();
             else if (Dialog.Ask(this, Texts.Get("purge_ask"), Texts.Get("purge")))
                 _ = Act(() => Cli.Call(() => Texts.F("purged", Texts.N(Hd2Mod.Deploy.Purge(Store.GameDir())))), true);
         }

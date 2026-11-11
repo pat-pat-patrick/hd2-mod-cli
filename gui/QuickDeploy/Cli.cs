@@ -280,7 +280,15 @@ namespace QuickDeploy
         public CheckBlock Check = new CheckBlock();
         /// <summary>Set while another program is writing to the game folder.</summary>
         public BusyBlock Deploying;
-        public int Pending => Moved + Written + Deleted;
+        /// <summary>The deploy target in use ("official", or a plugin's), the ones plugins offer
+        /// (id, title, found, why), and a plugin target's own words: changes waiting, whether its
+        /// game runs, what it says.</summary>
+        public string Target = "official", TargetTitle, TargetSaid;
+        public bool TargetOffered = true, TargetFound = true, TargetRunning;
+        public int TargetPending;
+        public List<(string Id, string Title, bool Found, string Why)> TargetOffers = new List<(string, string, bool, string)>();
+        public bool OnOfficial => Target == "official";
+        public int Pending => OnOfficial ? Moved + Written + Deleted : TargetPending;
     }
 
     class CliResult
@@ -388,6 +396,18 @@ namespace QuickDeploy
                     AlteredMods = List(ch, "altered").OfType<Dictionary<string, object>>().Select(x => Str(x, "mod")).Where(m => m != null).Distinct().Count(),
                 };
             s.KeepPrevious = Bool(d, "keep_previous");
+            var tb = Json.Obj(d, "target");
+            if (tb != null)
+            {
+                s.Target = Str(tb, "id") ?? "official";
+                foreach (var o in List(tb, "offers").OfType<Dictionary<string, object>>())
+                    s.TargetOffers.Add((Str(o, "id"), Str(o, "title"), Bool(o, "found"), Str(o, "why")));
+                if (!s.OnOfficial)
+                {
+                    s.TargetOffered = Bool(tb, "offered"); s.TargetTitle = Str(tb, "title") ?? s.Target; s.TargetFound = Bool(tb, "found");
+                    s.TargetPending = Int(tb, "pending"); s.TargetRunning = Bool(tb, "running"); s.TargetSaid = Str(tb, "said");
+                }
+            }
             foreach (var l in List(d, "leftovers").OfType<Dictionary<string, object>>())
                 s.Leftovers.Add(new Leftover { Path = Str(l, "path"), Name = Str(l, "name"), Bytes = Long(l, "bytes") });
             foreach (var (key, into) in new[] { ("conflicts", s.Clashes), ("all_conflicts", s.AllClashes) })
