@@ -14,31 +14,33 @@ namespace QuickDeploy
     /// Deploy, Purge and Launch go to the target in use.</summary>
     public partial class MainWindow
     {
-        string targetsDrawn;
-
-        void RenderTargets()
+        /// <summary>The switch between the targets, at the top of the left column, above the
+        /// library (the user, 2026-11-11: beside Deploy it did not share its height, and the place was
+        /// wrong); each target as wide as the other. Null when no plugin offers a target.</summary>
+        UIElement TargetSwitch()
         {
-            if (st == null) return;
+            if (st == null) return null;
             var offers = st.TargetOffers.Where(o => o.Found || o.Id == st.Target).ToList();
-            bool show = offers.Count > 0 || !st.OnOfficial;
-            var key = st.Target + "|" + string.Join(",", offers.Select(o => o.Id + o.Title));
-            TargetBar.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
-            if (key == targetsDrawn) return;
-            targetsDrawn = key;
-            TargetBox.Children.Clear();
+            if (offers.Count == 0 && st.OnOfficial) return null;
             var all = new List<(string Id, string Title, string Tip)> { ("official", Texts.Get("target_official"), Texts.Get("target_official_tip")) };
             all.AddRange(offers.Select(o => (o.Id, o.Title, o.Found ? Texts.F("target_tip", o.Title) : o.Why)));
             if (!st.OnOfficial && all.All(a => a.Id != st.Target)) all.Add((st.Target, st.Target, Texts.F("target_no_plugin", st.Target)));
+            var row = new System.Windows.Controls.Primitives.UniformGrid { Rows = 1, Columns = all.Count };
             foreach (var (id, title, tip) in all)
             {
                 var rb = new RadioButton
                 {
-                    Content = title, Style = (Style)FindResource("Segment"), GroupName = "deploy_target", IsChecked = id == st.Target,
-                    MinWidth = 88, ToolTip = tip,
+                    Content = new TextBlock { Text = title, TextTrimming = TextTrimming.CharacterEllipsis }, Style = (Style)FindResource("Segment"),
+                    GroupName = "deploy_target", IsChecked = id == st.Target, ToolTip = tip, HorizontalAlignment = HorizontalAlignment.Stretch,
                 };
                 rb.Click += (s, e) => { if (id != st.Target) SwitchTarget(id, title); };
-                TargetBox.Children.Add(rb);
+                row.Children.Add(rb);
             }
+            return new Border
+            {
+                BorderBrush = B("Grid"), BorderThickness = new Thickness(1), Margin = new Thickness(0, 5, 0, 20),   // 5: level with the list's Group | Order bar (measured 2026-11-11)
+                ToolTip = Texts.Get("target_switch_tip"), Child = row,
+            };
         }
 
         void SwitchTarget(string id, string title)

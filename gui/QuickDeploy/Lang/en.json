@@ -1101,5 +1101,6 @@
   "target_side": "Deploying to {0}",
   "target_side_note": "{0} has its own list: which mods are on, their order and options. The official game keeps its own.",
   "target_back": "Back to the official game",
-  "target_purge": "Take everything out of {0}"
+  "target_purge": "Take everything out of {0}",
+  "target_switch_tip": "Where the list deploys: each has its own list of mods, order and options"
 }

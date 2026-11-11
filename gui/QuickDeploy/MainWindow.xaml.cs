@@ -3372,7 +3372,6 @@ namespace QuickDeploy
                 // the target's game keeps the mods it started with (HellForge refuses changes then)
                 DeployBtn.IsEnabled = !fromSaved && st.TargetOffered && st.TargetFound && !st.TargetRunning;
             }
-            if (!fromSaved) RenderTargets();
             rowTarget = st.OnOfficial ? null : st.TargetTitle ?? st.Target;
             // what was just done comes first (a download leaves changes to deploy: the Deploy
             // button counts them); else whether the game folder matches
@@ -3418,6 +3417,8 @@ namespace QuickDeploy
         void RenderNav()
         {
             Nav.Children.Clear();
+            var targets = TargetSwitch();
+            if (targets != null) Nav.Children.Add(targets);
             Nav.Children.Add(Label("library", new Thickness(8, 0, 0, 4)));
             if (filter == "lua" || filter == "pending") filter = "all";
             var scope = st.Mods.Where(InScope).ToList();

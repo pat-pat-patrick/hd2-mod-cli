@@ -1073,5 +1073,6 @@
   "target_side": "正在部署到 {0}",
   "target_side_note": "{0} 有自己的一套：开关、顺序和选项。官方游戏的那一套保持不变。",
   "target_back": "切换回官方游戏",
-  "target_purge": "从 {0} 中全部移出"
+  "target_purge": "从 {0} 中全部移出",
+  "target_switch_tip": "部署到哪里：每一边有自己的一套 MOD 开关、顺序和选项"
 }
