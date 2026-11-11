@@ -1072,6 +1072,7 @@
   "target_refused": "以下 MOD 未部署：",
   "target_purge_ask": "是否从 {0} 中移除 Quick Deploy 部署的全部 MOD？MOD 库不受影响。",
   "target_no_launch": "{0} 的插件不支持启动游戏",
+  "target_launching": "正在通过 {0} 启动游戏，进度显示在 {0} 窗口中",
   "target_detail_on": "已启用 · 部署到 {0}",
   "target_detail_on_n": "部署时将按 {0} 的游戏版本转换，转换结果显示在该 MOD 的备注中。",
   "target_detail_off": "未启用 · 不部署到 {0}",

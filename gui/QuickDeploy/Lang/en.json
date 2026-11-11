@@ -1100,6 +1100,7 @@
   "target_refused": "The following mods were not deployed:",
   "target_purge_ask": "Remove every mod Quick Deploy deployed to {0}? The library is not affected.",
   "target_no_launch": "The plugin of {0} cannot start the game",
+  "target_launching": "Starting the game through {0}; its window shows the progress",
   "target_detail_on": "Enabled · deployed to {0}",
   "target_detail_on_n": "On deploy, the mod is converted for {0}'s game version; the result is shown in the mod's note.",
   "target_detail_off": "Disabled · not deployed to {0}",

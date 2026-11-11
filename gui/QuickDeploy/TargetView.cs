@@ -74,21 +74,26 @@ namespace QuickDeploy
         /// <summary>The target's game, as its plugin starts it; changes not deployed yet first, when asked.</summary>
         async Task LaunchTarget()
         {
-            if (st.TargetRunning) { Dialog.Tell(this, Texts.F("target_running", st.TargetTitle)); return; }
+            // every launch and what came of it in the log (the user, 2026-11-12: "点 HellForge 启动
+            // 启动不起来", and the log said nothing)
+            if (st.TargetRunning) { ManagerLog.Info("launch " + st.Target + ": a session is already running"); Dialog.Tell(this, Texts.F("target_running", st.TargetTitle)); return; }
             if (st.Pending > 0)
             {
                 if (!Dialog.Ask(this, Texts.F("launch_ask", st.Pending), Texts.Get("deploy_launch"))) return;
-                if (!await DeployToTarget()) return;
+                if (!await DeployToTarget()) { ManagerLog.Info("launch " + st.Target + ": not started, the deploy before it failed"); return; }
             }
             try
             {
                 var host = PluginHostHere();
                 var offer = PluginTargets.Of(st.Target, host);
                 if (offer.Type.GetMethod("TargetLaunch") == null) { Dialog.Tell(this, Texts.F("target_no_launch", offer.Title)); return; }
+                ManagerLog.Info("launch " + offer.Id + ": handed to " + offer.File);
                 PluginFiles.Call(offer.Type, "TargetLaunch", this, host);
+                Foot(Texts.F("target_launching", offer.Title), "Blue");
             }
-            catch (Exception x) when (x is ModError || x is InvalidOperationException || x is System.IO.IOException)
+            catch (Exception x) when (!(x is OutOfMemoryException))
             {
+                ManagerLog.Warn("launch " + st.Target + " failed: " + x.Message);
                 Dialog.Tell(this, x.Message);
             }
         }

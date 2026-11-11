@@ -87,7 +87,25 @@ namespace Hd2Mod
             catch (Exception e) { ManagerLog.Warn("plugin " + o.File + ": TargetStatus: " + e.Message); return new Dictionary<string, object> { ["said"] = e.Message }; }
         }
 
-        public static Dictionary<string, object> Deploy(Offer o, Dictionary<string, object> host) => Ask(o, "TargetDeploy", host);
+        /// <summary>A deploy to the target, logged with its time and the steps its plugin names
+        /// (TargetDeploy's optional "log"), so a slow one says where the time went (the user,
+        /// 2026-11-12: "HellForge 部署怎么用时这么久").</summary>
+        public static Dictionary<string, object> Deploy(Offer o, Dictionary<string, object> host)
+        {
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            try
+            {
+                var r = Ask(o, "TargetDeploy", host);
+                ManagerLog.Info("deploy to " + o.Id + " in " + clock.Elapsed.TotalSeconds.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) + " s: " +
+                                (Json.Str(r, "said") ?? "") + (Json.Str(r, "log") is string l && l.Length > 0 ? " (" + l + ")" : ""));
+                return r;
+            }
+            catch (Exception e)
+            {
+                ManagerLog.Warn("deploy to " + o.Id + " failed after " + clock.Elapsed.TotalSeconds.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) + " s: " + e.Message);
+                throw;
+            }
+        }
 
         public static string Purge(Offer o, Dictionary<string, object> host)
         {
