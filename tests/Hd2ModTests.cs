@@ -537,6 +537,17 @@ namespace Hd2Mod.Tests
         readonly string baseUrl;
         readonly Dictionary<string, byte[]> zips = new Dictionary<string, byte[]>();
         public readonly List<string> Seen = new List<string>();
+        /// <summary>Release files sent: "name range" or "name whole".</summary>
+        public readonly List<string> Fetched = new List<string>();
+        /// <summary>someone/mixed's releases, as the fake answers them (set by a test).</summary>
+        string MixedReleases = "[]";
+
+        /// <summary>A release as GitHub lists it, with its files: (name, key in zips, upload time).</summary>
+        string Release(string tag, string repo, bool draft, bool pre, params (string Name, string Key, string Uploaded)[] files) =>
+            "{\"tag_name\": \"" + tag + "\", \"draft\": " + (draft ? "true" : "false") + ", \"prerelease\": " + (pre ? "true" : "false") +
+            ", \"html_url\": \"https://github.com/" + repo + "/releases/tag/" + tag + "\", \"assets\": [" +
+            string.Join(",", files.Select(f => "{\"name\": \"" + f.Name + "\", \"size\": " + zips[f.Key].Length + ", \"created_at\": \"" + f.Uploaded +
+                                               "\", \"browser_download_url\": \"" + baseUrl + "cdn/" + Uri.EscapeDataString(f.Key) + ".zip\"}")) + "]}";
 
         public OnlineSources()
         {
@@ -584,11 +595,27 @@ namespace Hd2Mod.Tests
 #endif
                 int status = 200;
                 byte[] body;
-                if (path.StartsWith("/cdn/")) body = zips[path.Substring(5).Replace(".zip", "")];
-                // GitHub: a repository whose latest release is v2.0 with a zip
-                else if (path == "/gh/repos/someone/cape/releases/latest")
-                    body = Bytes("{\"tag_name\": \"v2.0\", \"html_url\": \"https://github.com/someone/cape/releases/tag/v2.0\", " +
-                                 "\"assets\": [{\"browser_download_url\": \"" + baseUrl + "cdn/f2.zip\"}]}");
+                if (path.StartsWith("/cdn/"))
+                {
+                    var key = Uri.UnescapeDataString(path.Substring(5));
+                    if (key.EndsWith(".zip")) key = key.Substring(0, key.Length - 4);
+                    body = zips[key];
+                    // a release file's storage answers byte ranges (GitHub's does)
+                    var range = Regex.Match(c.Request.Headers["Range"] ?? "", @"^bytes=(\d+)-(\d+)$");
+                    lock (Fetched) Fetched.Add(key + (range.Success ? " range" : " whole"));
+                    if (range.Success)
+                    {
+                        int from = int.Parse(range.Groups[1].Value), to = Math.Min(int.Parse(range.Groups[2].Value), body.Length - 1);
+                        c.Response.AddHeader("Content-Range", "bytes " + from + "-" + to + "/" + body.Length);
+                        status = 206;
+                        body = body.Skip(from).Take(to - from + 1).ToArray();
+                    }
+                }
+                // GitHub: a repository with releases v1.0 and v2.0, a zip each
+                else if (path == "/gh/repos/someone/cape/releases")
+                    body = Bytes("[" + Release("v2.0", "someone/cape", false, false, ("f2.zip", "f2", "2026-10-02T00:00:00Z")) + "," +
+                                 Release("v1.0", "someone/cape", false, false, ("f1.zip", "f1", "2026-10-01T00:00:00Z")) + "]");
+                else if (path == "/gh/repos/someone/mixed/releases") body = Bytes(MixedReleases);
                 // this program's own releases: a draft, a pre-release, a release, an old one
                 else if (path == "/gh/repos/pat-pat-patrick/hd2-mod-cli/releases")
                     body = Bytes("[{\"tag_name\": \"v9.0.0\", \"draft\": true, \"prerelease\": false, \"html_url\": \"d\"}," +
@@ -1244,6 +1271,83 @@ namespace Hd2Mod.Tests
             Assert.Equal("v2.0", updated.GitHub.Tag);
             Assert.Equal("cape v2", File.ReadAllText(Path.Combine(updated.Path, A + ".patch_0")));
             Assert.Equal("current", Updates.Check(Library.Load()).First(x => x.ModId == updated.Id).Status);
+        }
+
+        /// <summary>A repository laid out as MDL3-preview was (2026-11-12): tags that are names, a
+        /// release holding another mod's zip first, the mod's file renamed from release to release,
+        /// two releases on one commit. The mod's file is found by its manifest Guid, read from each
+        /// zip with byte ranges only; the newest is the one received last; the version shown comes
+        /// from the file's name. Drafts and pre-releases are not offered.</summary>
+        [Fact]
+        public void GitHubUpdatesFindTheModsOwnFileByItsGuid()
+        {
+            const string G = "b0ae9d35-4a69-5918-b43d-51d4d10ff001";
+            string Manifest(string name, string guid) => "{\"Guid\": \"" + guid + "\", \"Name\": \"" + name + "\", \"Version\": 1}";
+            zips["m47"] = Zip(("manifest.json", Manifest("Loader 3.0.0-dev.47", G)), (A + ".patch_0", "loader 47"));
+            zips["m52"] = Zip(("manifest.json", Manifest("Loader 3.0.0-dev.52", G)), (A + ".patch_0", "loader 52"));
+            zips["m57"] = Zip(("Loader/manifest.json", Manifest("Loader 3.0.0-dev.57", G)), ("Loader/" + A + ".patch_0", "loader 57"));
+            zips["m60"] = Zip(("manifest.json", Manifest("Loader 3.0.0-dev.60", G)), (A + ".patch_0", "loader 60"));
+            zips["m61"] = Zip(("manifest.json", Manifest("Loader 3.0.0-dev.61", G)), (A + ".patch_0", "loader 61"));
+            zips["bfv"] = Zip(("manifest.json", Manifest("Hit Feedback 2.2.5", "979aac77-dc65-435f-96a3-9941e4952785")), (B + ".patch_0", "feedback"));
+            MixedReleases = "[" +
+                Release("Draft", "someone/mixed", true, false, ("Loader-3.0.0-dev.61.zip", "m61", "2026-11-13T00:00:00Z")) + "," +
+                Release("Try", "someone/mixed", false, true, ("Loader-3.0.0-dev.60.zip", "m60", "2026-11-12T00:00:00Z")) + "," +
+                Release("Normal", "someone/mixed", false, false, ("MDL3-3.0.0-dev.47-preview.zip", "m47", "2026-11-10T03:55:00Z")) + "," +
+                Release("BugFix", "someone/mixed", false, false, ("mdl3_build_3.0.0-dev.52.zip", "m52", "2026-11-10T11:09:00Z")) + "," +
+                Release("AH_SB", "someone/mixed", false, false, ("Hit-Feedback-2.2.5-audio-fix.zip", "bfv", "2026-11-11T15:33:00Z"),
+                                                              ("Renamed Loader 3.0.0-dev.57.zip", "m57", "2026-11-11T15:29:00Z")) + "]";
+
+            // installed: dev.47, downloaded from the release Normal
+            var dir = Path.Combine(Root, "dl");
+            Directory.CreateDirectory(dir);
+            var file = Path.Combine(dir, "MDL3-3.0.0-dev.47-preview.zip");
+            File.WriteAllBytes(file, zips["m47"]);
+            Cli("add", file, "--name", "Loader");
+            Cli("source", "Loader", "https://github.com/someone/mixed/releases/download/Normal/MDL3-3.0.0-dev.47-preview.zip");
+            var mod = Library.Load().Mods.First(m => m.Name == "Loader");
+            Assert.Equal("MDL3-3.0.0-dev.47-preview.zip", mod.GitHub.Asset);
+            Assert.Equal(("3.0.0-dev.47", "github"), Origins.VersionOf(mod));
+
+            var u = Updates.One(mod);
+            Assert.Equal("update", u.Status);
+            Assert.Equal("3.0.0-dev.47", u.Current);
+            Assert.Equal("3.0.0-dev.57", u.Latest);                         // not dev.60 (pre-release), not dev.61 (draft)
+            Assert.EndsWith("cdn/m57.zip", u.Download);                    // not the other mod's zip listed first
+            Assert.Equal("AH_SB", u.LatestTag);
+            lock (Fetched)
+            {
+                Assert.DoesNotContain("bfv whole", Fetched);                // read by ranges only
+                Assert.Contains("bfv range", Fetched);
+                Assert.DoesNotContain("m57 whole", Fetched);
+            }
+
+            // the Guids read are kept: a second check reads no file
+            int before;
+            lock (Fetched) before = Fetched.Count;
+            Assert.Equal("update", Updates.One(Library.Load().Mods.First(m => m.Name == "Loader")).Status);
+            lock (Fetched) Assert.Equal(before, Fetched.Count);
+
+            Assert.Contains("updated: Loader 3.0.0-dev.57 3.0.0-dev.57", Cli("update", "Loader"));
+            var updated = Library.Load().Mods.First(m => m.GitHub != null && m.GitHub.Repo == "mixed");
+            Assert.Equal("loader 57", File.ReadAllText(Path.Combine(updated.Path, A + ".patch_0")));
+            Assert.Equal("AH_SB", updated.GitHub.Tag);
+            Assert.Equal("Renamed Loader 3.0.0-dev.57.zip", updated.GitHub.Asset);
+            var again = Updates.One(updated);
+            Assert.Equal("current", again.Status);
+            Assert.Equal("3.0.0-dev.57", again.Current);
+        }
+
+        /// <summary>Which file is a mod's without a Guid: the same name with its digits left out; the
+        /// version shown: the tag when it holds a number, else the file name's.</summary>
+        [Fact]
+        public void GitHubVersionsAndNamesWithoutAGuid()
+        {
+            Assert.Equal("v2.0", GitHubUpdates.Label("v2.0", "x.zip"));
+            Assert.Equal("3.0.0-dev.57", GitHubUpdates.Label("AH_SB", "MDL3-3.0.0-dev.57-preview-Data-Hub-0.6.6.zip"));
+            Assert.Equal("2.2.5", GitHubUpdates.Label("AH_SB", "BFV-Hit-and-Kill-Feedback-2.2.5-audio-fix.zip"));
+            Assert.Null(GitHubUpdates.Label("Normal", "loader.zip"));
+            Assert.Equal(GitHubUpdates.Skeleton("MDL3-3.0.0-dev.47-preview.zip"), GitHubUpdates.Skeleton("mdl3-3.0.1-dev.152-PREVIEW.zip"));
+            Assert.NotEqual(GitHubUpdates.Skeleton("MDL3-3.0.0-dev.47-preview.zip"), GitHubUpdates.Skeleton("Hit-Feedback-2.2.5.zip"));
         }
 
         /// <summary>This program's own updates (the user, 2026-10-25): the development build is

@@ -20,6 +20,8 @@ namespace Hd2Mod
         /// <summary>GitHub: the release asset to download; Nexus: the newest file's id.</summary>
         public string Download;
         public long LatestFile, LatestTime;
+        /// <summary>GitHub: the release and the file of the newest (GitHubUpdates).</summary>
+        public string LatestTag, LatestAsset;
         /// <summary>Nexus Mods: what each version since the installed one changed, newest first, as
         /// its author wrote it on the page (the user, 2026-11-04); empty when the page says nothing.</summary>
         public List<Change> Changes = new List<Change>();
@@ -34,7 +36,8 @@ namespace Hd2Mod
 
     /// <summary>Update checks on each mod's own channel (the user, 2026-10-24: "从 GitHub 下下来的，
     /// 就从 GitHub 检查更新"): Nexus Mods through its public API (v2: the files, their groups and
-    /// categories), with no key, in every build; GitHub through its releases (latest).
+    /// categories), with no key, in every build; GitHub through its releases (GitHubUpdates: the
+    /// mod's own file by its manifest Guid, the newest by the time GitHub received it).
     /// Read only; nothing is downloaded unless the player asks.</summary>
     public static class Updates
     {
@@ -84,6 +87,25 @@ namespace Hd2Mod
             }
         }
 
+        /// <summary>Bytes from to to (inclusive) of a file, by an HTTP range; null when the server
+        /// sends the whole file instead (it is not read).</summary>
+        internal static byte[] GetRange(string url, long from, long to)
+        {
+            var q = new HttpRequestMessage(HttpMethod.Get, url);
+            q.Headers.Accept.Clear();
+            q.Headers.Accept.ParseAdd("application/octet-stream");
+            q.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(from, to);
+            HttpResponseMessage r;
+            try { r = http.SendAsync(q, HttpCompletionOption.ResponseHeadersRead).GetAwaiter().GetResult(); }
+            catch (HttpRequestException e) { throw new ModError("cannot be reached: " + e.Message, "offline"); }
+            using (r)
+            {
+                if ((int)r.StatusCode == 403 || (int)r.StatusCode == 429) throw new ModError("too many requests for now", "busy");
+                if ((int)r.StatusCode != 206) return null;
+                return r.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult();
+            }
+        }
+
         /// <summary>Every mod checked (progress: done, all). Mods without an origin first learn it
         /// (Learn), unless the caller did already.</summary>
         public static List<UpdateInfo> Check(Library lib, Action<int, int> progress = null, bool learn = true)
@@ -123,8 +145,8 @@ namespace Hd2Mod
         /// brought up to date by every check: it was written once, when the mod was matched with its
         /// page, and stayed (the user, 2026-11-05: Boot Mod Loader's page said 0.13.4, the details
         /// 0.7.0, the version on the page the day it was matched). Nexus Mods: the page's own
-        /// version, asked with the times the check asks for anyway; GitHub: the latest release's
-        /// tag. Whether a mod's changed.</summary>
+        /// version, asked with the times the check asks for anyway; GitHub: the newest file's
+        /// version (GitHubUpdates.Label). Whether a mod's changed.</summary>
         static bool PageVersions(Library lib, Dictionary<long, string> nexus, List<UpdateInfo> results)
         {
             bool changed = false;
@@ -206,7 +228,7 @@ namespace Hd2Mod
 
         /// <summary>What a result was checked for: the mod's folder, its recorded version and its
         /// page. A mod changed since (a new version, another source) is not shown the old result.</summary>
-        public static string As(Mod m) => m.Path + "\u001f" + (m.Nexus?.Version ?? m.GitHub?.Tag) + "\u001f" + Origins.Of(m).Page;
+        public static string As(Mod m) => m.Path + "\u001f" + (m.Nexus?.Version ?? m.GitHub?.Tag) + (m.GitHub?.Asset != null ? "/" + m.GitHub.Asset : "") + "\u001f" + Origins.Of(m).Page;
 
         /// <summary>Results kept: a whole check's replace the last ones and set its time; one mod's
         /// replace only that mod's.</summary>
@@ -224,6 +246,7 @@ namespace Hd2Mod
                             ["as"] = As(m), ["name"] = u.Name, ["channel"] = u.Channel, ["page"] = u.Page, ["status"] = u.Status,
                             ["current"] = u.Current, ["latest"] = u.Latest, ["why"] = u.Why, ["download"] = u.Download,
                             ["latest_file"] = u.LatestFile, ["latest_time"] = u.LatestTime,
+                            ["latest_tag"] = u.LatestTag, ["latest_asset"] = u.LatestAsset,
                             ["changes"] = u.Changes.Select(c => (object)new Dictionary<string, object> { ["version"] = c.Version, ["lines"] = c.Lines.Cast<object>().ToList() }).ToList(),
                         };
                 d["mods"] = kept;
@@ -248,6 +271,7 @@ namespace Hd2Mod
                     ModId = m.Id, Name = Json.Str(d, "name"), Channel = Json.Str(d, "channel"), Page = Json.Str(d, "page"), Status = Json.Str(d, "status"),
                     Current = Json.Str(d, "current"), Latest = Json.Str(d, "latest"), Why = Json.Str(d, "why"), Download = Json.Str(d, "download"),
                     LatestFile = Json.Long(d, "latest_file"), LatestTime = Json.Long(d, "latest_time"),
+                    LatestTag = Json.Str(d, "latest_tag"), LatestAsset = Json.Str(d, "latest_asset"),
                     Changes = Json.List(d, "changes").OfType<Dictionary<string, object>>()
                         .Select(c => new Change { Version = Json.Str(c, "version"), Lines = Json.List(c, "lines").OfType<string>().Select(Words).Where(x => x.Length > 0).ToList() }).ToList(),
                 };
@@ -269,7 +293,7 @@ namespace Hd2Mod
                     CheckNexus(m.Nexus, u);
                     if (save) SaveChecks();
                 }
-                else if (m.GitHub != null) CheckGitHub(m.GitHub, u);
+                else if (m.GitHub != null) GitHubUpdates.Check(m, u);
                 else u.Status = m.Page != null ? "no_check" : "no_source";
             }
             catch (ModError e) { u.Status = "error"; u.Why = e.Kind ?? e.Message; }
@@ -508,19 +532,6 @@ namespace Hd2Mod
         static Dictionary<string, object> NewestMain(List<Dictionary<string, object>> files) =>
             files.Where(f => (Json.Str(f, "category") ?? "") == "MAIN").OrderByDescending(f => Json.Long(f, "date")).FirstOrDefault();
 
-        static void CheckGitHub(GitHubRef r, UpdateInfo u)
-        {
-            var d = Json.Parse(Get(GitHubApi.TrimEnd('/') + "/repos/" + r.Owner + "/" + r.Repo + "/releases/latest")) as Dictionary<string, object>;
-            var tag = Json.Str(d, "tag_name");
-            u.Current = r.Tag;
-            u.Latest = tag;
-            u.Page = Json.Str(d, "html_url") ?? u.Page;
-            u.Download = Json.List(d, "assets").OfType<Dictionary<string, object>>()
-                .Select(a => Json.Str(a, "browser_download_url"))
-                .FirstOrDefault(x => x != null && new[] { ".zip", ".7z", ".rar" }.Any(e => x.EndsWith(e, StringComparison.OrdinalIgnoreCase)));
-            u.Status = string.IsNullOrEmpty(r.Tag) ? "unknown" : string.Equals(r.Tag, tag, StringComparison.OrdinalIgnoreCase) ? "current" : "update";
-        }
-
         /// <summary>A GitHub release's archive downloaded into the mod folder and put in the library as
         /// the mod's new version (its place, on/off and options kept); the archive is not kept.</summary>
         public static Mod ApplyGitHub(string modId, UpdateInfo u)
@@ -548,7 +559,11 @@ namespace Hd2Mod
             mod.Path = unpacked;
             mod.Source = u.Page;
             mod.ArchiveMd5 = null;
-            mod.GitHub = new GitHubRef { Owner = mod.GitHub?.Owner, Repo = mod.GitHub?.Repo, Tag = u.Latest };
+            mod.GitHub = new GitHubRef
+            {
+                Owner = mod.GitHub?.Owner, Repo = mod.GitHub?.Repo, Tag = u.LatestTag ?? u.Latest,
+                Asset = u.LatestAsset ?? Uri.UnescapeDataString(name), Uploaded = u.LatestTime,
+            };
             if (!string.IsNullOrEmpty(manifest?.Name)) mod.Name = manifest.Name;
             lib.Save();
             return mod;

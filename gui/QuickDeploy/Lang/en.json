@@ -327,7 +327,7 @@
   "delete_disk": "Delete from the disk…",
   "delete_ask": "Delete “{0}” from the disk for good?\n\nIts folder is deleted, not moved to the Recycle Bin:\n{1}\n\nIt is also taken out of the library and out of the game (a deploy runs now). The archive it was added from is kept.",
   "delete_ask_page": "Delete “{0}” from the disk for good?\n\nIts folder is deleted, not moved to the Recycle Bin:\n{1}\n\nIt is also taken out of the library and out of the game (a deploy runs now). It can be downloaded again from its page.",
-  "delete_ask_only": "Delete “{0}” from the disk for good?\n\nIts folder is deleted, not moved to the Recycle Bin:\n{1}\n\nIt is also taken out of the library and out of the game (a deploy runs now). No archive it was added from is left, so this folder may be its only copy.",
+  "delete_ask_only": "Delete “{0}” from the disk for good?\n\nIts folder is deleted, not moved to the Recycle Bin:\n{1}\n\nIt is also taken out of the library and out of the game (a deploy runs now). The archive it was added from was not found, so this folder may be its only copy.",
   "deleted_mod": "{0} deleted from the disk: {1} freed",
   "del_protected": "{0} is not a mod's own folder (a drive, the game or the settings folder), so it is not deleted. Nothing was changed.",
   "del_shared": "Other mods in the library use the folder {0}, so it is not deleted. Nothing was changed.",

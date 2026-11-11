@@ -94,6 +94,10 @@ namespace Hd2Mod
     public class GitHubRef
     {
         public string Owner, Repo, Tag;
+        /// <summary>The release file installed, and when GitHub received it (unix seconds): which
+        /// file of a release that holds several, and of which upload (GitHubUpdates).</summary>
+        public string Asset;
+        public long Uploaded;
     }
 
     /// <summary>The load order (top to bottom; the last one wins) in library.json.</summary>
@@ -222,14 +226,20 @@ namespace Hd2Mod
             new NexusRef { Game = Json.Str(nx, "game"), Mod = Json.Long(nx, "mod"), File = Json.Long(nx, "file"), Version = Json.Str(nx, "version"), Time = Json.Long(nx, "time") };
 
         static GitHubRef ReadGitHub(Dictionary<string, object> gh) => gh == null ? null :
-            new GitHubRef { Owner = Json.Str(gh, "owner"), Repo = Json.Str(gh, "repo"), Tag = Json.Str(gh, "tag") };
+            new GitHubRef { Owner = Json.Str(gh, "owner"), Repo = Json.Str(gh, "repo"), Tag = Json.Str(gh, "tag"), Asset = Json.Str(gh, "asset"), Uploaded = Json.Long(gh, "uploaded") };
 
         static Dictionary<string, object> NexusJson(NexusRef n) => new Dictionary<string, object>
         {
             ["game"] = n.Game, ["mod"] = n.Mod, ["file"] = n.File, ["version"] = n.Version, ["time"] = n.Time,
         };
 
-        static Dictionary<string, object> GitHubJson(GitHubRef g) => new Dictionary<string, object> { ["owner"] = g.Owner, ["repo"] = g.Repo, ["tag"] = g.Tag };
+        static Dictionary<string, object> GitHubJson(GitHubRef g)
+        {
+            var d = new Dictionary<string, object> { ["owner"] = g.Owner, ["repo"] = g.Repo, ["tag"] = g.Tag };
+            if (g.Asset != null) d["asset"] = g.Asset;
+            if (g.Uploaded > 0) d["uploaded"] = g.Uploaded;
+            return d;
+        }
 
         public static List<OptionChoice> ReadOptionsJson(List<object> list) => ReadOptions(list);
 

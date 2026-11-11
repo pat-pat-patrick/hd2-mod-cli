@@ -12,7 +12,7 @@ namespace Hd2Mod
     /// site's page (no check there).</summary>
     public static class Origins
     {
-        static readonly Regex GitHubRelease = new Regex(@"github\.com/([\w.-]+)/([\w.-]+)/releases/(?:download|tag)/([^/?#]+)", RegexOptions.IgnoreCase);
+        static readonly Regex GitHubRelease = new Regex(@"github\.com/([\w.-]+)/([\w.-]+)/releases/(?:download|tag)/([^/?#]+)(?:/([^/?#]+))?", RegexOptions.IgnoreCase);
         static readonly Regex GitHubRepo = new Regex(@"github\.com/([\w.-]+)/([\w.-]+?)(?:\.git)?(?:[/?#]|$)", RegexOptions.IgnoreCase);
         static readonly Regex NexusPage = new Regex(@"nexusmods\.com/([\w]+)/mods/(\d+)", RegexOptions.IgnoreCase);
         // Nexus Mods' download names: "<name> <mod id> <version> <yyyy-mm-ddThh-mmZ> <code>.zip"
@@ -32,7 +32,7 @@ namespace Hd2Mod
             foreach (var url in new[] { host, referrer })
             {
                 var g = GitHubRelease.Match(url ?? "");
-                if (g.Success) { mod.GitHub = new GitHubRef { Owner = g.Groups[1].Value, Repo = g.Groups[2].Value, Tag = Uri.UnescapeDataString(g.Groups[3].Value) }; return; }
+                if (g.Success) { mod.GitHub = Release(g); return; }
             }
             if ((host ?? "").IndexOf("nexusmods.com", StringComparison.OrdinalIgnoreCase) >= 0 || (host ?? "").IndexOf("nexus-cdn", StringComparison.OrdinalIgnoreCase) >= 0
                 || (referrer ?? "").IndexOf("nexusmods.com", StringComparison.OrdinalIgnoreCase) >= 0)
@@ -71,6 +71,13 @@ namespace Hd2Mod
             return n.Success && long.TryParse(n.Groups["mod"].Value, out var id) ? id : 0;
         }
 
+        /// <summary>A release address as a GitHubRef: its tag, and the file when it names one.</summary>
+        static GitHubRef Release(Match g) => new GitHubRef
+        {
+            Owner = g.Groups[1].Value, Repo = g.Groups[2].Value, Tag = Uri.UnescapeDataString(g.Groups[3].Value),
+            Asset = g.Groups[4].Success ? Uri.UnescapeDataString(g.Groups[4].Value) : null,
+        };
+
         static string Field(string zone, string key)
         {
             var m = Regex.Match(zone, "^" + key + @"=(.+)$", RegexOptions.Multiline);
@@ -95,7 +102,7 @@ namespace Hd2Mod
             var repo = GitHubRepo.Match(url);
             if (g.Success || repo.Success)
             {
-                mod.GitHub = g.Success ? new GitHubRef { Owner = g.Groups[1].Value, Repo = g.Groups[2].Value, Tag = Uri.UnescapeDataString(g.Groups[3].Value) }
+                mod.GitHub = g.Success ? Release(g)
                                        : new GitHubRef { Owner = repo.Groups[1].Value, Repo = repo.Groups[2].Value };
                 mod.Nexus = null;
                 mod.Page = null;
@@ -145,7 +152,7 @@ namespace Hd2Mod
             // its time: without either it was the page's newest, written in by an older match
             var downloaded = m.Nexus != null && (m.Nexus.File > 0 || m.Nexus.Time > 0);
             var recorded = downloaded && !string.IsNullOrWhiteSpace(m.Nexus.Version) ? (m.Nexus.Version.Trim(), "nexus")
-                         : !string.IsNullOrWhiteSpace(m.GitHub?.Tag) ? (m.GitHub.Tag.Trim(), "github")
+                         : GitHubVersion(m) is string gv ? (gv, "github")
                          : ((string)null, (string)null);
             if (recorded.Item1 != null)
                 return inFolder != null && !SameVersion(inFolder, recorded.Item1) ? (inFolder, fromFolder) : recorded;
@@ -156,9 +163,26 @@ namespace Hd2Mod
             return (null, null);
         }
 
-        /// <summary>Two ways of writing one version: "v2.0" and "2.0".</summary>
-        static bool SameVersion(string a, string b) =>
-            string.Equals(a.TrimStart('v', 'V'), b.TrimStart('v', 'V'), StringComparison.OrdinalIgnoreCase);
+        /// <summary>A GitHub download's version: the tag when it holds a number, else the version in the
+        /// file's name (a tag such as AH_SB is a name, not a version); null when neither says one.</summary>
+        static string GitHubVersion(Mod m)
+        {
+            if (m.GitHub == null) return null;
+            string file = m.GitHub.Asset;
+            if (file == null && !string.IsNullOrEmpty(m.Source) && !m.Source.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+                try { file = Path.GetFileName(m.Source); } catch (ArgumentException) { }
+            return GitHubUpdates.Label(m.GitHub.Tag, file);
+        }
+
+        /// <summary>Two ways of writing one version: "v2.0" and "2.0"; and "3.0.0" for "3.0.0-dev.57",
+        /// as a folder's name is read (InName takes no suffix: MDL3-3.0.0-dev.57-preview).</summary>
+        static bool SameVersion(string a, string b)
+        {
+            a = a.TrimStart('v', 'V');
+            b = b.TrimStart('v', 'V');
+            return string.Equals(a, b, StringComparison.OrdinalIgnoreCase)
+                   || b.StartsWith(a + "-", StringComparison.OrdinalIgnoreCase) || a.StartsWith(b + "-", StringComparison.OrdinalIgnoreCase);
+        }
 
         /// <summary>The channel's name and the mod's page there, for the window; nulls without one.</summary>
         public static (string Channel, string Page) Of(Mod m)
