@@ -388,7 +388,12 @@ namespace Hd2Mod.Tests
             PluginFiles.OfficialJson = () => OfficialList;                       // named, never released: not official
             Assert.False(PluginFiles.HasButton("HD2QD.Sample.dll", t));
             var icon = PluginFiles.IconBytes(t);
-            Assert.Equal(new byte[] { 0, 0, 1, 0 }, icon.Take(4).ToArray());    // an .ico
+            Assert.Equal(new byte[] { 0, 0, 1, 0 }, icon.Take(4).ToArray());    // an .ico: the app.ico it ships
+            var own = new byte[] { 0, 0, 1, 0, 1, 0, 42 };                        // one read at run time comes first
+            File.WriteAllBytes(Path.Combine(Store.Home, "sample_icon.ico"), own);
+            Assert.Equal(own, PluginFiles.IconBytes(t));
+            File.Delete(Path.Combine(Store.Home, "sample_icon.ico"));
+            Assert.Equal(icon, PluginFiles.IconBytes(t));
             Assert.True(PluginFiles.Pinned("HD2QD.Sample.dll"));
             PluginFiles.Pin("HD2QD.Sample.dll", false);
             Assert.False(PluginFiles.Pinned("hd2qd.sample.dll"));

@@ -91,6 +91,15 @@ namespace Hd2Qd.Sample
             return "sample: purged";
         }
 
+        /// <summary>An icon read at run time: sample_icon.ico in the settings folder when it is
+        /// there (as the HellForge plugin reads HellForge's own), else none, and the manager draws
+        /// the app.ico this plugin ships.</summary>
+        public static byte[] Icon(Dictionary<string, object> host)
+        {
+            var f = Path.Combine((string)host["home"], "sample_icon.ico");
+            return File.Exists(f) ? File.ReadAllBytes(f) : null;
+        }
+
         /// <summary>Leaves a file in the settings folder, and says it changed something.</summary>
         public static bool Start(Dictionary<string, object> host)
         {

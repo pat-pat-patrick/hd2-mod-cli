@@ -173,13 +173,28 @@ namespace Hd2Mod
         public static string Summary(Type t, string lang) => t?.GetMethod("Summary")?.Invoke(null, new object[] { lang }) as string;
         public static string Version(Type t) => t?.Assembly.GetName().Version?.ToString(3);
 
-        /// <summary>A plugin's own icon, the bytes of its app.ico: an embedded resource of that
+        /// <summary>A plugin's own icon, the bytes of an ICO: what its optional
+        /// Icon(host) gives at run time when it gives something (an icon it does not ship, such
+        /// as the HellForge plugin's, read from the player's own HellForge.exe because that icon
+        /// is GPL-3.0 and the plugin is MIT), else its app.ico: an embedded resource of that
         /// name, else the app.ico among its WPF resources (where a WPF program built as a plugin
         /// keeps its window's icon). Null when it has none.</summary>
-        public static byte[] IconBytes(Type t)
+        public static byte[] IconBytes(Type t, Dictionary<string, object> host = null)
         {
             var asm = t?.Assembly;
             if (asm == null) return null;
+            var m = t.GetMethod("Icon", new[] { typeof(Dictionary<string, object>) });
+            if (m != null && m.IsStatic && m.ReturnType == typeof(byte[]))
+            {
+                try
+                {
+                    if (Call(t, "Icon", host ?? PluginHost.Make()) is byte[] own && own.Length > 0) return own;
+                }
+                catch (Exception e) when (!(e is OutOfMemoryException))
+                {
+                    ManagerLog.Warn("plugin icon: " + e.Message);
+                }
+            }
             try
             {
                 using (var s = asm.GetManifestResourceStream("app.ico"))

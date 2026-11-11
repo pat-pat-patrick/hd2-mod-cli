@@ -488,7 +488,7 @@ namespace QuickDeploy
         /// that is the smallest at least as large as 20 at this screen's scale, scaled smoothly.</summary>
         UIElement PluginIcon(Type type)
         {
-            var bytes = PluginFiles.IconBytes(type);
+            var bytes = PluginFiles.IconBytes(type, PluginHostHere());
             if (bytes == null) return null;
             try
             {
