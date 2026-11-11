@@ -36,7 +36,7 @@ namespace QuickDeploy
             LuaBox.Children.Clear();
             if (st == null) return;
             var lua = st.Lua;
-            var loaders = st.Mods.Where(x => x.Loader).ToList();
+            var loaders = st.Mods.Where(x => x.Loader && st.RunsLoader(x.LoaderKind)).ToList();   // only those the target's game runs
             var mods = st.Mods.Where(x => x.Lua && !x.Loader && (!st.ProfilesOn || x.InProfile)).ToList();
             var on = mods.Where(x => x.Enabled).ToList();
 
@@ -396,7 +396,7 @@ namespace QuickDeploy
 
         /// <summary>The kinds of the library's loaders that have a capability (LoaderCaps).</summary>
         List<string> KindsWith(string cap) =>
-            st.Mods.Where(x => x.Loader && x.Lu?.Caps.Contains(cap) == true).Select(x => x.LoaderKind).Distinct().ToList();
+            st.Mods.Where(x => x.Loader && st.RunsLoader(x.LoaderKind) && x.Lu?.Caps.Contains(cap) == true).Select(x => x.LoaderKind).Distinct().ToList();
 
         // the loaders in the order the compatibility table pairs them
         static readonly string[] CompatKinds = { "bml", "chef", "mdl3", "bsl" };

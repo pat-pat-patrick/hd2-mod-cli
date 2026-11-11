@@ -57,9 +57,26 @@ namespace Hd2Mod
         /// state read can ask it of every mod without reading their scripts.</summary>
         public static string KindOf(Mod mod) => Kept(mod, "kind", () => KindOfNow(mod));
 
+        /// <summary>The file Bingus Shared Loader ships at its top (v20, 2026-11-11: name, revision,
+        /// display_version, steam_build). Its scripts are LuaJIT bytecode and it has no boot script,
+        /// so it is known by this file (proven: the v20 release's own files).</summary>
+        public const string BslManifest = "BingusSharedLoader-manifest.json";
+
+        /// <summary>Bingus Shared Loader's version from its manifest ("v20"), or null.</summary>
+        public static string BslVersion(Mod mod)
+        {
+            try
+            {
+                var p = Paths.Join(mod.Path, BslManifest);
+                return File.Exists(p) ? Json.Str(Json.Parse(File.ReadAllText(p)) as Dictionary<string, object>, "display_version") : null;
+            }
+            catch (Exception e) when (e is IOException || e is UnauthorizedAccessException || e is FormatException) { return null; }
+        }
+
         static string KindOfNow(Mod mod)
         {
             if (mod == null || !Directory.Exists(mod.Path)) return null;
+            if (File.Exists(Paths.Join(mod.Path, BslManifest))) return "bsl";
             List<string> folders;
             try { folders = Deploy.IncludedFolders(mod); }
             catch (ModError) { return null; }
@@ -94,8 +111,25 @@ namespace Hd2Mod
             return kind;
         }
 
-        /// <summary>The loaders of the library, in its order.</summary>
-        public static List<Mod> Of(Library lib) => lib.Mods.Where(m => KindOf(m) != null).ToList();
+        /// <summary>The library's loaders the game of the target in use runs, in its order (on
+        /// HellForge's game Bingus Shared Loader only: its plugin says so).</summary>
+        public static List<Mod> Of(Library lib) => lib.Mods.Where(m => KindOf(m) is string k && Runs(lib, k)).ToList();
+
+        /// <summary>The kinds of loader the game of the target in use runs (PluginTargets Offer.Loaders);
+        /// null: any (the official game).</summary>
+        public static List<string> Allowed(Library lib) => Kept(lib, "allowed", () =>
+        {
+            if (Targets.IsOfficial(lib)) return null;
+            var now = Targets.Current(lib);
+            return PluginTargets.All(PluginHost.Make()).FirstOrDefault(o => o.Id == now)?.Loaders;
+        });
+
+        /// <summary>Whether the game of the target in use runs this kind of loader.</summary>
+        public static bool Runs(Library lib, string kind)
+        {
+            var a = Allowed(lib);
+            return a == null || (kind != null && a.Contains(kind));
+        }
 
         /// <summary>The loader in effect: the one chosen, else the last one enabled; null for none.</summary>
         public static Mod Chosen(Library lib, Dictionary<string, object> cfg = null) =>
@@ -129,7 +163,7 @@ namespace Hd2Mod
 
         static (string Version, List<string> Marks) FactsNow(Mod mod)
         {
-            string version = null;
+            string version = BslVersion(mod);
             var marks = new List<string>();
             try
             {
@@ -269,11 +303,14 @@ namespace Hd2Mod
                 Store.Save("config.json", cfg);
                 return null;
             }
-            var loaders = Of(lib);
+            var loaders = lib.Mods.Where(x => KindOf(x) != null).ToList();
             var m = loaders.FirstOrDefault(x => x.Id == which)
                     ?? loaders.FirstOrDefault(x => string.Equals(x.Name, which, StringComparison.CurrentCultureIgnoreCase))
                     ?? throw new ModError("no loader in the library is called " + which + " (" +
                                           (loaders.Count == 0 ? "there is none" : string.Join(", ", loaders.Select(x => x.Name))) + ")");
+            if (!Runs(lib, KindOf(m)))
+                throw new ModError("the game of the deploy target " + Targets.Current(lib) + " runs only these loaders: " + string.Join(", ", Allowed(lib)),
+                                   "loader_not_here", m.Name);
             cfg[ConfigKey(lib)] = m.Id;
             Store.Save("config.json", cfg);
             return m;

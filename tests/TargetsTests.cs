@@ -62,6 +62,38 @@ namespace Hd2Mod.Tests
             Assert.Null(LuaMods.GameLua(Library.Load()));
         }
 
+        /// <summary>A target's game runs only the loaders its plugin names (the user, 2026-11-12:
+        /// on HellForge the loader is Bingus Shared Loader). Bingus Shared Loader is known by the
+        /// manifest it ships (v20 has no boot script) and runs without the start-up slot.</summary>
+        [Fact]
+        public void ATargetRunsOnlyTheLoadersItsPluginNames()
+        {
+            Cli("add", Mod("Boot Mod Loader", new Dictionary<string, byte[]> { [A + ".patch_0"] = LuaArchive((LuaMods.BootId, "-- Boot Mod Loader\nlocal MARKER = 'boot-mod-loader-0.13.4'\n")) }));
+            var bsl = Mod("Bingus Shared Loader", new Dictionary<string, byte[]>
+            {
+                ["data/" + B + ".patch_0"] = LuaArchive((0x9BA626AFA44A3AA3UL, "local BingusRuntime = {}\n")),
+                ["BingusSharedLoader-manifest.json"] = System.Text.Encoding.UTF8.GetBytes(@"{""name"": ""Bingus Shared Loader"", ""revision"": ""loader-v20"", ""display_version"": ""v20""}"),
+            });
+            Cli("add", bsl);
+            Cli("add", Mod("Lamp", new Dictionary<string, byte[]> { [B + ".patch_0"] = LuaArchive((0x1111UL, "-- HD2-Addon: mods/me/lamp\nlocal x = 1\n")) }));
+            PluginFiles.Install(Sample);
+            File.WriteAllText(Path.Combine(Store.Home, "sample_loaders.txt"), "bsl");
+
+            var lib = Library.Load();
+            Assert.Equal("bsl", Loaders.KindOf(lib.Mods.Single(m => m.Name == "Bingus Shared Loader")));
+            Assert.Equal(2, Loaders.Of(lib).Count);                                  // the official game runs any
+            Cli("target", "sample");
+            lib = Library.Load();
+            Assert.Equal(new[] { "Bingus Shared Loader" }, Loaders.Of(lib).Select(m => m.Name));
+            Assert.Equal("Bingus Shared Loader", Loaders.Chosen(lib)?.Name);
+            Assert.Equal("loader_not_here", Refused("loader", "Boot Mod Loader"));
+
+            var lua = Cli("lua");
+            Assert.Contains("loader running: Bingus Shared Loader v20", lua);
+            Assert.DoesNotContain("no loader runs", lua);
+            Assert.DoesNotContain("Boot Mod Loader 0.13.4 (not used)", lua);        // not offered where it cannot run
+        }
+
         [Fact]
         public void EachTargetKeepsItsOwnList()
         {

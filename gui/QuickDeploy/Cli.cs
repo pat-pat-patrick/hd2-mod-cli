@@ -290,6 +290,10 @@ namespace QuickDeploy
         public int TargetPending;
         public List<(string Id, string Title, bool Found, string Why)> TargetOffers = new List<(string, string, bool, string)>();
         public bool OnOfficial => Target == "official";
+        /// <summary>The kinds of Lua loader the game of the target in use runs (its plugin says;
+        /// HellForge: Bingus Shared Loader only); null: any.</summary>
+        public List<string> TargetLoaders;
+        public bool RunsLoader(string kind) => TargetLoaders == null || (kind != null && TargetLoaders.Contains(kind));
         public int Pending => OnOfficial ? Moved + Written + Deleted : TargetPending;
     }
 
@@ -407,6 +411,7 @@ namespace QuickDeploy
                 if (!s.OnOfficial)
                 {
                     s.TargetOffered = Bool(tb, "offered"); s.TargetTitle = Str(tb, "title") ?? s.Target; s.TargetFound = Bool(tb, "found");
+                    if (tb.TryGetValue("loaders", out var tl) && tl is List<object> tll) s.TargetLoaders = tll.OfType<string>().ToList();
                     s.TargetPending = Int(tb, "pending"); s.TargetRunning = Bool(tb, "running"); s.TargetSaid = Str(tb, "said");
                 }
             }

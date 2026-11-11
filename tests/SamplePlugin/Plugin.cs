@@ -59,6 +59,9 @@ namespace Hd2Qd.Sample
         {
             ["id"] = "sample", ["title"] = "Sample game", ["found"] = !File.Exists(Path.Combine((string)host["home"], "sample_missing.txt")),
             ["why"] = "no sample game", ["lua"] = "luajit",
+            // the loaders the sample game runs: sample_loaders.txt (comma-separated) when it is there, else any
+            ["loaders"] = File.Exists(Path.Combine((string)host["home"], "sample_loaders.txt"))
+                ? File.ReadAllText(Path.Combine((string)host["home"], "sample_loaders.txt")).Split(',').Cast<object>().ToList() : null,
         };
 
         static string Deployed(Dictionary<string, object> host) => Path.Combine((string)host["home"], "sample_target.txt");

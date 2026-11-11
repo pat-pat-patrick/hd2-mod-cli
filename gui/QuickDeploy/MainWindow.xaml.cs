@@ -2771,7 +2771,7 @@ namespace QuickDeploy
 
         /// <summary>The library's loaders with this capability (LoaderCaps), by name and version; one that is off says so.</summary>
         string[] LibraryLoaders(string cap) =>
-            st.Mods.Where(x => x.Lu?.Loader != null && x.Lu.Caps.Contains(cap))
+            st.Mods.Where(x => x.Lu?.Loader != null && x.Lu.Caps.Contains(cap) && st.RunsLoader(x.Lu.Loader))
                    .Select(x => LoaderLabel(x.Lu.Loader, x.Lu.LoaderVersion) + (x.Id == st.LoaderChoice ? "" : st.LoaderHelpers.Contains(x.Id) ? Texts.Get("lua_helping_suffix") : Texts.Get("lua_off_suffix")))
                    .Distinct().ToArray();
 
@@ -2892,7 +2892,9 @@ namespace QuickDeploy
             }
             // a mod on MDL3's interface: where that comes from, or that nothing provides it (the MDL3
             // drop picture, 2026-11-01: without MDL3 the details said nothing)
-            if (lu.UsesMdl3 && m.Enabled)
+            // (not on a target whose game runs no MDL3, such as HellForge's: there HD2Data comes from
+            // its own port, and MDL3 is no choice to point at)
+            if (lu.UsesMdl3 && m.Enabled && st.RunsLoader("mdl3"))
             {
                 var mdl3 = st.Mods.FirstOrDefault(x => x.Loader && x.LoaderKind == "mdl3" && (x.Id == st.LoaderChoice || st.LoaderHelpers.Contains(x.Id)));
                 if (mdl3 != null) Line(Texts.F("lua_mdl3_from", LoaderLabel(mdl3.LoaderKind, mdl3.Lu?.LoaderVersion) ?? mdl3.Name), "Muted");
@@ -3008,7 +3010,7 @@ namespace QuickDeploy
             if (lua == null) return;
             // a plugin's target loads Lua its own way (HellForge: Bingus Shared Loader only); its plugin says so on the rows
             if (!st.OnOfficial) { if (loaderPop != null) loaderPop.IsOpen = false; return; }
-            var loaders = st.Mods.Where(x => x.Loader).ToList();
+            var loaders = st.Mods.Where(x => x.Loader && st.RunsLoader(x.LoaderKind)).ToList();   // only those the target's game runs
             // no loader in the library: no panel at all (the user, 2026-10-26). No crash card either: it said
             // nothing a player could act on ("没有一点用"); the facts stay in hd2qd lua and the state for a
             // crash analysis of its own later

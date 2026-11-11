@@ -10,6 +10,7 @@ namespace Hd2Mod
     /// - Dictionary Target(host): {id, title (in host lang), found, why, running, lua}; null: none.
     ///   lua is the Lua that target's game runs: "luajit" (LuaJIT 2.1 with ffi, bit and jit, as the
     ///   official game had before its 2026-10-20 update), absent for the official game's own;
+    ///   loaders lists the kinds of Lua loader that game runs ("bml", "chef", "bsl", "mdl3"), absent: any;
     /// - Dictionary TargetStatus(host): {pending (long), running (bool), said}: cheap, read with the
     ///   window's state;
     /// - Dictionary TargetDeploy(host): {said, refused: [text]}: host["mods"] is the list in use
@@ -26,6 +27,8 @@ namespace Hd2Mod
             public string File, Id, Title, Why;
             /// <summary>The Lua the target's game runs: "luajit", or null for the official game's.</summary>
             public string Lua;
+            /// <summary>The kinds of Lua loader the target's game runs, or null for any.</summary>
+            public List<string> Loaders;
             public bool Found, Running;
             public Type Type;
         }
@@ -46,6 +49,7 @@ namespace Hd2Mod
                     {
                         File = file, Type = type, Id = id, Title = Json.Str(d, "title") ?? id, Why = Json.Str(d, "why"),
                         Found = Json.Bool(d, "found"), Running = Json.Bool(d, "running"), Lua = Json.Str(d, "lua"),
+                        Loaders = d.TryGetValue("loaders", out var ls) && ls is List<object> l ? l.OfType<string>().ToList() : null,
                     });
                 }
                 catch (Exception e) { ManagerLog.Warn("plugin " + file + ": Target: " + e.Message); }

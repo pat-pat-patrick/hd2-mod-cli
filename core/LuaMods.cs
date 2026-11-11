@@ -72,7 +72,9 @@ namespace Hd2Mod
         public string NeedsWhy;
         public LuaScript Boot => Scripts.FirstOrDefault(s => s.Id == LuaMods.BootId);
         /// <summary>The loader's version, from its boot or Chef's core.</summary>
-        public string LoaderVersion => Scripts.Select(s => s.BootVersion).FirstOrDefault(v => v != null);
+        public string LoaderVersion => Scripts.Select(s => s.BootVersion).FirstOrDefault(v => v != null) ?? ManifestVersion;
+        /// <summary>A loader's version from its own manifest (Bingus Shared Loader: display_version).</summary>
+        public string ManifestVersion;
         public IEnumerable<string> Addons => Scripts.Where(s => s.Name != null && (s.Header == "Addon" || s.Header == "Boot")).Select(s => s.Name).Distinct();
         /// <summary>A loader's capabilities (LoaderCaps), by its kind, version and code; none for a mod.</summary>
         public List<string> Caps => Loader == null ? new List<string>() : LoaderCaps.Of(Loader, LoaderVersion, Scripts.SelectMany(s => s.Marks).Distinct());
@@ -715,11 +717,13 @@ namespace Hd2Mod
                             else ml.Scripts.AddRange(scripts);
                         }
                         catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { }
-                if (ml.Scripts.Count == 0) continue;
+                var bsl = File.Exists(Paths.Join(m.Path, Loaders.BslManifest));
+                if (ml.Scripts.Count == 0 && !bsl) continue;
                 var boot = ml.Boot;
                 if (ml.Scripts.Any(s => s.Id == ChefCoreId) || boot?.BootKind == "chef") ml.Loader = "chef";
                 else if (boot?.BootKind == "bml") ml.Loader = "bml";
                 else if (boot?.BootKind == "bsl" || boot?.BootKind == "mdl3") ml.Loader = boot.BootKind;
+                else if (bsl) { ml.Loader = "bsl"; ml.ManifestVersion = Loaders.BslVersion(m); }
                 if (ml.Loader == null)
                 {
                     var mods = ml.Scripts.Where(s => s.Header == "Addon" || s.Header == "Boot").ToList();
@@ -817,6 +821,10 @@ namespace Hd2Mod
                 else if (kind == "other") running = "other";
                 else running = kind;
             }
+            // Bingus Shared Loader runs without the start-up slot: it has no boot script and starts
+            // from a game script of its own (proven: v20's archive replaces 9ba626afa44a3aa3's Lua,
+            // LuaJIT bytecode, no boot), so deployed it runs whoever holds the slot
+            if (running == null && on.Any(x => x.Loader == "bsl" && x.Boot == null && !IsHelper(x))) running = "bsl";
             if (bootMods.Count > 1)
                 issues.Add(new LuaIssue { Kind = "boot_conflict", Mods = Enumerable.Reverse(bootMods).Select(x => x.Mod).ToList() });
             var loaders = on.Where(x => x.Loader != null && !IsHelper(x)).ToList();

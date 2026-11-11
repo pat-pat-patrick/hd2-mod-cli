@@ -1170,7 +1170,7 @@ namespace Hd2Mod
         static string LoaderName(string kind, ModLua ml) =>
             kind == "bml" ? "Boot Mod Loader" + (ml?.Boot?.BootVersion != null ? " " + ml.Boot.BootVersion : "")
             : kind == "chef" ? "Chef Shared Loader" : kind == "chef_stub" ? "Chef Shared Loader's start-up stub"
-            : kind == "bsl" ? "Bingus Shared Loader" : kind == "mdl3" ? "MDL3" + (ml?.Boot?.BootVersion != null ? " " + ml.Boot.BootVersion : "")
+            : kind == "bsl" ? "Bingus Shared Loader" + (ml?.LoaderVersion != null ? " " + ml.LoaderVersion : "") : kind == "mdl3" ? "MDL3" + (ml?.Boot?.BootVersion != null ? " " + ml.Boot.BootVersion : "")
             : kind == "other" ? (ml != null ? ml.Mod.Name + "'s own start-up script" : "another start-up script")
             : "none (the game's own)";
 
@@ -1181,7 +1181,7 @@ namespace Hd2Mod
             var (owner, boots, running, issues) = LuaMods.Check(lib, all);
             o.WriteLine("start-up script (boot): " + (owner == null ? "the game's own" : owner.Mod.Name + " (" + LoaderName(owner.Boot.BootKind, owner) + ")"));
             foreach (var b in boots.Where(b => b != owner)) o.WriteLine("  not run: " + b.Mod.Name + " (" + LoaderName(b.Boot.BootKind, b) + ")");
-            o.WriteLine("loader running: " + (running == null ? "none" : LoaderName(running, owner)));
+            o.WriteLine("loader running: " + (running == null ? "none" : LoaderName(running, owner ?? all.LastOrDefault(x => x.Loader == running))));   // Bingus Shared Loader holds no boot
             if (issues.Count > 0)
             {
                 o.WriteLine("problems:");
@@ -1225,7 +1225,8 @@ namespace Hd2Mod
             // the library's loaders with that capability (LoaderCaps)
             string Have(string cap)
             {
-                var have = all.Where(x => x.Loader != null && x.Caps.Contains(cap))
+                // only the loaders the game of the target in use runs (HellForge's: Bingus Shared Loader)
+                var have = all.Where(x => x.Loader != null && x.Caps.Contains(cap) && Loaders.Runs(lib, x.Loader))
                               .Select(x => LoaderName(x.Loader, x) + (x.Mod.Id == chosenId ? "" : x.Helper ? " (helping)" : " (not used)")).Distinct().ToList();
                 return have.Count > 0 ? "in the library: " + string.Join(", ", have) : "none in the library";
             }
@@ -1238,7 +1239,7 @@ namespace Hd2Mod
                 if (ml.Needs == "chef") what.Add("made for Chef Shared Loader" + (ml.NeedsWhy == "declared" ? ", as the mod declares" : ml.NeedsWhy == "api" ? ": its script calls the chef interface that loader provides" : "") + " (" + Have(ml.NeedsWhy == "name" ? LoaderCaps.ChefNames : LoaderCaps.ChefMods) + ")");
                 if (ml.Mdl3Chef) what.Add("run by MDL3 in Chef Shared Loader's place: what it draws on the screen does not show yet");
                 if (ml.Mdl3Runs) what.Add("its start-up script is run by MDL3 too");
-                if (ml.UsesMdl3) what.Add("uses MDL3 (" + Have(LoaderCaps.Mdl3Api) + ")");
+                if (ml.UsesMdl3 && Loaders.Runs(lib, "mdl3")) what.Add("uses MDL3 (" + Have(LoaderCaps.Mdl3Api) + ")");
                 if (ml.PackOfName != null) what.Add("translation pack of " + (ml.PackOf?.Name ?? ml.PackOfName));
                 foreach (var s in ml.Broken)
                 {

@@ -304,6 +304,7 @@ namespace Hd2Mod
                 {
                     d["title"] = inUse.Title;
                     d["found"] = inUse.Found;
+                    if (inUse.Loaders != null) d["loaders"] = inUse.Loaders.Cast<object>().ToList();
                     var st = PluginTargets.Status(inUse, host);
                     d["pending"] = Json.Long(st, "pending");
                     d["running"] = Json.Bool(st, "running");
