@@ -13,8 +13,9 @@ namespace Hd2Mod
     ///   loaders lists the kinds of Lua loader that game runs ("bml", "chef", "bsl", "mdl3"), absent: any;
     /// - Dictionary TargetStatus(host): {pending (long), running (bool), said, mods}: cheap, read with
     ///   the window's state; mods is {mod id: "link" | "copy" | "converted" | "pending"} for the enabled mods;
-    /// - Dictionary TargetDeploy(host): {said, refused: [text]}: host["mods"] is the list in use
+    /// - Dictionary TargetDeploy(host): {said, refused: [text], log}: host["mods"] is the list in use
     ///   (every enabled mod's files, options chosen); host["target"] says which target is in use;
+    ///   host["progress"], an Action&lt;string&gt;, says what a long step does while it runs;
     /// - string TargetPurge(host): what this manager put into the target, taken out;
     /// - void TargetLaunch(Window owner, host): the game of that target started (the window only);
     /// - bool TargetClaims(folder, host): the folder is that target's own kind of mod (added, it is

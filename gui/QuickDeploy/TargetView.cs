@@ -58,6 +58,9 @@ namespace QuickDeploy
         Task<bool> DeployToTarget()
         {
             var host = PluginHostHere();
+            // what a long step does, in the foot while the deploy runs (HellForge compiling code mods:
+            // the user, 2026-11-12, "部署时编译，显示进度"); called from the deploy's thread
+            host["progress"] = (Action<string>)(t => Dispatcher.BeginInvoke(new Action(() => Foot(t, "Blue"))));
             var id = st.Target;
             return Act(() => Cli.Call(() =>
             {

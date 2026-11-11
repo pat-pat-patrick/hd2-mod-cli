@@ -1701,6 +1701,7 @@ namespace Hd2Mod
             var host = PluginHost.Make();
             var offer = PluginTargets.Of(Targets.Current(lib), host);
             if (!offer.Found) throw new ModError(offer.Title + ": " + (offer.Why ?? "not found"), "target_missing", offer.Id);
+            host["progress"] = (Action<string>)(t => o.WriteLine("  " + t));          // what a long step does (HellForge compiling code mods)
             var r = PluginTargets.Deploy(offer, host);
             o.WriteLine(Json.Str(r, "said") ?? "deployed to " + offer.Title);
             foreach (var x in Json.List(r, "refused").OfType<string>()) o.WriteLine("  not deployed: " + x);
