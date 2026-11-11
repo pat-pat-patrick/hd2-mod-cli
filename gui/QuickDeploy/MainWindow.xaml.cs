@@ -5783,16 +5783,22 @@ namespace QuickDeploy
         static string rowTarget;
         static Dictionary<string, string> rowStates;
 
-        /// <summary>A row's state. On a plugin's target, the target's own (the user, 2026-11-12: rows
-        /// said "HellForge" or, kept from the official game, "硬链接"): 已部署 when the target has
-        /// it as the library does, 待部署 when a deploy would place it again, 未部署 when off.</summary>
+        /// <summary>A row's state. On a plugin's target, the target's own in the official game's words
+        /// (the user, 2026-11-12: "改成和原版一致"): 硬链接 / 复制 as its plugin placed it, 已转换 when
+        /// the conversion wrote its files, 待部署 when a deploy would place it again, 未部署 when off.</summary>
         static (string, string) StatusText(ModRow m)
         {
             if (rowTarget != null)
             {
                 if (!m.Enabled) return (Texts.Get("st_off"), "Muted");
                 if (rowStates == null || !rowStates.TryGetValue(m.Id, out var s)) return (rowTarget, "Blue");
-                return s == "deployed" ? (Texts.Get("st_deployed"), "Blue") : (Texts.Get("st_pending"), "Yellow");
+                switch (s)
+                {
+                    case "link": return (Texts.Get("st_link"), "Blue");
+                    case "copy": return (Texts.Get("st_copy"), "Muted");
+                    case "converted": return (Texts.Get("st_converted"), "Blue");
+                    default: return (Texts.Get("st_pending"), "Yellow");
+                }
             }
             switch (m.Status)
             {

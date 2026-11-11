@@ -12,7 +12,7 @@ namespace Hd2Mod
     ///   official game had before its 2026-10-20 update), absent for the official game's own;
     ///   loaders lists the kinds of Lua loader that game runs ("bml", "chef", "bsl", "mdl3"), absent: any;
     /// - Dictionary TargetStatus(host): {pending (long), running (bool), said, mods}: cheap, read with
-    ///   the window's state; mods is {mod id: "deployed" | "pending"} for the enabled mods;
+    ///   the window's state; mods is {mod id: "link" | "copy" | "converted" | "pending"} for the enabled mods;
     /// - Dictionary TargetDeploy(host): {said, refused: [text]}: host["mods"] is the list in use
     ///   (every enabled mod's files, options chosen); host["target"] says which target is in use;
     /// - string TargetPurge(host): what this manager put into the target, taken out;
