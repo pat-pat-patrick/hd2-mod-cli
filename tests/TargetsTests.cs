@@ -117,7 +117,7 @@ namespace Hd2Mod.Tests
             Assert.Equal("target_missing", Refused("deploy"));
             PluginFiles.Remove("HD2QD.Sample.dll");
             Assert.Equal("no_target", Refused("deploy"));
-            Assert.Contains("no plugin offers it now", Cli("targets"));
+            Assert.Contains("no added plugin provides it", Cli("targets"));
             Cli("target", "official");                    // the way back is always open
             Assert.Null(Library.Load().Target);
         }

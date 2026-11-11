@@ -63,15 +63,15 @@ namespace Hd2Mod
             Cmd("add", new Spec { Help = "add a mod at the bottom: a zip (unpacked once) or a folder (used where it is). A new version of a " +
                                          "mod in the library (the same manifest Guid or download source) takes its place; one whose name " +
                                          "alone matches is asked about (--new: add it as a mod of its own). With a deploy target a plugin offers, a mod of the same " +
-                                         "Guid is asked about too: --replace puts it in its place, --for TARGET adds it as that target's build of the same mod " +
-                                         "(official, or the plugin's target), paired with the one there",
+                                         "Guid is asked about too: --replace replaces it, --for TARGET adds it as that target's version of the same mod " +
+                                         "(official, or the plugin's target), linked with the existing one",
                                   Positionals = new[] { "path" }, Values = new[] { "--name", "--for" }, Flags = new[] { "--copy", "--whole", "--new", "--replace" }, Run = Add }),
             Cmd("for", new Spec { Help = "which deploy target a mod is for: both, official, or a target a plugin offers (hd2qd targets); " +
-                                         "on another target it is off and cannot be turned on",
+                                         "on other targets it is disabled and cannot be enabled",
                                   Positionals = new[] { "mod", "target" }, Run = ForCmd }),
-            Cmd("pair", new Spec { Help = "two library mods as one mod's builds for two targets: turning one on turns the other off",
+            Cmd("pair", new Spec { Help = "link two library mods as versions of one mod for two targets: enabling one disables the other",
                                    Positionals = new[] { "mod", "other" }, Run = PairCmd }),
-            Cmd("unpair", new Spec { Help = "a mod and its other build no longer a pair", Positionals = new[] { "mod" }, Run = PairCmd }),
+            Cmd("unpair", new Spec { Help = "unlink a mod from its other version", Positionals = new[] { "mod" }, Run = PairCmd }),
             Cmd("replace", new Spec { Help = "a new version of a mod: same place in the order, same options " +
                                              "(the folder the old version was unpacked into is deleted; --keep-old keeps it)",
                                       Positionals = new[] { "mod", "path" }, Values = new[] { "--name" },
@@ -598,12 +598,12 @@ namespace Hd2Mod
                 }
                 else if (matches.Count > 1 && !a.Flag("--replace"))
                     throw new ModError(Ops.Repr(Path.GetFileName(Paths.Abs(path).TrimEnd('\\'))) + " is the same mod (Guid) as " + string.Join(" and ", matches.Select(m => Ops.Repr(m.Name))) +
-                                       ", one build for each deploy target: --for TARGET says whose build it is", "same_guid", string.Join("|", matches.Select(m => m.Id)) + "\n" + Paths.Abs(path));
+                                       ", one version for each deploy target: --for TARGET selects which version it is", "same_guid", string.Join("|", matches.Select(m => m.Id)) + "\n" + Paths.Abs(path));
                 else if (matches.Count > 1)
                     throw new ModError("Several library entries have this manifest identity; select the entry to replace explicitly.");
                 else if (matches.Count == 1 && offered.Count > 0 && !a.Flag("--replace"))
                     throw new ModError(Ops.Repr(Path.GetFileName(Paths.Abs(path).TrimEnd('\\'))) + " is the same mod (Guid) as " + Ops.Repr(matches[0].Name) +
-                                       ": --replace puts it in its place (a new version); --for TARGET adds it beside as that target's build", "same_guid", matches[0].Id + "\n" + Paths.Abs(path));
+                                       ": --replace replaces it (a new version); --for TARGET adds it alongside as that target's version", "same_guid", matches[0].Id + "\n" + Paths.Abs(path));
                 else if (matches.Count == 1)
                 {
                     a.Pos["mod"] = matches[0].Id;
@@ -619,7 +619,7 @@ namespace Hd2Mod
                 // a mod with a build for each target: which one this new version is for is asked
                 if (found != null && found.Mod.Pair != null && !a.Flag("--replace"))
                     throw new ModError(Ops.Repr(Path.GetFileName(Paths.Abs(path).TrimEnd('\\'))) + " is a new version of " + Ops.Repr(found.Mod.Name) +
-                                       ", which has a build for each deploy target: --for TARGET says whose build it is", "same_guid",
+                                       ", which has a version for each deploy target: --for TARGET selects which version it is", "same_guid",
                                        found.Mod.Id + "|" + found.Mod.Pair + "\n" + Paths.Abs(path));
                 if (found != null && found.Sure)
                 {
@@ -653,7 +653,7 @@ namespace Hd2Mod
             else lib.Mods.Add(mod);
             if (mod.For != null && mod.For != Targets.Current(lib)) mod.Enabled = false;
             lib.Save();
-            if (pairWith != null) o.WriteLine("the " + mod.For + " build of " + pairWith.Name + ", beside it (" + pairWith.Name + " is for " + (pairWith.For ?? "both") + ")");
+            if (pairWith != null) o.WriteLine("added as the " + mod.For + " version of " + pairWith.Name + " (" + pairWith.Name + " is for " + (pairWith.For ?? "both") + ")");
             o.WriteLine("added " + lib.Mods.Count + " " + mod.Name + "  (" + folder + ")");
             Mdl3Line(mod, o);
         }
@@ -1394,7 +1394,7 @@ namespace Hd2Mod
                     foreach (var other in lib.Mods.Where(x => x.Id == mod.Pair && x.Enabled))
                     {
                         other.Enabled = false;
-                        o.WriteLine("off " + other.Name + " (the other build of the same mod)");
+                        o.WriteLine("disabled " + other.Name + " (the other version of the same mod)");
                     }
             }
             // a mod turned off takes its translation packs with it, and turned on again brings
@@ -1619,7 +1619,7 @@ namespace Hd2Mod
             {
                 var host = PluginHost.Make();
                 var offer = PluginTargets.Of(Targets.Current(lib), host);
-                if (!a.Flag("--yes")) throw new ModError("this takes every mod this program put into " + offer.Title + " out of it: add --yes");
+                if (!a.Flag("--yes")) throw new ModError("this removes every mod Quick Deploy deployed to " + offer.Title + ": add --yes");
                 o.WriteLine(PluginTargets.Purge(offer, host));
                 return;
             }
@@ -1639,7 +1639,7 @@ namespace Hd2Mod
             mod.For = t;
             Targets.Enforce(lib);
             lib.Save();
-            o.WriteLine(mod.Name + ": for " + (t ?? "both") + (mod.Enabled || Targets.Belongs(lib, mod) ? "" : " (off here: the target in use is " + Targets.Current(lib) + ")"));
+            o.WriteLine(mod.Name + ": for " + (t ?? "both") + (mod.Enabled || Targets.Belongs(lib, mod) ? "" : " (disabled: the current target is " + Targets.Current(lib) + ")"));
         }
 
         static void PairCmd(Args a, TextWriter o)
@@ -1651,7 +1651,7 @@ namespace Hd2Mod
                 foreach (var x in lib.Mods.Where(x => x.Id == mod.Pair)) x.Pair = null;
                 mod.Pair = null;
                 lib.Save();
-                o.WriteLine(mod.Name + ": no longer a pair");
+                o.WriteLine(mod.Name + ": no longer linked");
                 return;
             }
             var other = Ops.Pick(lib, a.Pos["other"]);
@@ -1661,7 +1661,7 @@ namespace Hd2Mod
             other.Pair = mod.Id;
             Targets.Enforce(lib);
             lib.Save();
-            o.WriteLine(mod.Name + " and " + other.Name + ": one mod's builds; turning one on turns the other off");
+            o.WriteLine(mod.Name + " and " + other.Name + ": two versions of one mod; enabling one disables the other");
         }
 
         /// <summary>The targets, or another one put in use (Targets).</summary>
@@ -1676,9 +1676,9 @@ namespace Hd2Mod
                 var now = Targets.Current(lib);
                 o.WriteLine((now == Targets.Official ? "* " : "  ") + "official   the game folder" + (Store.GameDir(null, false) is string g ? ": " + g : " (not set)"));
                 foreach (var t in offers)
-                    o.WriteLine((now == t.Id ? "* " : "  ") + t.Id.PadRight(10) + " " + t.Title + " (" + t.File + ")" + (t.Found ? "" : ": " + (t.Why ?? "not found")) + (t.Running ? "; a session runs" : ""));
+                    o.WriteLine((now == t.Id ? "* " : "  ") + t.Id.PadRight(10) + " " + t.Title + " (" + t.File + ")" + (t.Found ? "" : ": " + (t.Why ?? "not found")) + (t.Running ? "; a session is running" : ""));
                 if (now != Targets.Official && offers.All(t => t.Id != now))
-                    o.WriteLine("* " + now + "  (no plugin offers it now)");
+                    o.WriteLine("* " + now + "  (no added plugin provides it)");
                 return;
             }
             if (which != Targets.Official)
@@ -1690,7 +1690,7 @@ namespace Hd2Mod
             var was = Targets.Current(lib);
             Targets.Switch(lib, which);
             lib.Save();
-            o.WriteLine("deploy target: " + which + (was == which ? " (already)" : " (was " + was + "); its own list is in use: deploy to bring it up to date"));
+            o.WriteLine("deploy target: " + which + (was == which ? " (already)" : " (was " + was + "); its own mod list is in use; deploy to apply it"));
         }
 
         /// <summary>A deploy to a plugin's target: the plugin takes the list in use (PluginHost mods).</summary>
