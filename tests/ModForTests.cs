@@ -128,5 +128,22 @@ namespace Hd2Mod.Tests
             Cli("for", "Native", "sample");
             Assert.False(Library.Load().Mods.Single().Enabled);
         }
-    }
+    
+        [Fact]
+        public void EachTargetHasItsOwnLoader()
+        {
+            PluginFiles.Install(Sample);
+            var bml = Mod("Boot Mod Loader", Files((A + ".patch_0", "bml")), @"{""Guid"": ""cccccccc-0000-0000-0000-000000000001"", ""Name"": ""Boot Mod Loader""}");
+            Cli("add", bml);
+            var lib = Library.Load();
+            var loader = lib.Mods.Single();
+            Assert.Equal(loader.Id, Loaders.Chosen(lib, Store.Config())?.Id ?? loader.Id);
+            Cli("for", "Boot Mod Loader", "official");
+            Cli("target", "sample");
+            lib = Library.Load();
+            Assert.Null(Loaders.Chosen(lib, Store.Config()));                // the official game's loader is not the sample game's
+            Cli("target", "official");
+            Assert.NotNull(Loaders.Chosen(Library.Load(), Store.Config()) ?? Library.Load().Mods.Single());
+        }
+}
 }

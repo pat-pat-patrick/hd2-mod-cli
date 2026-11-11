@@ -101,15 +101,21 @@ namespace Hd2Mod
         public static Mod Chosen(Library lib, Dictionary<string, object> cfg = null) =>
             cfg == null ? Kept(lib, "chosen", () => ChosenNow(lib, null)) : ChosenNow(lib, cfg);
 
+        /// <summary>Where the choice is kept: "loader" for the official game, "loader@&lt;target&gt;" for
+        /// a plugin's deploy target, whose game may load Lua another way (HellForge: Bingus Shared
+        /// Loader only, 2026-11-11). Unset there, the loader in effect is the last one on there.</summary>
+        static string ConfigKey(Library lib) => Targets.IsOfficial(lib) ? "loader" : "loader@" + Targets.Current(lib);
+
         static Mod ChosenNow(Library lib, Dictionary<string, object> cfg)
         {
             var loaders = Of(lib);
             if (loaders.Count == 0) return null;
             string choice = null;
-            try { choice = Json.Str(cfg ?? Store.Config(), "loader"); }
+            try { choice = Json.Str(cfg ?? Store.Config(), ConfigKey(lib)); }
             catch (Exception e) when (e is IOException || e is FormatException) { }
             if (choice == None) return null;
             var picked = choice == null ? null : loaders.FirstOrDefault(m => m.Id == choice);
+            if (picked != null && !Targets.Belongs(lib, picked)) picked = null;       // a loader for another target (Mod.For)
             return picked ?? loaders.LastOrDefault(m => m.Enabled);
         }
 
@@ -259,7 +265,7 @@ namespace Hd2Mod
             var cfg = Store.Config();
             if (string.Equals(which, None, StringComparison.OrdinalIgnoreCase))
             {
-                cfg["loader"] = None;
+                cfg[ConfigKey(lib)] = None;
                 Store.Save("config.json", cfg);
                 return null;
             }
@@ -268,7 +274,7 @@ namespace Hd2Mod
                     ?? loaders.FirstOrDefault(x => string.Equals(x.Name, which, StringComparison.CurrentCultureIgnoreCase))
                     ?? throw new ModError("no loader in the library is called " + which + " (" +
                                           (loaders.Count == 0 ? "there is none" : string.Join(", ", loaders.Select(x => x.Name))) + ")");
-            cfg["loader"] = m.Id;
+            cfg[ConfigKey(lib)] = m.Id;
             Store.Save("config.json", cfg);
             return m;
         }
