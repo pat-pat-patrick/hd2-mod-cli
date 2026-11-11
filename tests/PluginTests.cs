@@ -152,6 +152,31 @@ namespace Hd2Mod.Tests
             Assert.False(Directory.Exists(PluginFiles.Dir) && Directory.GetFiles(PluginFiles.Dir).Length > 0);
         }
 
+        /// <summary>An official release is known by its SHA-256 alone, under any name, and goes in
+        /// under the list's name with its own version (the user, 2026-11-10: a file passed around by
+        /// hand is renamed by a browser or a chat program). Must live: renamed, its bytes listed.
+        /// Must die: the same renamed file while the list does not have its bytes is refused.</summary>
+        [Fact]
+        public void A_renamed_official_release_is_known_by_its_sha256()
+        {
+            var renamed = Path.Combine(Root, "1731234_HD2QD.Sample (1).dll");
+            File.Copy(Sample, renamed);
+            OfficialList = List(@"{""version"": ""1.0.0"", ""tag"": ""v1.0.0"", ""sha256"": """ + new string('0', 64) + @"""}");
+            try
+            {
+                Assert.Equal(("1731234_HD2QD.Sample (1).dll", (string)null, "name"), PluginFiles.Inspect(renamed));
+                CliCode(1, "plugin-add", renamed);
+                Assert.Empty(PluginFiles.All());
+
+                OfficialList = List(@"{""version"": ""1.0.0"", ""tag"": ""v1.0.0"", ""sha256"": """ + Sha(Sample) + @"""}");
+                Assert.Equal(("HD2QD.Sample.dll", "1.0.0", (string)null), PluginFiles.Inspect(renamed));
+                Assert.Contains("added HD2QD.Sample.dll 1.0.0 to", Cli("plugin-add", renamed));
+                Assert.Equal("HD2QD.Sample.dll", PluginFiles.All().Single().File);
+                Assert.NotNull(PluginFiles.OfficialOf("HD2QD.Sample.dll"));
+            }
+            finally { OfficialList = List(null); }
+        }
+
         /// <summary>A plugin's word on a mod's row reaches the state; one that fails says
         /// nothing, and the row is still there.</summary>
         [Fact]

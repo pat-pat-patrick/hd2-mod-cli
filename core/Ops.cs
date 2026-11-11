@@ -110,7 +110,7 @@ namespace Hd2Mod
                 Id = Guid.NewGuid().ToString(),
                 Name = !string.IsNullOrEmpty(name) ? name
                      : !string.IsNullOrEmpty(manifest?.Name) ? manifest.Name
-                     : System.IO.Path.GetFileName(folder.TrimEnd('\\', '/')),
+                     : PlainName(folder, source),
                 Path = Paths.Abs(folder), Source = source ?? Paths.Abs(folder), Enabled = true,
                 Options = manifest?.Defaults() ?? new List<OptionChoice>(),
             };
@@ -262,6 +262,25 @@ namespace Hd2Mod
         static bool IsArchive(string path) =>
             File.Exists(path) && (IsZip(path) || new[] { ".zip", ".7z", ".rar", ".tar", ".gz", ".xz" }.Contains(System.IO.Path.GetExtension(path).ToLowerInvariant()));
 
+        /// <summary>What is left of a mod once its folder is deleted, by what it was added from
+        /// (issue 16, 2026-11-09: the question always said the archive was kept, also for a mod
+        /// added as a plain folder, whose folder is the only copy): "archive", an archive still on
+        /// the disk outside the folder; "page", a page it was downloaded from; else "none".</summary>
+        public static string LeftAfterDelete(string source, string folder)
+        {
+            if (string.IsNullOrEmpty(source)) return "none";
+            if (source.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || source.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+                return "page";
+            try
+            {
+                var full = System.IO.Path.GetFullPath(source);
+                var inside = !string.IsNullOrEmpty(folder)
+                    && (full.TrimEnd('\\') + "\\").StartsWith(System.IO.Path.GetFullPath(folder).TrimEnd('\\') + "\\", StringComparison.OrdinalIgnoreCase);
+                return !inside && IsArchive(full) ? "archive" : "none";
+            }
+            catch (Exception e) when (e is ArgumentException || e is NotSupportedException || e is PathTooLongException) { return "none"; }
+        }
+
         static bool IsZip(string path)
         {
             if (!File.Exists(path)) return false;
@@ -298,6 +317,29 @@ namespace Hd2Mod
         /// folder is often HD2 Arsenal's own, and nothing in it but our own unpacked folders may
         /// ever be deleted.</summary>
         static readonly Regex Unpacked = new Regex(@"_[0-9a-f]{12}$");
+
+        /// <summary>The name of a mod whose manifest names none (an audio mod packed by hand often
+        /// has no manifest): the archive's own name when it came as one, else its folder's. Never
+        /// the folder a zip was unpacked into, whose name ends in "_" and 12 characters of the
+        /// zip's SHA-256 (a player, 2026-11-08: "名字后面会多一串字母").</summary>
+        public static string PlainName(string folder, string source)
+        {
+            if (!string.IsNullOrEmpty(source) && IsArchive(source))
+            {
+                var own = System.IO.Path.GetFileNameWithoutExtension(source).Trim();
+                if (own.Length > 0) return own;
+            }
+            var name = System.IO.Path.GetFileName((folder ?? "").TrimEnd('\\', '/'));
+            return UnpackedName(name) ?? name;
+        }
+
+        /// <summary>A folder name with the suffix Unpack gives it left off; null when it has none.</summary>
+        public static string UnpackedName(string name)
+        {
+            if (string.IsNullOrEmpty(name) || !Unpacked.IsMatch(name)) return null;
+            var bare = Unpacked.Replace(name, "").Trim();
+            return bare.Length > 0 ? bare : null;
+        }
 
         /// <summary>Whether this folder is one this program unpacked, directly in the library
         /// folder, and a real folder rather than a link to somewhere else.</summary>

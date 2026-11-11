@@ -134,6 +134,7 @@ namespace Hd2Mod
             foreach (var t in Json.List(d, "tags"))
                 if (t is string tag && tag.Trim().Length > 0 && !lib.Tags.Any(x => string.Equals(x, tag.Trim(), StringComparison.CurrentCultureIgnoreCase)))
                     lib.Tags.Add(tag.Trim());
+            var unpackedNames = new List<(Mod Mod, string Bare)>();
             foreach (var m in Json.List(d, "mods").OfType<Dictionary<string, object>>())
             {
                 var mod = new Mod
@@ -142,6 +143,11 @@ namespace Hd2Mod
                     Source = Json.Str(m, "source"), Enabled = Json.Bool(m, "enabled", true),
                     RealName = Json.Str(m, "real_name"),
                 };
+                // named after the folder its zip was unpacked into, as a mod with no name in its
+                // manifest was before 0.19.1: the suffix left off, unless another mod has that name
+                if (mod.Name != null && mod.Path != null && Ops.UnpackedName(mod.Name) is string bare
+                    && string.Equals(mod.Name, Path.GetFileName(mod.Path.TrimEnd('\\', '/')), StringComparison.OrdinalIgnoreCase))
+                    unpackedNames.Add((mod, bare));
                 mod.Options = ReadOptions(Json.List(m, "options"));
                 mod.Nexus = ReadNexus(Json.Obj(m, "nexus"));
                 mod.GitHub = ReadGitHub(Json.Obj(m, "github"));
@@ -180,6 +186,13 @@ namespace Hd2Mod
                     Picture = Json.Str(si, "picture"), Version = Json.Str(si, "version"), Updated = Json.Long(si, "updated"),
                 };
                 lib.Mods.Add(mod);
+            }
+            foreach (var (mod, bare) in unpackedNames)
+            {
+                // the zip's own name when it was added from one (Unpack replaced some of its characters)
+                var ext = Path.GetExtension(mod.Source ?? "").ToLowerInvariant();
+                var name = new[] { ".zip", ".7z", ".rar", ".tar", ".gz", ".xz" }.Contains(ext) && Path.GetFileNameWithoutExtension(mod.Source).Trim() is string own && own.Length > 0 ? own : bare;
+                if (!lib.Mods.Any(x => x != mod && string.Equals(x.Name, name, StringComparison.OrdinalIgnoreCase))) mod.Name = name;
             }
             foreach (var g in Json.List(d, "groups").OfType<Dictionary<string, object>>())
                 lib.Groups.Add(new ModGroup { Id = Json.Str(g, "id"), Name = (Json.Str(g, "name") ?? "").Trim(), Parent = Json.Str(g, "parent") });

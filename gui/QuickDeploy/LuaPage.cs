@@ -45,7 +45,7 @@ namespace QuickDeploy
             var head = new DockPanel { Margin = new Thickness(0, 0, 12, 16) };
             var tools = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
             var add = new Button { Content = Texts.Get("lp_add"), Style = (Style)FindResource("Ghost"), MinHeight = 40 };
-            add.Click += (s, e) => { var p = PickZip(); if (p != null) Run("add", p); };
+            add.Click += async (s, e) => { var p = PickZips(); if (p != null) await DropPaths(p); };
             tools.Children.Add(add);
             var logs = new Button { Content = Texts.Get("lp_logs_folder"), Style = (Style)FindResource("Ghost"), MinHeight = 40, Margin = new Thickness(8, 0, 0, 0) };
             logs.Click += (s, e) => OpenFolder(LuaMods.GameFolder);

@@ -108,6 +108,7 @@ namespace QuickDeploy
         {
             Mark("window made");
             InitializeComponent();
+            RestorePlace();
             // the pages' text selects and copies across lines (the user, 2026-11-06); not the mod
             // list, whose rows are dragged to reorder
             foreach (var page in new FrameworkElement[] { Detail, LuaBox, Storages, TagsBox, Downloads, SettingsBox, PluginsBox })
@@ -238,6 +239,7 @@ namespace QuickDeploy
             ConflictPickTest();
             ReportDialogTest();
             PreviewTest();
+            PickTest();
             DragTest();
             DropTest();
             Listen();
@@ -2007,6 +2009,7 @@ namespace QuickDeploy
         {
             SaveWhere();
             SaveList();
+            SavePlace();
             base.OnClosing(e);
         }
 
@@ -3322,10 +3325,19 @@ namespace QuickDeploy
         List<string> drawLog;
         readonly System.Diagnostics.Stopwatch drawClock = System.Diagnostics.Stopwatch.StartNew();
 
+        // HD2QD_OPEN_MOD=<name> (pictures only): that mod chosen and opened at the start
+        string openModAtStart = Environment.GetEnvironmentVariable("HD2QD_OPEN_MOD");
+
         void Render()
         {
             renders++;
             drawLog?.Add(drawClock.ElapsedMilliseconds + "\tstate");
+            if (openModAtStart != null && st.Mods.FirstOrDefault(x => x.Name == openModAtStart) is ModRow startMod)
+            {
+                openModAtStart = null;
+                open.Add(startMod.Id);
+                selectedId = startMod.Id;
+            }
             // labels remembered from the last time that no mod carries any more filter nothing
             if (!fromSaved && !filtersPruned)
             {
@@ -3901,7 +3913,7 @@ namespace QuickDeploy
         readonly Dictionary<string, string> pageDrawn = new Dictionary<string, string>();
 
         UIElement PageOf(string page) => page == "deploy" ? Body : page == "download" ? DownloadPage : page == "lua" ? LuaPage
-            : page == "storage" ? StoragePage : page == "tags" ? TagsPage : page == "settings" ? SettingsPage : page == "plugins" ? (UIElement)PluginsPage : null;
+            : page == "storage" ? StoragePage : page == "tags" ? TagsPage : page == "settings" ? SettingsPage : page == "plugins" ? (UIElement)PluginsArea : null;
 
         void ShowPage(string page)
         {
@@ -3921,6 +3933,7 @@ namespace QuickDeploy
             TagsPage.Visibility = page == "tags" ? Visibility.Visible : Visibility.Collapsed;
             SettingsPage.Visibility = page == "settings" ? Visibility.Visible : Visibility.Collapsed;
             PluginsPage.Visibility = page == "plugins" ? Visibility.Visible : Visibility.Collapsed;
+            PluginsArea.Visibility = PluginsPage.Visibility;            // the column and its guide
             // the gear and the plug lit while their page is on show, as the page buttons are
             SettingsBtn.Background = page == "settings" ? B("Yellow") : Brushes.Transparent;
             SettingsBtn.BorderBrush = page == "settings" ? B("Yellow") : B("Grid");
@@ -5748,13 +5761,67 @@ namespace QuickDeploy
                 box.Children.Add(new TextBlock { Text = Texts.Get("no_options"), FontSize = 12, Foreground = B("Muted") });
                 return box;
             }
-            var parts = new List<(Option, int)>();
+            // each group folds under its heading (issue 20, 2026-11-10: a mod with many groups,
+            // BAR - Better Aim Reticles, was one long page); with more than FoldAbove groups they
+            // start folded, and "expand all" / "collapse all" is over them
+            var parts = m.Options.Select((o, k) => (o, k)).Where(x => x.o.Subs.Count == 0).ToList();
+            int groupCount = m.Options.Count(o => o.Subs.Count > 0) + (parts.Count > 0 ? 1 : 0);
+            bool foldFirst = groupCount > FoldAbove;
+            var folds = new List<(string Key, Action<bool> Set)>();
+            TextBlock all = null;
+            void SayAll()
+            {
+                if (all != null) all.Text = Texts.Get(folds.Any(f => IsFolded(m.Id, f.Key, foldFirst)) ? "opt_unfold_all" : "opt_fold_all");
+            }
+            if (foldFirst)
+            {
+                all = new TextBlock { FontSize = 12, Foreground = B("Blue") };
+                var allBtn = new Button { Content = all, Template = Plain(), Cursor = Cursors.Hand, FocusVisualStyle = null, HorizontalAlignment = HorizontalAlignment.Right };
+                System.Windows.Automation.AutomationProperties.SetAutomationId(allBtn, "fold:all");
+                allBtn.Click += (s, e) =>
+                {
+                    bool fold = !folds.Any(f => IsFolded(m.Id, f.Key, foldFirst));
+                    foreach (var f in folds) f.Set(fold);
+                    SayAll();
+                };
+                box.Children.Add(allBtn);
+            }
+
+            // a heading that folds what follows it: the chevron and the name are what is clicked
+            // (the switch keeps its own click); folded, it says what is chosen
+            void Foldable(string key, DockPanel head, FrameworkElement title, TextBlock chosen, params UIElement[] body)
+            {
+                var chev = FoldChevron();
+                // a button: the keyboard and UI Automation reach it as a mouse does
+                var toggle = new Button { Content = chev, Template = Plain(), Cursor = Cursors.Hand, FocusVisualStyle = null, VerticalAlignment = VerticalAlignment.Center, Padding = new Thickness(0) };
+                System.Windows.Automation.AutomationProperties.SetAutomationId(toggle, "fold:" + key);
+                System.Windows.Automation.AutomationProperties.SetName(toggle, key == ExtrasFold ? Texts.Get("extras") : key);
+                DockPanel.SetDock(toggle, Dock.Left);
+                head.Children.Insert(0, toggle);
+                void Set(bool fold)
+                {
+                    foreach (var b in body) b.Visibility = fold ? Visibility.Collapsed : Visibility.Visible;
+                    ((RotateTransform)chev.RenderTransform).Angle = fold ? 0 : 90;
+                    chosen.Visibility = fold && chosen.Text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+                    SetFolded(m.Id, key, fold, foldFirst);
+                }
+                folds.Add((key, Set));
+                void Flip() { Set(!IsFolded(m.Id, key, foldFirst)); SayAll(); }
+                toggle.Click += (s, e) => Flip();
+                title.Cursor = Cursors.Hand;
+                title.MouseLeftButtonUp += (s, e) => { e.Handled = true; Flip(); };
+                bool now = IsFolded(m.Id, key, foldFirst);
+                foreach (var b in body) b.Visibility = now ? Visibility.Collapsed : Visibility.Visible;
+                ((RotateTransform)chev.RenderTransform).Angle = now ? 0 : 90;
+                chosen.Visibility = now && chosen.Text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+            }
+
             for (int i = 0; i < m.Options.Count; i++)
             {
                 var o = m.Options[i];
                 string oref = (i + 1).ToString();
-                if (o.Subs.Count == 0) { parts.Add((o, i)); continue; }
-                var head = new DockPanel { Margin = new Thickness(0, 8, 0, 8) };
+                if (o.Subs.Count == 0) continue;
+                var head = new DockPanel { Margin = new Thickness(0, 8, 0, 8), Background = Brushes.Transparent };
                 var sw = new CheckBox { Style = (Style)FindResource("Switch"), IsChecked = o.Enabled, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0) };
                 int oi = i;
                 sw.Click += (s, e) =>
@@ -5764,12 +5831,25 @@ namespace QuickDeploy
                 };
                 DockPanel.SetDock(sw, Dock.Left);
                 head.Children.Add(sw);
-                var t = new WrapPanel { VerticalAlignment = VerticalAlignment.Center };
+                var t = new WrapPanel { VerticalAlignment = VerticalAlignment.Center, Background = Brushes.Transparent };
                 t.Children.Add(new TextBlock { Text = o.Name, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 8, 0) });
                 t.Children.Add(new TextBlock { Text = Texts.Get("rule_one"), FontSize = 12, Foreground = B("Muted"), VerticalAlignment = VerticalAlignment.Bottom });
+                var pick = o.Enabled ? o.Subs.FirstOrDefault(x => x.Enabled) : null;
+                var chosen = new TextBlock
+                {
+                    Text = pick != null ? Texts.F("opt_chosen", pick.Name) : "", FontSize = 12, Foreground = B("Blue"),
+                    VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(8, 0, 0, 0),
+                };
+                t.Children.Add(chosen);
                 head.Children.Add(t);
                 box.Children.Add(head);
-                if (!string.IsNullOrWhiteSpace(o.Description)) box.Children.Add(new TextBlock { Text = o.Description, FontSize = 12, Foreground = B("Muted"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, -4, 0, 8) });
+                var body = new List<UIElement>();
+                if (!string.IsNullOrWhiteSpace(o.Description))
+                {
+                    var d = new TextBlock { Text = o.Description, FontSize = 12, Foreground = B("Muted"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, -4, 0, 8) };
+                    box.Children.Add(d);
+                    body.Add(d);
+                }
                 var cards = new WrapPanel { IsEnabled = o.Enabled, Opacity = o.Enabled ? 1 : 0.45 };
                 for (int j = 0; j < o.Subs.Count; j++)
                 {
@@ -5786,13 +5866,17 @@ namespace QuickDeploy
                     }));
                 }
                 box.Children.Add(cards);
+                body.Add(cards);
+                Foldable(o.Name, head, t, chosen, body.ToArray());
             }
             if (parts.Count > 0)
             {
-                var t = new WrapPanel { Margin = new Thickness(0, 8, 0, 8) };
+                var head = new DockPanel { Margin = new Thickness(0, 8, 0, 8), Background = Brushes.Transparent };
+                var t = new WrapPanel { Background = Brushes.Transparent, VerticalAlignment = VerticalAlignment.Center };
                 t.Children.Add(new TextBlock { Text = Texts.Get("extras"), FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 8, 0) });
-                t.Children.Add(new TextBlock { Text = Texts.F("rule_any", parts.Count(p => p.Item1.Enabled), parts.Count), FontSize = 12, Foreground = B("Muted"), VerticalAlignment = VerticalAlignment.Bottom });
-                box.Children.Add(t);
+                t.Children.Add(new TextBlock { Text = Texts.F("rule_any", parts.Count(p => p.o.Enabled), parts.Count), FontSize = 12, Foreground = B("Muted"), VerticalAlignment = VerticalAlignment.Bottom });
+                head.Children.Add(t);
+                box.Children.Add(head);
                 var cards = new WrapPanel();
                 foreach (var (o, i) in parts)
                 {
@@ -5804,7 +5888,10 @@ namespace QuickDeploy
                     }));
                 }
                 box.Children.Add(cards);
+                // the count chosen is in the heading already: nothing more to say folded
+                Foldable(ExtrasFold, head, t, new TextBlock(), cards);
             }
+            SayAll();
             var chosenFiles = m.Files.Count;
             box.Children.Add(new TextBlock
             {
@@ -5813,6 +5900,47 @@ namespace QuickDeploy
             });
             return box;
         }
+
+        /// <summary>More groups than this in a mod's options: they start folded (issue 20).</summary>
+        const int FoldAbove = 3;
+
+        /// <summary>The fold key of the group of parts (options without sub-options); a manifest's
+        /// own option names cannot start with it.</summary>
+        const string ExtrasFold = "\u0001parts";
+
+        /// <summary>Groups folded or unfolded by the player, per mod and group name: kept in gui.json
+        /// ("option_folds"), as the player left them; a group never touched follows the default.</summary>
+        Dictionary<string, object> optionFolds;
+
+        bool IsFolded(string mod, string key, bool fallback)
+        {
+            if (optionFolds == null)
+                try { optionFolds = Store.Load("gui.json").TryGetValue("option_folds", out var o) && o is Dictionary<string, object> d ? d : new Dictionary<string, object>(); }
+                catch (Exception e) when (e is IOException || e is UnauthorizedAccessException || e is FormatException) { optionFolds = new Dictionary<string, object>(); }
+            return optionFolds.TryGetValue(mod, out var v) && v is Dictionary<string, object> mf && mf.TryGetValue(key, out var f) && f is bool b ? b : fallback;
+        }
+
+        void SetFolded(string mod, string key, bool fold, bool fallback)
+        {
+            if (IsFolded(mod, key, fallback) == fold) return;
+            if (!(optionFolds.TryGetValue(mod, out var v) && v is Dictionary<string, object> mf)) optionFolds[mod] = mf = new Dictionary<string, object>();
+            mf[key] = fold;
+            try
+            {
+                var d = Store.Load("gui.json");
+                d["option_folds"] = optionFolds;
+                Store.Save("gui.json", d);
+            }
+            catch (Exception e) when (e is IOException || e is UnauthorizedAccessException || e is FormatException) { }
+        }
+
+        /// <summary>The fold mark before a group's heading: pointing right folded, down open.</summary>
+        static Path FoldChevron() => new Path
+        {
+            Data = Geometry.Parse("M0,0 L5,5 L0,10"), Stroke = B("Muted"), StrokeThickness = 1.6, VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 10, 0), StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round,
+            Width = 10, Height = 10, Stretch = Stretch.None, RenderTransformOrigin = new Point(0.3, 0.5), RenderTransform = new RotateTransform(90),
+        };
 
         /// <summary>clashes: the enabled mods it conflicts with, said on the card before it is chosen
         /// (the user, 2026-11-03).</summary>
@@ -8624,16 +8752,9 @@ namespace QuickDeploy
         {
             var menu = new ContextMenu { PlacementTarget = AddBtn, Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom };
             var zip = new MenuItem { Header = Texts.Get("add_zip") };
-            zip.Click += (s, a) => { var p = PickZip(); if (p != null) Run("add", p); };
+            zip.Click += async (s, a) => { var p = PickZips(); if (p != null) await DropPaths(p); };
             var folder = new MenuItem { Header = Texts.Get("add_folder") };
-            folder.Click += async (s, a) =>
-            {
-                var p = PickFolder();
-                if (p == null) return;
-                var before = new HashSet<string>(Library.Load().Mods.Select(m => m.Id));
-                if (await Act(() => Cli.Run("add", p), false))
-                    AdviseDrive(Library.Load().Mods.Where(m => !before.Contains(m.Id)).ToList());
-            };
+            folder.Click += async (s, a) => { var p = PickFolders(); if (p != null) await DropPaths(p); };
             menu.Items.Add(zip);
             menu.Items.Add(folder);
             var managers = new MenuItem { Header = Texts.Get("st_import") };
@@ -8716,10 +8837,17 @@ namespace QuickDeploy
             AdviseDrive(fresh);
         }
 
-        string PickZip() =>
-            Pick.File(this, Texts.Get("pick_zip_title"), Texts.Get("pick_zip_kind"), "*.zip;*.7z;*.rar;*.tar;*.gz;*.xz");
+        const string ArchivePatterns = "*.zip;*.7z;*.rar;*.tar;*.gz;*.xz";
+
+        string PickZip() => Pick.File(this, Texts.Get("pick_zip_title"), Texts.Get("pick_zip_kind"), ArchivePatterns);
+
+        /// <summary>Archives to add, several at once: added one by one as dropped ones are.</summary>
+        List<string> PickZips() => Pick.Files(this, Texts.Get("pick_zips_title"), Texts.Get("pick_zip_kind"), ArchivePatterns)?.ToList();
 
         string PickFolder(string titleKey = "pick_mod_title") => Pick.Folder(this, Texts.Get(titleKey));
+
+        /// <summary>Mod folders to add, several at once (issue 13): added one by one as dropped ones are.</summary>
+        List<string> PickFolders() => Pick.Folders(this, Texts.Get("pick_mods_title"))?.ToList();
 
         // ---------------------------------------------------------------- the window's own frame (as HD2 Mod Setting GUI)
 
@@ -8760,6 +8888,7 @@ namespace QuickDeploy
             (PresentationSource.FromVisual(this) as HwndSource)?.AddHook(Hook);
             acrylic = Backdrop.Enable(this);
             if (acrylic) Frame.Background = B("Ground900");
+            FitToScreen();
         }
 
         // Windows 11's snap layouts show only over a real maximize button: over ours the

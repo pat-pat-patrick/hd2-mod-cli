@@ -1419,6 +1419,45 @@ namespace Hd2Mod.Tests
 
     public class LibraryOps : Fixture
     {
+        /// <summary>An audio mod packed by hand, with no manifest: named after its zip, not after the
+        /// folder the zip was unpacked into ("..._3abe3af60d0f", a player 2026-11-08), whether its
+        /// patches lie at the top or in one folder.</summary>
+        [Fact]
+        public void AModWithNoManifestIsNamedAfterItsZip()
+        {
+            var flat = Path.Combine(Root, "少前夏安替换潜兵3号语音(德语).zip");
+            var nested = Path.Combine(Root, "Voice（Fr） pack.zip");
+            Zip(flat, (A + ".patch_0", "de"));
+            Zip(nested, ("inner/" + B + ".patch_0", "fr"));
+            Cli("add", flat);
+            Cli("add", nested);
+            var names = Library.Load().Mods.Select(m => m.Name).ToList();
+            Assert.Equal(new[] { "少前夏安替换潜兵3号语音(德语)", "Voice（Fr） pack" }, names);
+            // the folders keep their suffix: they are told apart from others by it (Ops.Ours)
+            Assert.All(Library.Load().Mods, m => Assert.Matches(@"_[0-9a-f]{12}$", Path.GetFileName(m.Path)));
+        }
+
+        /// <summary>A library from before 0.19.1 holds such mods under their folder's name: they are
+        /// shown under their zip's name, unless that name is taken or the player renamed them.</summary>
+        [Fact]
+        public void AnOldEntryNamedAfterItsUnpackedFolderGetsItsZipsName()
+        {
+            var lib = Library.Load();
+            var folder = Path.Combine(Root, "library", "Voice_pack_3abe3af60d0f");
+            var other = Path.Combine(Root, "library", "Taken_00112233aabb");
+            var kept = Path.Combine(Root, "library", "Renamed_445566778899");
+            foreach (var f in new[] { folder, other, kept }) Directory.CreateDirectory(f);
+            lib.Mods.Add(new Mod { Id = "a", Name = "Voice_pack_3abe3af60d0f", Path = folder, Source = Path.Combine(Root, "Voice（pack）.zip") });
+            lib.Mods.Add(new Mod { Id = "b", Name = "Taken_00112233aabb", Path = other, Source = other });
+            lib.Mods.Add(new Mod { Id = "c", Name = "Taken", Path = Path.Combine(Root, "c"), Source = Path.Combine(Root, "c") });
+            lib.Mods.Add(new Mod { Id = "d", Name = "My voices", Path = kept, Source = kept });
+            lib.Save();
+            var names = Library.Load().Mods.ToDictionary(m => m.Id, m => m.Name);
+            Assert.Equal("Voice（pack）", names["a"]);           // the zip's own name, which Unpack had changed
+            Assert.Equal("Taken_00112233aabb", names["b"]);       // the bare name is another mod's
+            Assert.Equal("My voices", names["d"]);                // renamed by the player
+        }
+
         [Fact]
         public void AddingANewVersionWithTheSameManifestIdentityReplacesTheEntry()
         {

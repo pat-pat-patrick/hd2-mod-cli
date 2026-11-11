@@ -148,7 +148,11 @@ namespace QuickDeploy
         /// read that follows brings the row back.</summary>
         void DeleteFromDisk(ModRow m)
         {
-            if (!Dialog.AskDanger(this, Texts.F("delete_ask", m.Name, m.Path), Texts.Get("delete_btn"))) return;
+            // what is left afterwards, said by what it was added from (issue 16): an archive kept,
+            // its page, or nothing -- the folder is then the only copy
+            var left = Ops.LeftAfterDelete(m.Source, m.Path);
+            var key = left == "archive" ? "delete_ask" : left == "page" ? "delete_ask_page" : "delete_ask_only";
+            if (!Dialog.AskDanger(this, Texts.F(key, m.Name, m.Path), Texts.Get("delete_btn"))) return;
             DeleteNow(m);
         }
 

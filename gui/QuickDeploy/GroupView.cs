@@ -650,17 +650,26 @@ namespace QuickDeploy
                 if (e.ClickCount == 2) { e.Handled = true; RenameMod(m); return; }
                 gDragFrom = ("mod", m.Id, m.Name, e.GetPosition(GroupScroll));
             };
-            var menu = Menu(m);
-            // a group made here: with no group yet the column is long and its button far down
-            // (the user, 2026-10-27)
-            if (m.Group == null || LevelOf(m.Group) < Groups.Depth)
+            // built when it opens, as a row's in the load order: items are kept while what they show
+            // does not change, and a menu built with one acted on the mods taken then -- after Ctrl or
+            // Shift took several, Move to group moved only the one clicked (issue 19, 2026-11-09)
+            ContextMenu GroupMenu(ModRow r)
             {
-                var make = new MenuItem { Header = Texts.Get("g_new_top") };
-                make.Click += (s, e) => NewGroup(m.Group);
-                menu.Items.Insert(0, make);
-                menu.Items.Insert(1, new Separator());
+                var menu = Menu(r);
+                // a group made here: with no group yet the column is long and its button far down
+                // (the user, 2026-10-27)
+                if (r.Group == null || LevelOf(r.Group) < Groups.Depth)
+                {
+                    var make = new MenuItem { Header = Texts.Get("g_new_top") };
+                    make.Click += (s, e) => NewGroup(r.Group);
+                    menu.Items.Insert(0, make);
+                    menu.Items.Insert(1, new Separator());
+                }
+                return menu;
             }
-            item.ContextMenu = menu;
+            item.ContextMenu = GroupMenu(m);
+            var id = m.Id;
+            item.ContextMenuOpening += (s, e) => item.ContextMenu = GroupMenu(st?.Mods.FirstOrDefault(x => x.Id == id) ?? m);
             return item;
         }
 

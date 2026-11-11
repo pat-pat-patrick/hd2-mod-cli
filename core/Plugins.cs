@@ -71,7 +71,10 @@ namespace Hd2Mod
         /// (the Api is a constant), so nothing of it runs before the player agrees.</summary>
         public static (string File, string Version, string Why) Inspect(string path)
         {
-            var file = Path.GetFileName(path);
+            // an official release is known by its SHA-256 and goes in under the list's name for
+            // it, whatever the file is called now: a file passed around by hand is often renamed,
+            // by a browser ("(1)") or a chat program (the user, 2026-11-10)
+            var file = OfficialBySha(path)?.File ?? Path.GetFileName(path);
             if (!Name.IsMatch(file)) return (file, null, "name");
             try
             {
@@ -204,24 +207,34 @@ namespace Hd2Mod
 
         static readonly Dictionary<string, (long Length, DateTime Time, string Sha)> shaRead = new Dictionary<string, (long, DateTime, string)>(StringComparer.OrdinalIgnoreCase);
 
-        /// <summary>The added plugin file is an official plugin: the official list names it and one
-        /// of its released versions has this file's SHA-256 (a name alone proves nothing: anyone can
-        /// call a file HD2QD.Settings.dll). Hashed once while the file is unchanged.</summary>
-        public static OfficialPlugin OfficialOf(string file)
+        /// <summary>The added plugin file is an official plugin: one of the official list's released
+        /// versions has this file's SHA-256. Only the bytes count, never the name (the user,
+        /// 2026-11-10): anyone can call a file HD2QD.Settings.dll, and a release passed around by
+        /// hand is often renamed.</summary>
+        public static OfficialPlugin OfficialOf(string file) => OfficialBySha(PathOf(file));
+
+        /// <summary>The official plugin one of whose released versions has the SHA-256 of the file
+        /// at path, else null (also when the list was never read, or the file cannot be read).
+        /// Hashed once while the file is unchanged.</summary>
+        static OfficialPlugin OfficialBySha(string path)
         {
-            var o = Official().FirstOrDefault(p => string.Equals(p.File, file, StringComparison.OrdinalIgnoreCase));
-            if (o == null || o.Versions.Count == 0) return null;
-            var fi = new FileInfo(PathOf(file));
+            var list = Official();
+            if (list.All(p => p.Versions.Count == 0)) return null;
+            var fi = new FileInfo(path);
             if (!fi.Exists) return null;
             if (!shaRead.TryGetValue(fi.FullName, out var r) || r.Length != fi.Length || r.Time != fi.LastWriteTimeUtc)
             {
                 string sha;
-                using (var h = System.Security.Cryptography.SHA256.Create())
-                using (var f = fi.OpenRead())
-                    sha = BitConverter.ToString(h.ComputeHash(f)).Replace("-", "").ToLowerInvariant();
+                try
+                {
+                    using (var h = System.Security.Cryptography.SHA256.Create())
+                    using (var f = fi.OpenRead())
+                        sha = BitConverter.ToString(h.ComputeHash(f)).Replace("-", "").ToLowerInvariant();
+                }
+                catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { return null; }
                 shaRead[fi.FullName] = r = (fi.Length, fi.LastWriteTimeUtc, sha);
             }
-            return o.Versions.Any(v => v.Sha256 == r.Sha) ? o : null;
+            return list.FirstOrDefault(p => p.Versions.Any(v => v.Sha256 == r.Sha));
         }
 
         /// <summary>An added plugin's newer official release: the official list names its file and

@@ -241,11 +241,26 @@
       <ScrollViewer x:Name="SettingsPage" Visibility="Collapsed" VerticalScrollBarVisibility="Visible" Focusable="False">
         <StackPanel x:Name="SettingsBox" Margin="32,24,32,32" MaxWidth="720"/>
       </ScrollViewer>
-      <!-- the plugins page, opened by the plug beside the gear: the same one column -->
-      <ScrollViewer x:Name="PluginsPage" Visibility="Collapsed" VerticalScrollBarVisibility="Visible" Focusable="False"
-                    AllowDrop="True" DragOver="PluginsPage_DragOver" Drop="PluginsPage_Drop">
-        <StackPanel x:Name="PluginsBox" Margin="32,24,32,32" MaxWidth="720"/>
-      </ScrollViewer>
+      <!-- the plugins page, opened by the plug beside the gear: the same one column, with the
+           guide on its left (the user, 2026-11-10: which plugins are added, and a click goes to
+           one's card), as wide as the deploy page's library panel. ShowPage shows and hides the
+           two with the column (PluginsPage) -->
+      <Grid x:Name="PluginsArea" Visibility="Collapsed" Background="Transparent"
+            AllowDrop="True" DragOver="PluginsPage_DragOver" Drop="PluginsPage_Drop">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto"/>
+          <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+        <Border x:Name="PluginGuideBar" Width="232" BorderBrush="{StaticResource Grid}" BorderThickness="0,0,1,0">
+          <ScrollViewer VerticalScrollBarVisibility="Auto" Focusable="False">
+            <StackPanel x:Name="PluginGuide" Margin="16,24,16,24"/>
+          </ScrollViewer>
+        </Border>
+        <ScrollViewer x:Name="PluginsPage" Grid.Column="1" Visibility="Collapsed" VerticalScrollBarVisibility="Visible" Focusable="False"
+                      ScrollChanged="PluginsPage_ScrollChanged">
+          <StackPanel x:Name="PluginsBox" Margin="32,24,32,32" MaxWidth="720"/>
+        </ScrollViewer>
+      </Grid>
       </Grid>
     </DockPanel>
   </Border>

@@ -170,7 +170,7 @@ namespace QuickDeploy
             if (m == null)
             {
                 root.Children.Add(new TextBlock { Text = Texts.Get("pv_none"), Foreground = B("Muted"), Margin = new Thickness(28) });
-                preview.Content = root;
+                preview.Content = WithClose(root);
                 return;
             }
 
@@ -181,10 +181,8 @@ namespace QuickDeploy
                                      Child = Full(m.Icon) ?? Picture(m.Icon, GlyphMod, 0, m.Enabled ? "Blue" : "Muted", 64) };
             DockPanel.SetDock(cover, Dock.Left);
             head.Children.Add(cover);
-            var close = new TextBlock { Text = Texts.Get("pv_close"), FontSize = 12, Foreground = B("Muted"), VerticalAlignment = VerticalAlignment.Top };
-            DockPanel.SetDock(close, Dock.Right);
-            head.Children.Add(close);
-            var words = new StackPanel { Margin = new Thickness(24, 0, 16, 0) };
+            // the name keeps clear of the close button in the corner
+            var words = new StackPanel { Margin = new Thickness(24, 0, 36, 0) };
             words.Children.Add(new TextBlock { Text = m.Name, FontSize = 26, FontWeight = FontWeights.Bold, TextWrapping = TextWrapping.Wrap });
             var facts = new List<string>();
             if (m.ShownVersion != null) facts.Add(V(m.ShownVersion));
@@ -225,9 +223,32 @@ namespace QuickDeploy
             }
             previewScroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Focusable = false, Content = body };
             root.Children.Add(previewScroll);
-            preview.Content = root;
+            preview.Content = WithClose(root);
             if (keep > 0) Dispatcher.BeginInvoke(new Action(() => previewScroll?.ScrollToVerticalOffset(keep)), System.Windows.Threading.DispatcherPriority.Loaded);
         }
+
+        /// <summary>The preview's content with a close button in its top right corner, the main
+        /// window's own (the user, 2026-11-06: with only Space, Esc or a click outside to close
+        /// it, a player could be lost); the keys are named in its tip.</summary>
+        UIElement WithClose(UIElement content)
+        {
+            var x = new System.Windows.Shapes.Path { Data = Geometry.Parse("M0,0 L10,10 M10,0 L0,10"), StrokeThickness = 1.2 };
+            var close = new Button
+            {
+                Name = PreviewClose, Style = (Style)FindResource("CaptionClose"), Content = x, Height = 40, Focusable = false,
+                HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top,
+                Margin = new Thickness(0, 3, 0, 0), ToolTip = Texts.Get("pv_close"),
+            };
+            System.Windows.Automation.AutomationProperties.SetName(close, Texts.Get("pv_close"));
+            x.SetBinding(System.Windows.Shapes.Shape.StrokeProperty, new System.Windows.Data.Binding("Foreground") { Source = close });
+            close.Click += (s, e) => preview?.Close();
+            var g = new Grid();
+            g.Children.Add(content);
+            g.Children.Add(close);
+            return g;
+        }
+
+        const string PreviewClose = "previewClose";
 
         /// <summary>A picture at full size, for the preview (the list's are 256 px copies); null
         /// when there is none or it cannot be read.</summary>
@@ -313,6 +334,77 @@ namespace QuickDeploy
                     }), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
                 };
                 td.Start();
+                return;
+            }
+            if (which == "previewclosebtn")
+            {
+                // "previewclosebtn": the preview opened; what lies under the middle of its close button
+                // (nothing may cover it), the preview pictured as it is and with the button lit as the
+                // pointer lights it; then the button pressed and let go as the mouse sends it, and
+                // whether the preview is still open. Text to HD2QD_WHEEL_OUT, pictures beside it
+                var tc = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(4) };
+                tc.Tick += async (s0, e0) =>
+                {
+                    tc.Stop();
+                    var path = Environment.GetEnvironmentVariable("HD2QD_WHEEL_OUT");
+                    var lines = new List<string>();
+                    try
+                    {
+                        OpenPreview();
+                        await System.Threading.Tasks.Task.Delay(800);
+                        lines.Add("open: " + (preview != null));
+                        var content = (FrameworkElement)preview.Content;
+                        var btn = Motion.Under<Button>(content).Single(b => b.Name == PreviewClose);
+                        var mid = btn.TranslatePoint(new Point(btn.ActualWidth / 2, btn.ActualHeight / 2), content);
+                        DependencyObject hit = VisualTreeHelper.HitTest(content, mid)?.VisualHit;
+                        while (hit != null && !(hit is Button)) hit = VisualTreeHelper.GetParent(hit);
+                        lines.Add("under its middle: " + (hit == btn ? "the close button" : hit?.ToString() ?? "nothing"));
+                        var corner = btn.TranslatePoint(new Point(btn.ActualWidth, 0), content);
+                        lines.Add(string.Format("button {0}x{1}, its top right at {2},{3} of {4}x{5}", btn.ActualWidth, btn.ActualHeight, corner.X, corner.Y, content.ActualWidth, content.ActualHeight));
+                        lines.Add("tip: " + btn.ToolTip);
+                        void Picture(string name)
+                        {
+                            preview.UpdateLayout();
+                            var w = (int)preview.ActualWidth; var h = (int)preview.ActualHeight;
+                            var bmp = new System.Windows.Media.Imaging.RenderTargetBitmap(w, h, 96, 96, PixelFormats.Pbgra32);
+                            bmp.Render(preview);
+                            var enc = new System.Windows.Media.Imaging.PngBitmapEncoder();
+                            enc.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bmp));
+                            using (var f = System.IO.File.Create(System.IO.Path.Combine(System.IO.Path.GetDirectoryName(path), name))) enc.Save(f);
+                        }
+                        Picture("preview_close.png");
+                        btn.Background = B("Yellow"); btn.Foreground = B("TapeInk");
+                        Picture("preview_close_lit.png");
+                        btn.ClearValue(Control.BackgroundProperty); btn.ClearValue(Control.ForegroundProperty);
+                        // pressed and let go: the press as the mouse sends it, the button taking the mouse
+                        // as a real press makes it (a raised one leaves the real button up)
+                        var down = new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left) { RoutedEvent = Mouse.PreviewMouseDownEvent };
+                        btn.RaiseEvent(down);
+                        btn.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left) { RoutedEvent = Mouse.MouseDownEvent });
+                        btn.CaptureMouse();
+                        typeof(System.Windows.Controls.Primitives.ButtonBase).GetMethod("SetIsPressed", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).Invoke(btn, new object[] { true });
+                        btn.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left) { RoutedEvent = Mouse.PreviewMouseUpEvent });
+                        btn.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, Environment.TickCount, MouseButton.Left) { RoutedEvent = Mouse.MouseUpEvent });
+                        await System.Threading.Tasks.Task.Delay(500);
+                        lines.Add("open after the click: " + (preview != null));
+                        // a mod with no options and one with a long name: the name keeps clear of the button
+                        var longest = st.Mods.OrderByDescending(x => x.Name.Length).First();
+                        selectedId = longest.Id; RenderList(); RenderDetail();
+                        OpenPreview();
+                        await System.Threading.Tasks.Task.Delay(800);
+                        content = (FrameworkElement)preview.Content;
+                        btn = Motion.Under<Button>(content).Single(b => b.Name == PreviewClose);
+                        var name = Motion.Under<TextBlock>(content).First(t => t.Text == longest.Name);
+                        var nameRight = name.TranslatePoint(new Point(name.ActualWidth, 0), content).X;
+                        var btnLeft = btn.TranslatePoint(new Point(0, 0), content).X;
+                        lines.Add(string.Format("longest name ({0} letters) ends at {1:0}, the button starts at {2:0}: {3}", longest.Name.Length, nameRight, btnLeft, nameRight <= btnLeft ? "clear" : "UNDER THE BUTTON"));
+                        Picture("preview_close_long.png");
+                        preview.Close();
+                    }
+                    catch (Exception x) { lines.Add(x.GetType().Name + " " + x.Message + " " + x.StackTrace); }
+                    if (path != null) System.IO.File.WriteAllText(path, string.Join("\r\n", lines) + "\r\n");
+                };
+                tc.Start();
                 return;
             }
             if (which != "preview" && which != "previewclose") return;

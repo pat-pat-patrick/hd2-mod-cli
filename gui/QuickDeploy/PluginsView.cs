@@ -16,13 +16,15 @@ namespace QuickDeploy
     {
         /// <summary>What the window hands a plugin: the core's host (PluginHost), and what only
         /// the window has: window(title, content), the manager's own window frame; ask(text,
-        /// action) and tell(text), its dialogs; foot(text, colour), its status line; refresh(),
-        /// the library and this page read again.</summary>
+        /// action), ask_text(text, action, start) (a line typed in, or null) and tell(text), its
+        /// dialogs; foot(text, colour), its status line; refresh(), the library and this page
+        /// read again.</summary>
         Dictionary<string, object> PluginHostHere()
         {
             var host = PluginHost.Make();
             host["window"] = (Func<string, FrameworkElement, Window>)((title, content) => new ChromeWindow(this, title, content));
             host["ask"] = (Func<string, string, bool>)((text, action) => Dialog.Ask(this, text, action));
+            host["ask_text"] = (Func<string, string, string, string>)((text, action, start) => Dialog.AskText(this, text, action, start));
             host["tell"] = (Action<string>)(text => Dialog.Tell(this, text));
             host["foot"] = (Action<string, string>)((text, colour) => Foot(text, colour ?? "Blue"));
             host["refresh"] = (Action)(() => { Refresh(); if (PluginsPage.Visibility == Visibility.Visible) RenderPlugins(); });
@@ -34,8 +36,16 @@ namespace QuickDeploy
         /// (the user, 2026-11-02): they are added here, or dropped on the page. Two kinds: a
         /// panel, whose plugin draws the card's body (Panel), and a window of its own, opened from
         /// its card (Open). Below them, the official plugins the library's mods need that are not
-        /// added.</summary>
+        /// added. On the left, the guide to the cards (RenderGuide).</summary>
         void RenderPlugins()
+        {
+            guideItems.Clear();
+            guideAsked = null;
+            RenderPluginCards();
+            RenderGuide();
+        }
+
+        void RenderPluginCards()
         {
             PluginsBox.Children.Clear();
             var top = new DockPanel();
@@ -135,8 +145,19 @@ namespace QuickDeploy
                     }
                 }
                 if (!first) PluginsBox.Children.Add(new Border { Height = 16 });
-                PluginsBox.Children.Add(Card(card));
+                var box = Card(card);
+                PluginsBox.Children.Add(box);
                 first = false;
+                // in the guide: what needs the player first, else that it is not an official plugin
+                string badge = null; bool hot = false;
+                if (type == null) { badge = "plugin_guide_unusable"; hot = true; }
+                else if (update != null) { badge = "plugin_guide_update"; hot = true; }
+                else if (ThirdParty(file)) badge = "plugin_guide_third";
+                guideItems.Add(new GuideItem
+                {
+                    Key = file, Title = type != null ? PluginFiles.Title(type, Texts.Lang) ?? file : file, Target = box,
+                    Badge = badge != null ? Texts.Get(badge) : null, Hot = hot,
+                });
             }
             // the official plugins not added (the user, 2026-11-03: a page that shows only what
             // is added does not say what can be added), those the library's mods need first. The
@@ -146,6 +167,13 @@ namespace QuickDeploy
             if (available.Count == 0 && !neverRead) return;
             var section = new TextBlock { Text = Texts.Get("plugins_official"), FontSize = 18, FontWeight = FontWeights.Bold, Margin = new Thickness(0, 28, 0, 12) };
             PluginsBox.Children.Add(section);
+            // one line in the guide for the whole section, not one per plugin: the guide lists what
+            // is added, and the section is where the rest is
+            guideItems.Add(new GuideItem
+            {
+                Key = GuideOfficial, Title = section.Text, Target = section,
+                Badge = neverRead ? null : available.Count.ToString(), Mono = true,
+            });
             if (neverRead)
             {
                 section.Margin = new Thickness(0, 28, 0, 0);
@@ -205,6 +233,183 @@ namespace QuickDeploy
                 PluginsBox.Children.Add(Card(card));
                 first = false;
             }
+        }
+
+        // ---------------------------------------------------------------- the guide
+
+        /// <summary>A line of the guide: an added plugin (Key, its file) or the official plugins
+        /// not added (GuideOfficial), and what a click goes to on the page.</summary>
+        class GuideItem
+        {
+            public string Key, Title, Badge;
+            public bool Hot, Mono;
+            public FrameworkElement Target;
+            public Border Row;
+            public TextBlock Name;
+        }
+
+        const string GuideOfficial = "\u0001official";
+        readonly List<GuideItem> guideItems = new List<GuideItem>();
+        // the line lit (the card at the top of the view), the one clicked (lit while its card is in
+        // view, though the end of the page cannot come up to the top), and a scroll on its way
+        string guideCur, guideAsked;
+        bool guideMoving;
+        EventHandler guideStep;
+
+        /// <summary>Not an official plugin: the official list has been read and has no release
+        /// with this file's SHA-256 (PluginFiles.OfficialOf). Until the list is read, nothing is said.</summary>
+        static bool ThirdParty(string file)
+        {
+            if (PluginFiles.OfficialJson() == null) return false;
+            try { return PluginFiles.OfficialOf(file) == null; }
+            catch (Exception e) when (e is System.IO.IOException || e is UnauthorizedAccessException) { return false; }
+        }
+
+        /// <summary>The guide on the plugins page's left (the user, 2026-11-10: which plugins are
+        /// added, a click going to one's card), drawn as the deploy page's library panel is: a
+        /// label, then a line for each card in the page's order, each named by the plugin's own
+        /// Title in the window's language, any plugin file in the folder whoever made it. A badge
+        /// says what needs the player (unusable, an update), else that it is not an official
+        /// plugin. Under them, one line for the official plugins not added. With nothing to list
+        /// the page is its column alone.</summary>
+        void RenderGuide()
+        {
+            PluginGuide.Children.Clear();
+            PluginGuideBar.Visibility = guideItems.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+            bool added = false;
+            foreach (var it in guideItems)
+            {
+                if (it.Key == GuideOfficial)
+                {
+                    if (added) PluginGuide.Children.Add(new Border { Height = 24 });
+                    PluginGuide.Children.Add(Label("plugins_guide_more", new Thickness(8, 0, 0, 4)));
+                }
+                else if (!added)
+                {
+                    PluginGuide.Children.Add(Label("plugins_guide", new Thickness(8, 0, 0, 4)));
+                    added = true;
+                }
+                var btn = new Button { Cursor = System.Windows.Input.Cursors.Hand, FocusVisualStyle = null, Margin = new Thickness(0, 2, 0, 2), Template = Plain() };
+                var row = new Border { MinHeight = 44, Padding = new Thickness(12, 0, 12, 0), BorderThickness = new Thickness(2, 0, 0, 0) };
+                var dp = new DockPanel();
+                if (it.Badge != null)
+                {
+                    var badge = new Border
+                    {
+                        Background = it.Hot ? B("Yellow") : B("Grid"), MinWidth = 22,
+                        // words sit high in a box their own height: one more above (measured, 1.5 px at 200 %)
+                        Padding = it.Mono ? new Thickness(6, 0, 6, 0) : new Thickness(6, 1, 6, 0),
+                        Margin = new Thickness(8, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center,
+                        Child = new TextBlock
+                        {
+                            Text = it.Badge, FontFamily = it.Mono ? Mono : FontFamily, FontSize = 11, Foreground = it.Hot ? B("TapeInk") : B("Muted"),
+                            HorizontalAlignment = HorizontalAlignment.Center,
+                        },
+                    };
+                    DockPanel.SetDock(badge, Dock.Right);
+                    dp.Children.Add(badge);
+                }
+                it.Name = new TextBlock { Text = it.Title, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
+                dp.Children.Add(it.Name);
+                row.Child = dp;
+                btn.Content = row;
+                // the whole name and the file: for a name cut short, and which file a third-party one is
+                btn.ToolTip = it.Key == GuideOfficial ? null : it.Title + "\n" + it.Key;
+                System.Windows.Automation.AutomationProperties.SetName(btn, it.Title);
+                System.Windows.Automation.AutomationProperties.SetAutomationId(btn, "guide:" + (it.Key == GuideOfficial ? "official" : it.Key));
+                it.Row = row;
+                var key = it.Key;
+                btn.Click += (s, e) => GuideGo(key);
+                PluginGuide.Children.Add(btn);
+            }
+            guideCur = guideItems.Count > 0 ? guideItems[0].Key : null;
+            PaintGuide();
+            Dispatcher.BeginInvoke(new Action(GuideFollow), System.Windows.Threading.DispatcherPriority.Loaded);
+        }
+
+        void PaintGuide()
+        {
+            foreach (var it in guideItems)
+            {
+                bool cur = it.Key == guideCur;
+                it.Row.BorderBrush = cur ? B("Yellow") : System.Windows.Media.Brushes.Transparent;
+                it.Row.Background = cur ? B("Ground700") : System.Windows.Media.Brushes.Transparent;
+                it.Name.Foreground = cur ? B("Yellow") : B("Ink");
+            }
+        }
+
+        /// <summary>Where a line's card is, from the top of the page's view.</summary>
+        double GuideTop(GuideItem it) => it.Target.TransformToAncestor(PluginsPage).Transform(new Point(0, 0)).Y;
+
+        /// <summary>A line clicked: the page scrolled until its card is at the top, where the page's
+        /// title is (as far as the page goes), and the card's frame lit for a moment.</summary>
+        void GuideGo(string key)
+        {
+            var it = guideItems.FirstOrDefault(x => x.Key == key);
+            if (it == null || !it.Target.IsVisible) return;
+            guideAsked = guideCur = key;
+            PaintGuide();
+            PluginsPage.UpdateLayout();
+            double to = Math.Max(0, Math.Min(PluginsPage.ScrollableHeight, PluginsPage.VerticalOffset + GuideTop(it) - PluginsBox.Margin.Top));
+            if (guideStep != null) { System.Windows.Media.CompositionTarget.Rendering -= guideStep; guideStep = null; }
+            double from = PluginsPage.VerticalOffset;
+            Action arrived = () => { guideMoving = false; Flash(it.Target as Border); };
+            if (!Motion.On || Math.Abs(to - from) < 1) { PluginsPage.ScrollToVerticalOffset(to); arrived(); return; }
+            // over a moment, as the group columns move (Motion.ScrollX)
+            guideMoving = true;
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            const double ms = 260;
+            guideStep = (s, e) =>
+            {
+                double k = Math.Min(1, clock.ElapsedMilliseconds / ms);
+                PluginsPage.ScrollToVerticalOffset(from + (to - from) * (1 - Math.Pow(1 - k, 3)));
+                if (k < 1) return;
+                System.Windows.Media.CompositionTarget.Rendering -= guideStep;
+                guideStep = null;
+                arrived();
+            };
+            System.Windows.Media.CompositionTarget.Rendering += guideStep;
+        }
+
+        /// <summary>A card's frame in the accent, fading back to the grid's colour: which card the
+        /// click went to, also one the end of the page left lower down. Not with animations off.</summary>
+        void Flash(Border card)
+        {
+            if (card == null || !Motion.On) return;
+            var lit = ((System.Windows.Media.SolidColorBrush)B("Yellow")).Color;
+            var rest = ((System.Windows.Media.SolidColorBrush)B("Grid")).Color;
+            var brush = new System.Windows.Media.SolidColorBrush(lit);
+            card.BorderBrush = brush;
+            var fade = new System.Windows.Media.Animation.ColorAnimation(lit, rest, TimeSpan.FromMilliseconds(900))
+            {
+                BeginTime = TimeSpan.FromMilliseconds(200),
+                EasingFunction = new System.Windows.Media.Animation.QuadraticEase { EasingMode = System.Windows.Media.Animation.EasingMode.EaseIn },
+            };
+            fade.Completed += (s, e) => { if (card.BorderBrush == brush) card.BorderBrush = B("Grid"); };
+            brush.BeginAnimation(System.Windows.Media.SolidColorBrush.ColorProperty, fade);
+        }
+
+        void PluginsPage_ScrollChanged(object sender, ScrollChangedEventArgs e) => GuideFollow();
+
+        /// <summary>The line lit follows the page: the last card whose top has come up to the top of
+        /// the view, else the first; the one clicked while its card is in view.</summary>
+        void GuideFollow()
+        {
+            if (guideMoving || guideItems.Count == 0 || !PluginsPage.IsVisible) return;
+            string cur = null, asked = null;
+            foreach (var it in guideItems)
+            {
+                if (!it.Target.IsVisible) continue;
+                double y = GuideTop(it);
+                if (cur == null || y <= PluginsBox.Margin.Top * 2) cur = it.Key;
+                if (it.Key == guideAsked && y >= -1 && y < PluginsPage.ViewportHeight) asked = it.Key;
+            }
+            guideAsked = asked;
+            cur = asked ?? cur;
+            if (cur == null || cur == guideCur) return;
+            guideCur = cur;
+            PaintGuide();
+            guideItems.First(x => x.Key == cur).Row.BringIntoView();
         }
 
         /// <summary>An official plugin's newest release downloaded in the background (checked
@@ -364,13 +569,15 @@ namespace QuickDeploy
                 ? (Texts.F("note_" + n.Key, (n.Args ?? new List<object>()).ToArray()), Texts.F("note_" + n.Key + "_tip", (n.Args ?? new List<object>()).ToArray()), n.Colour ?? "Yellow")
                 : (n.Text, n.Tip, n.Colour ?? "Yellow"));
 
-        /// <summary>The file picker for plugins; only: the one file an official plugin is.</summary>
+        /// <summary>The file picker for plugins; only: the one file an official plugin is. Every
+        /// .dll shows: an official release is known by its SHA-256 under any name (the user,
+        /// 2026-11-10: files passed around are renamed), and Inspect refuses the rest.</summary>
         void PickPlugin(string only = null)
         {
             var pick = new Microsoft.Win32.OpenFileDialog
             {
                 Title = only != null ? Texts.F("plugin_add_one_title", only) : Texts.Get("plugin_add_title"),
-                Filter = only != null ? only + "|" + only : Texts.Get("plugin_filter") + "|HD2QD.*.dll", CheckFileExists = true, Multiselect = only == null,
+                Filter = Texts.Get("plugin_filter") + "|*.dll", CheckFileExists = true, Multiselect = only == null,
             };
             if (pick.ShowDialog(this) == true) AddPlugins(pick.FileNames);
         }
