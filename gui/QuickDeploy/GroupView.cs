@@ -193,7 +193,10 @@ namespace QuickDeploy
             // a group just made among them, always shows (a remembered filter such as labels left
             // out hid them all, the user, 2026-10-27)
             var holding = new HashSet<string>(st.Mods.Where(InScope).SelectMany(m => PathTo(m.Group)).Select(g => g.Id));
-            bool Visible(GroupRow g) => !narrowed || under[g.Id].Count > 0 || !holding.Contains(g.Id);
+            // nor does a group whose mods are all made for another target (on HellForge, a group of
+            // the official game's probes said "0 个 MOD", the user, 2026-11-12)
+            var elsewhere = new HashSet<string>(st.Mods.Where(ForElsewhere).SelectMany(m => PathTo(m.Group)).Select(g => g.Id));
+            bool Visible(GroupRow g) => (!narrowed || under[g.Id].Count > 0 || !holding.Contains(g.Id)) && (holding.Contains(g.Id) || !elsewhere.Contains(g.Id));
 
             if (openWhenMade != null)
             {
@@ -368,6 +371,7 @@ namespace QuickDeploy
             var sb = new System.Text.StringBuilder();
             void Add(object x) => sb.Append(x).Append('\u001f');
             Add(m.Id); Add(m.Name); Add(m.Enabled); Add(m.InProfile); Add(st.ProfilesOn); Add(m.Icon); Add(m.Options.Count); Add(m.Chosen); Add(m.Choices);
+            Add(st.Target); Add(m.For);
             Add(string.Join(",", m.Tags)); Add(m.Lua); Add(m.Conflicts); Add(m.Error); Add(m.Group); Add(LevelOf(m.Group));
             foreach (var (text, tip, colour) in NotesOf(m)) { Add(text); Add(tip); Add(colour); }
             return sb.ToString();

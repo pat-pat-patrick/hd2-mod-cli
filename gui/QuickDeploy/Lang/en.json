@@ -67,6 +67,7 @@
   "st_partial": "partly linked",
   "st_pending": "to deploy",
   "st_off": "not deployed",
+  "st_deployed": "deployed",
   "st_broken": "cannot be read",
   "st_keep": "nothing to deploy",
   "no_options": "This mod has no options: on, it loads whole.",

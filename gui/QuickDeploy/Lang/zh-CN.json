@@ -62,6 +62,7 @@
   "st_partial": "部分链接",
   "st_pending": "待部署",
   "st_off": "未部署",
+  "st_deployed": "已部署",
   "st_broken": "读取出错",
   "st_keep": "无文件",
   "no_options": "此 mod 没有可选内容，启用后全部加载。",

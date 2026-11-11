@@ -2728,10 +2728,13 @@ namespace QuickDeploy
         /// profiles off) every mod.</summary>
         /// <summary>A mod's number as the list shows it: the loaders, which are not in it, are not
         /// counted (they go last in a deploy whatever their place).</summary>
-        int Num(ModRow m) => m.Index - (st?.Mods.Count(x => x.Loader && x.Index < m.Index) ?? 0);
+        int Num(ModRow m) => m.Index - (st?.Mods.Count(x => (x.Loader || ForElsewhere(x)) && x.Index < m.Index) ?? 0);
 
         // a loader is not in the list: the panel on the left holds the loaders (the user, 2026-10-26)
-        bool InScope(ModRow m) => st == null || (!m.Loader && (!st.ProfilesOn || viewLibrary || m.InProfile));
+        /// <summary>In the list: no loader (they have their panel), in the profile, and made for the
+        /// target in use or both (the user, 2026-11-12: HellForge's and the official game's mods
+        /// were shown together; a mod for the other target is managed there).</summary>
+        bool InScope(ModRow m) => st == null || (!m.Loader && !ForElsewhere(m) && (!st.ProfilesOn || viewLibrary || m.InProfile));
 
         /// <summary>A profile's name as shown: the first one's in the window's language.</summary>
         static string ProfileName(string name) => name == Profiles.First ? Texts.Get("pf_default") : name;
@@ -3010,7 +3013,7 @@ namespace QuickDeploy
             if (lua == null) return;
             // a plugin's target loads Lua its own way (HellForge: Bingus Shared Loader only); its plugin says so on the rows
             if (!st.OnOfficial) { if (loaderPop != null) loaderPop.IsOpen = false; return; }
-            var loaders = st.Mods.Where(x => x.Loader && st.RunsLoader(x.LoaderKind)).ToList();   // only those the target's game runs
+            var loaders = st.Mods.Where(x => x.Loader && st.RunsLoader(x.LoaderKind) && !ForElsewhere(x)).ToList();   // only those the target's game runs, made for it
             // no loader in the library: no panel at all (the user, 2026-10-26). No crash card either: it said
             // nothing a player could act on ("没有一点用"); the facts stay in hd2qd lua and the state for a
             // crash analysis of its own later
@@ -3384,6 +3387,7 @@ namespace QuickDeploy
                 DeployBtn.IsEnabled = !fromSaved && st.TargetOffered && st.TargetFound && !st.TargetRunning;
             }
             rowTarget = st.OnOfficial ? null : st.TargetTitle ?? st.Target;
+            rowStates = st.OnOfficial ? null : st.TargetMods;
             // what was just done comes first (a download leaves changes to deploy: the Deploy
             // button counts them); else whether the game folder matches
             FootState();
@@ -5270,6 +5274,7 @@ namespace QuickDeploy
             // and with it every row was made anew at each filter, 0.7 s for 90 (the user, 2026-11-06)
             Add(m.Id == selectedId); Add(picked.Contains(m.Id)); Add(open.Contains(m.Id));
             Add(m.InProfile); Add(viewLibrary); Add(st.Profile);
+            Add(st.Target); Add(m.For); Add(StatusText(m).Item1);
             Add(m.Index); Add(m.Name); Add(m.Path); Add(m.Enabled); Add(m.Icon); Add(m.Status); Add(m.Error); Add(m.Lua); Add(m.Loader); Add(string.Join("|", m.Notes.Select(n => n.Text + n.Colour))); Add(string.Join(",", m.Tags)); Add(HasUpdate(m)); Add(m.ShownVersion); Add(m.VersionFrom);
             Add(Checked(m)?.Status); Add(checkingOne.Contains(m.Id)); Add(checking); Add(updated.Contains(m.Id));
             Add(m.Files.Count); Add(m.DeployBytes); Add(m.LibraryBytes); Add(m.Changes); Add(m.Conflicts); Add(m.Shared); Add(m.Chosen); Add(m.Choices);
@@ -5773,12 +5778,22 @@ namespace QuickDeploy
             }, args.ToArray());
         }
 
-        /// <summary>The deploy target in use, for the rows' words (null: the official game).</summary>
+        /// <summary>The deploy target in use, for the rows' words (null: the official game), and
+        /// each mod's state there as its plugin says (null: it says nothing).</summary>
         static string rowTarget;
+        static Dictionary<string, string> rowStates;
 
+        /// <summary>A row's state. On a plugin's target, the target's own (the user, 2026-11-12: rows
+        /// said "HellForge" or, kept from the official game, "硬链接"): 已部署 when the target has
+        /// it as the library does, 待部署 when a deploy would place it again, 未部署 when off.</summary>
         static (string, string) StatusText(ModRow m)
         {
-            if (rowTarget != null) return m.Enabled ? (rowTarget, "Blue") : (Texts.Get("st_off"), "Muted");
+            if (rowTarget != null)
+            {
+                if (!m.Enabled) return (Texts.Get("st_off"), "Muted");
+                if (rowStates == null || !rowStates.TryGetValue(m.Id, out var s)) return (rowTarget, "Blue");
+                return s == "deployed" ? (Texts.Get("st_deployed"), "Blue") : (Texts.Get("st_pending"), "Yellow");
+            }
             switch (m.Status)
             {
                 case "broken": return (Texts.Get("st_broken"), "Yellow");
@@ -6147,7 +6162,7 @@ namespace QuickDeploy
             // a loader has no place in the list (it goes last) and no options (the user, 2026-10-26)
             if (m.Loader) { }
             else if (st.ProfilesOn && !m.InProfile) Fact("d_order", Texts.Get("pf_outside"));
-            else Fact("d_order", Texts.F("d_order_v", Num(m), st.ProfilesOn ? st.Mods.Count(x => x.InProfile && !x.Loader) : st.Mods.Count(x => !x.Loader)), true);
+            else Fact("d_order", Texts.F("d_order_v", Num(m), st.ProfilesOn ? st.Mods.Count(x => x.InProfile && !x.Loader && !ForElsewhere(x)) : st.Mods.Count(x => !x.Loader && !ForElsewhere(x))), true);
             if (!m.Loader) Fact("d_opts", m.Options.Count > 0 ? m.Chosen + " / " + m.Choices : "—");
             if (!m.Loader && st.Groups.Count > 0)
                 Fact("d_group", m.Group != null ? string.Join(" › ", PathTo(m.Group).Select(x => x.Name)) : Texts.Get("g_top"));

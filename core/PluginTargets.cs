@@ -11,8 +11,8 @@ namespace Hd2Mod
     ///   lua is the Lua that target's game runs: "luajit" (LuaJIT 2.1 with ffi, bit and jit, as the
     ///   official game had before its 2026-10-20 update), absent for the official game's own;
     ///   loaders lists the kinds of Lua loader that game runs ("bml", "chef", "bsl", "mdl3"), absent: any;
-    /// - Dictionary TargetStatus(host): {pending (long), running (bool), said}: cheap, read with the
-    ///   window's state;
+    /// - Dictionary TargetStatus(host): {pending (long), running (bool), said, mods}: cheap, read with
+    ///   the window's state; mods is {mod id: "deployed" | "pending"} for the enabled mods;
     /// - Dictionary TargetDeploy(host): {said, refused: [text]}: host["mods"] is the list in use
     ///   (every enabled mod's files, options chosen); host["target"] says which target is in use;
     /// - string TargetPurge(host): what this manager put into the target, taken out;

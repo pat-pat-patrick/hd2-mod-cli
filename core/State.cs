@@ -309,6 +309,7 @@ namespace Hd2Mod
                     d["pending"] = Json.Long(st, "pending");
                     d["running"] = Json.Bool(st, "running");
                     d["said"] = Json.Str(st, "said");
+                    if (Json.Obj(st, "mods") is Dictionary<string, object> ms) d["mods"] = ms;
                 }
             }
             return d;

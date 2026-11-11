@@ -36,7 +36,7 @@ namespace QuickDeploy
             LuaBox.Children.Clear();
             if (st == null) return;
             var lua = st.Lua;
-            var loaders = st.Mods.Where(x => x.Loader && st.RunsLoader(x.LoaderKind)).ToList();   // only those the target's game runs
+            var loaders = st.Mods.Where(x => x.Loader && st.RunsLoader(x.LoaderKind) && !ForElsewhere(x)).ToList();   // only those the target's game runs, made for it
             var mods = st.Mods.Where(x => x.Lua && !x.Loader && (!st.ProfilesOn || x.InProfile)).ToList();
             var on = mods.Where(x => x.Enabled).ToList();
 

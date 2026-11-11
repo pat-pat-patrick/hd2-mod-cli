@@ -293,6 +293,9 @@ namespace QuickDeploy
         /// <summary>The kinds of Lua loader the game of the target in use runs (its plugin says;
         /// HellForge: Bingus Shared Loader only); null: any.</summary>
         public List<string> TargetLoaders;
+        /// <summary>Each enabled mod's state on the target in use, as its plugin says: "deployed" or
+        /// "pending"; null when the plugin says nothing.</summary>
+        public Dictionary<string, string> TargetMods;
         public bool RunsLoader(string kind) => TargetLoaders == null || (kind != null && TargetLoaders.Contains(kind));
         public int Pending => OnOfficial ? Moved + Written + Deleted : TargetPending;
     }
@@ -412,6 +415,8 @@ namespace QuickDeploy
                 {
                     s.TargetOffered = Bool(tb, "offered"); s.TargetTitle = Str(tb, "title") ?? s.Target; s.TargetFound = Bool(tb, "found");
                     if (tb.TryGetValue("loaders", out var tl) && tl is List<object> tll) s.TargetLoaders = tll.OfType<string>().ToList();
+                    if (tb.TryGetValue("mods", out var tm) && tm is Dictionary<string, object> tmd)
+                        s.TargetMods = tmd.ToDictionary(kv => kv.Key, kv => kv.Value as string, StringComparer.OrdinalIgnoreCase);
                     s.TargetPending = Int(tb, "pending"); s.TargetRunning = Bool(tb, "running"); s.TargetSaid = Str(tb, "said");
                 }
             }
