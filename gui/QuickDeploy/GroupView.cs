@@ -598,6 +598,7 @@ namespace QuickDeploy
                 if (on && st.ProfilesOn && !m.InProfile) { Run("profile-add", m.Id); return; }
                 Change(m.Id, c => c.Enabled = on, on ? "enable" : "disable", m.Id);
             };
+            if (ForElsewhere(m)) { item.Opacity = 0.55; sw.IsEnabled = false; sw.ToolTip = Texts.F("for_only_tip", TargetName(m.For)); }
             if (st.ProfilesOn && !m.InProfile) { item.Opacity = 0.55; sw.ToolTip = Texts.Get("pf_outside"); }
             DockPanel.SetDock(sw, Dock.Left);
             line.Children.Add(sw);
@@ -611,6 +612,8 @@ namespace QuickDeploy
             var meta = new WrapPanel();
             if (m.Options.Count > 0)
                 meta.Children.Add(new TextBlock { Text = Texts.F("opts_some", m.Chosen, m.Choices), FontSize = 12, Foreground = B("Muted"), Margin = new Thickness(0, 2, 8, 0), VerticalAlignment = VerticalAlignment.Center });
+            if (m.For != null)
+                meta.Children.Add(new TextBlock { Text = ForTag(m.For), FontSize = 12, Foreground = B(ForElsewhere(m) ? "Muted" : "Blue"), Margin = new Thickness(0, 2, 8, 0), VerticalAlignment = VerticalAlignment.Center });
             foreach (var t in m.Tags)
                 meta.Children.Add(new Border
                 {

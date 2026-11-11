@@ -2464,6 +2464,7 @@ namespace QuickDeploy
             var r = await Exec(work);
             worked?.Invoke();
             if (r.Refused?.Kind == "maybe_update") r = await NewVersionOrNot(r);
+            if (r.Refused?.Kind == "same_guid") r = await SameModOrNot(r);
             clock.Stop();
             if (Refused(r)) return false;
             if (done && r.Ok) lastDone = Texts.F("took", Last(r.Out), Seconds(clock.Elapsed.TotalSeconds));
@@ -5332,6 +5333,7 @@ namespace QuickDeploy
             };
             // outside the profile in use (the library on show): faint, its switch says it is off
             if (st.ProfilesOn && !m.InProfile) { item.Opacity = 0.55; sw.ToolTip = Texts.Get("pf_outside"); }
+            if (ForElsewhere(m)) { item.Opacity = 0.55; sw.IsEnabled = false; sw.ToolTip = Texts.F("for_only_tip", TargetName(m.For)); }
             DockPanel.SetDock(sw, Dock.Left);
             line.Children.Add(sw);
             switches[m.Id] = sw;
@@ -5420,6 +5422,7 @@ namespace QuickDeploy
                 meta.Children.Add(ver);
             }
             meta.Children.Add(Fact(m.Options.Count > 0 ? Texts.F("opts_some", m.Chosen, m.Choices) : Texts.Get("opts_none"), "Muted"));
+            if (m.For != null) meta.Children.Add(Fact(ForTag(m.For), ForElsewhere(m) ? "Muted" : "Blue"));
             // a LUA tag when the mod ships a script (any option of it): here, beside the
             // other facts about the mod, not in front of its name
             // the player's own labels first, in their own colour
@@ -6192,6 +6195,8 @@ namespace QuickDeploy
                 box.Children.Add(WinnerRows(issue.Mods.ToList(), issue.Mods[0], "pick_runs_now"));
                 Detail.Children.Add(new Border { BorderBrush = B("Yellow"), BorderThickness = new Thickness(1), Padding = new Thickness(12), Margin = new Thickness(0, 16, 0, 0), Child = box });
             }
+            var forPanel = ForPanel(m);
+            if (forPanel != null) Detail.Children.Add(forPanel);
             Detail.Children.Add(UpdatePanel(m));
 
             // what a deploy does to it

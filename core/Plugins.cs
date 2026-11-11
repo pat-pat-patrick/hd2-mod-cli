@@ -402,19 +402,26 @@ namespace Hd2Mod
         public static List<Dictionary<string, object>> Mods(Library lib)
         {
             var mods = new List<Dictionary<string, object>>();
-            var paths = lib.Mods.GroupBy(m => m.Id ?? "").ToDictionary(g => g.Key, g => g.First().Path);
-            foreach (var w in Deploy.Plan(lib, new Dictionary<string, string>()))
+            var plan = Deploy.Plan(lib, new Dictionary<string, string>());
+            var byId = new Dictionary<string, Dictionary<string, object>>();
+            foreach (var m in Loaders.DeployOrder(lib))
             {
-                var last = mods.Count > 0 ? mods[mods.Count - 1] : null;
-                if (last == null || (string)last["name"] != w.Mod || (last["id"] as string) != w.ModId)
-                    mods.Add(last = new Dictionary<string, object>
-                    {
-                        ["name"] = w.Mod, ["archives"] = new List<object>(), ["id"] = w.ModId,
-                        ["path"] = w.ModId != null && paths.TryGetValue(w.ModId, out var p) ? p : null, ["files"] = new List<object>(),
-                    });
-                if (Deploy.Patch.IsMatch(w.Name)) ((List<object>)last["archives"]).Add(w.Src);
-                ((List<object>)last["files"]).Add(new Dictionary<string, object> { ["src"] = w.Src, ["name"] = w.Name });
+                if (m.Id == null || byId.ContainsKey(m.Id)) continue;
+                var entry = new Dictionary<string, object>
+                {
+                    ["name"] = m.Name, ["archives"] = new List<object>(), ["id"] = m.Id, ["path"] = m.Path, ["files"] = new List<object>(),
+                };
+                byId[m.Id] = entry;
+                mods.Add(entry);
             }
+            foreach (var w in plan)
+            {
+                if (w.ModId == null || !byId.TryGetValue(w.ModId, out var entry)) continue;
+                if (Deploy.Patch.IsMatch(w.Name)) ((List<object>)entry["archives"]).Add(w.Src);
+                ((List<object>)entry["files"]).Add(new Dictionary<string, object> { ["src"] = w.Src, ["name"] = w.Name });
+            }
+            // the official game's plugins see the archives they always saw: mods that deploy files
+            if (Targets.IsOfficial(lib)) mods.RemoveAll(e => ((List<object>)e["files"]).Count == 0);
             return mods;
         }
 

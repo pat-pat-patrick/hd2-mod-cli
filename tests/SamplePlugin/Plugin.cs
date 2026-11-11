@@ -82,6 +82,9 @@ namespace Hd2Qd.Sample
             return new Dictionary<string, object> { ["said"] = "sample: " + lines.Count + " mods", ["refused"] = new List<object>() };
         }
 
+        /// <summary>A folder holding sample_claim.txt is the sample game's own kind of mod.</summary>
+        public static bool TargetClaims(string folder, Dictionary<string, object> host) => File.Exists(Path.Combine(folder, "sample_claim.txt"));
+
         public static string TargetPurge(Dictionary<string, object> host)
         {
             File.Delete(Deployed(host));

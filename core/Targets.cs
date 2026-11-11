@@ -70,6 +70,33 @@ namespace Hd2Mod
             lib.Members = lib.ProfilesOn ? new HashSet<string>(inUse.Order) : null;
         }
 
+        /// <summary>Whether a mod belongs to the target in use (Mod.For).</summary>
+        public static bool Belongs(Library lib, Mod m) => m.For == null || m.For == Current(lib);
+
+        /// <summary>Mods for another target off; of a pair, only one on.</summary>
+        public static void Enforce(Library lib)
+        {
+            foreach (var m in lib.Mods.Where(m => m.Enabled && !Belongs(lib, m))) m.Enabled = false;
+            var byId = lib.Mods.GroupBy(m => m.Id ?? "").ToDictionary(g => g.Key, g => g.First());
+            foreach (var m in lib.Mods.Where(m => m.Enabled && m.Pair != null))
+                if (byId.TryGetValue(m.Pair, out var other) && other.Enabled && other != m) other.Enabled = false;
+        }
+
+        /// <summary>The pair of two library mods: the same mod, one build for each target. The one
+        /// that was for both becomes the other's counterpart: with forNew "official", the plugin's
+        /// target (the only one offered); else "official".</summary>
+        public static void MakePair(Library lib, Mod old, Mod made, string forNew, IList<string> offered)
+        {
+            made.For = forNew == Official ? Official : forNew;
+            if (old.For == null || old.For == made.For)
+                old.For = forNew == Official ? (offered.Count == 1 ? offered[0] : null) : Official;
+            if (old.Pair != null && old.Pair != made.Id)
+                foreach (var x in lib.Mods.Where(x => x.Id == old.Pair)) x.Pair = null;
+            old.Pair = made.Id;
+            made.Pair = old.Id;
+            Enforce(lib);
+        }
+
         /// <summary>Another target put in use; the one left keeps its list. The caller saves the library.</summary>
         public static void Switch(Library lib, string to)
         {
@@ -80,6 +107,7 @@ namespace Hd2Mod
             if (lib.TargetStates.TryGetValue(to, out var s)) Apply(lib, s);
             lib.TargetStates.Remove(to);                             // the list in use is the library itself
             lib.Target = to == Official ? null : to;
+            Enforce(lib);
         }
 
         static List<OptionChoice> Copy(List<OptionChoice> options) =>

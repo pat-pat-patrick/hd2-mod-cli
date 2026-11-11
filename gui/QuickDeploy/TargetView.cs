@@ -136,3 +136,85 @@ namespace QuickDeploy
         }
     }
 }
+
+namespace QuickDeploy
+{
+    public partial class MainWindow
+    {
+        /// <summary>A mod for another target than the one in use (Mod.For): off here, its switch locked.</summary>
+        bool ForElsewhere(ModRow m) => m.For != null && st != null && m.For != st.Target;
+
+        /// <summary>"仅官方", "仅 HellForge": in Chinese a Latin name gets a space before it.</summary>
+        string ForTag(string id)
+        {
+            var name = TargetName(id);
+            bool latin = name.Length > 0 && name[0] < 0x80 && char.IsLetter(name[0]);
+            return Texts.F("for_tag", (latin && (Texts.Lang ?? "").StartsWith("zh") ? " " : "") + name);
+        }
+
+        /// <summary>A target's name for the player: Official, or the title its plugin gives it.</summary>
+        string TargetName(string id) =>
+            id == null ? Texts.Get("for_both") : id == "official" ? Texts.Get("target_official")
+            : st?.TargetOffers.FirstOrDefault(o => o.Id == id).Title ?? id;
+
+        /// <summary>The details' card: which target the mod is for (both, Official, a plugin's), and
+        /// its other build when it has one. Only where a plugin offers a target, or the mod says one.</summary>
+        UIElement ForPanel(ModRow m)
+        {
+            if (st == null || (st.TargetOffers.Count == 0 && m.For == null)) return null;
+            var box = new StackPanel();
+            box.Children.Add(new TextBlock { Text = Texts.Get("for_head"), FontWeight = FontWeights.SemiBold });
+            var row = new System.Windows.Controls.Primitives.UniformGrid { Rows = 1, Margin = new Thickness(0, 8, 0, 0) };
+            var choices = new List<(string Value, string Title)> { ("both", Texts.Get("for_both")), ("official", Texts.Get("target_official")) };
+            choices.AddRange(st.TargetOffers.Select(o => (o.Id, o.Title)));
+            if (m.For != null && choices.All(c => c.Value != m.For)) choices.Add((m.For, m.For));
+            row.Columns = choices.Count;
+            foreach (var (value, title) in choices)
+            {
+                var rb = new RadioButton
+                {
+                    Content = new TextBlock { Text = title, TextTrimming = TextTrimming.CharacterEllipsis }, Style = (Style)FindResource("Segment"),
+                    GroupName = "for_" + m.Id, IsChecked = (m.For ?? "both") == value, HorizontalAlignment = HorizontalAlignment.Stretch,
+                };
+                rb.Click += (s, e) => { if ((m.For ?? "both") != value) _ = Act(() => Cli.Run("for", m.Id, value), false); };
+                row.Children.Add(rb);
+            }
+            box.Children.Add(new Border { BorderBrush = B("Grid"), BorderThickness = new Thickness(1), Child = row });
+            box.Children.Add(Small(Texts.Get("for_note"), new Thickness(0, 8, 0, 0)));
+            var other = m.Pair == null ? null : st.Mods.FirstOrDefault(x => x.Id == m.Pair);
+            if (other != null)
+            {
+                var line = new DockPanel { Margin = new Thickness(0, 10, 0, 0) };
+                var unpair = new Button { Content = Texts.Get("pair_off"), Style = (Style)FindResource("Ghost"), MinHeight = 30, Padding = new Thickness(10, 0, 10, 0) };
+                unpair.Click += (s, e) => _ = Act(() => Cli.Run("unpair", m.Id), false);
+                DockPanel.SetDock(unpair, Dock.Right);
+                line.Children.Add(unpair);
+                line.Children.Add(new TextBlock { Text = Texts.F("pair_line", other.Name, TargetName(other.For)), TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center });
+                box.Children.Add(line);
+            }
+            return Panel(box, new Thickness(0, 20, 0, 0));
+        }
+
+        /// <summary>A mod added whose Guid one in the library has, while a plugin offers a target:
+        /// a new version of it, or the same mod's build for a target, beside it.</summary>
+        async Task<CliResult> SameModOrNot(CliResult r)
+        {
+            var parts = r.Refused.Arg.Split('\n');
+            if (parts.Length != 2) return r;
+            var ids = parts[0].Split('|');
+            var lib = Library.Load();
+            var names = ids.Select(id => lib.Mods.FirstOrDefault(m => m.Id == id)?.Name).Where(n => n != null).ToList();
+            var file = System.IO.Path.GetFileName(parts[1].TrimEnd('\\'));
+            var answers = new List<(string Text, string[] Args)>();
+            if (ids.Length == 1) answers.Add((Texts.Get("add_as_new_version"), new[] { "add", parts[1], "--replace" }));
+            answers.Add((Texts.F("add_as_build", Texts.Get("target_official")), new[] { "add", parts[1], "--for", "official" }));
+            foreach (var o in st?.TargetOffers ?? new List<(string Id, string Title, bool Found, string Why)>())
+                answers.Add((Texts.F("add_as_build", o.Title), new[] { "add", parts[1], "--for", o.Id }));
+            var labels = answers.Select(x => x.Text).Concat(new[] { Texts.Get("cancel") }).ToArray();
+            int pick = Dialog.Choose(this, Texts.F("add_same_mod", file, string.Join(Texts.Get("sep_list"), names)), labels);
+            if (pick < 0 || pick >= answers.Count) return new CliResult { Code = 0, Out = "" };
+            var args = answers[pick].Args;
+            return await Exec(() => Cli.Run(args));
+        }
+    }
+}

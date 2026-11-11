@@ -13,7 +13,9 @@ namespace Hd2Mod
     /// - Dictionary TargetDeploy(host): {said, refused: [text]}: host["mods"] is the list in use
     ///   (every enabled mod's files, options chosen); host["target"] says which target is in use;
     /// - string TargetPurge(host): what this manager put into the target, taken out;
-    /// - void TargetLaunch(Window owner, host): the game of that target started (the window only).
+    /// - void TargetLaunch(Window owner, host): the game of that target started (the window only);
+    /// - bool TargetClaims(folder, host): the folder is that target's own kind of mod (added, it is
+    ///   for that target only, Mod.For).
     /// A plugin that throws is reported, never the manager's own failure.</summary>
     public static class PluginTargets
     {
@@ -54,6 +56,20 @@ namespace Hd2Mod
         {
             if (o.Type.GetMethod(method) == null) throw new ModError("the plugin " + o.File + " cannot " + method, "target_cannot", method);
             return PluginFiles.Call(o.Type, method, host) as Dictionary<string, object> ?? new Dictionary<string, object>();
+        }
+
+        /// <summary>The target a plugin claims a mod folder for (its own kind of mod, as
+        /// HellForge's hellforge-mod.json): its optional bool TargetClaims(folder, host); null:
+        /// none does.</summary>
+        public static string Claim(string folder, Dictionary<string, object> host)
+        {
+            foreach (var o in All(host))
+            {
+                if (o.Type.GetMethod("TargetClaims") == null) continue;
+                try { if (PluginFiles.Call(o.Type, "TargetClaims", folder, host) is bool b && b) return o.Id; }
+                catch (Exception e) { ManagerLog.Warn("plugin " + o.File + ": TargetClaims: " + e.Message); }
+            }
+            return null;
         }
 
         public static Dictionary<string, object> Status(Offer o, Dictionary<string, object> host)

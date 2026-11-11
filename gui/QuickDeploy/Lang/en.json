@@ -1102,5 +1102,14 @@
   "target_side_note": "{0} has its own list: which mods are on, their order and options. The official game keeps its own.",
   "target_back": "Back to the official game",
   "target_purge": "Take everything out of {0}",
-  "target_switch_tip": "Where the list deploys: each has its own list of mods, order and options"
+  "target_switch_tip": "Where the list deploys: each has its own list of mods, order and options",
+  "for_both": "Both",
+  "for_head": "Deploys to",
+  "for_note": "A mod made for one game only: on the other it stays off and cannot be turned on. Two builds of one mod (the official game's and a port) can stay side by side, each for its own.",
+  "for_tag": "{0} only",
+  "for_only_tip": "For {0} only: switch to it to turn this mod on",
+  "pair_line": "Its other build: {0} ({1}). Turning one on turns the other off.",
+  "pair_off": "Not a pair",
+  "add_same_mod": "{0} is the same mod (the same Guid) as {1} in the library. Is it a new version, or a build for one game, kept beside the other?",
+  "add_as_build": "{0}'s build, beside it"
 }

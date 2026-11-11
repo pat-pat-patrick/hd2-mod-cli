@@ -24,6 +24,11 @@ namespace Hd2Mod
     public class Mod
     {
         public string Id, Name, Path, Source;
+        /// <summary>The deploy target the mod is for (Targets): null, both; "official", the official
+        /// game only; else a plugin's target only (a HellForge port, a HellForge mod). On another
+        /// target it is off and cannot be turned on. Pair: the id of its version for the other
+        /// target (the same mod, two builds): turning one on turns the other off.</summary>
+        public string For, Pair;
         /// <summary>The name the mod came with, kept from the first time it was renamed by hand
         /// (null while Name is still that name).</summary>
         public string RealName;
@@ -162,6 +167,8 @@ namespace Hd2Mod
                 mod.Page = Json.Str(m, "page");
                 mod.Skip = Json.Str(m, "skip");
                 mod.OffWith = Json.Str(m, "off_with");
+                mod.For = Json.Str(m, "for") is string f && f.Length > 0 ? f : null;
+                mod.Pair = Json.Str(m, "pair");
                 mod.ArchiveMd5 = Json.Str(m, "archive_md5");
                 var pv = Json.Obj(m, "previous");
                 if (pv != null && !string.IsNullOrEmpty(Json.Str(pv, "path")))
@@ -207,6 +214,7 @@ namespace Hd2Mod
             Hd2Mod.Groups.Tidy(lib);
             var was = Json.List(d, "known").OfType<string>().ToList();
             lib.known = new HashSet<string>(was.Count > 0 ? was : lib.Mods.Select(m => m.Id));
+            Hd2Mod.Targets.Enforce(lib);
             return lib;
         }
 
@@ -252,6 +260,8 @@ namespace Hd2Mod
                 if (m.GitHub != null) entry["github"] = GitHubJson(m.GitHub);
                 if (m.Skip != null) entry["skip"] = m.Skip;
                 if (m.OffWith != null) entry["off_with"] = m.OffWith;
+                if (m.For != null) entry["for"] = m.For;
+                if (m.Pair != null) entry["pair"] = m.Pair;
                 if (m.ArchiveMd5 != null) entry["archive_md5"] = m.ArchiveMd5;
                 if (m.Previous != null)
                 {

@@ -115,6 +115,8 @@ namespace QuickDeploy
         /// <summary>The name the mod came with, when the player gave it another one.</summary>
         public string RealName;
         public bool Enabled, Exists, HasManifest, SameDrive, Lua, Loader;
+        /// <summary>The deploy target it is for (null: both), and its other build's id (Mod.For, Mod.Pair).</summary>
+        public string For, Pair;
         /// <summary>"bml", "chef", "bsl", "mdl3" for a loader, else null.</summary>
         public string LoaderKind;
         /// <summary>For its author's members (hd2_license.json): where its license stands here
@@ -465,6 +467,7 @@ namespace QuickDeploy
                 var row = new ModRow
                 {
                     Index = Int(m, "index"), Id = Str(m, "id"), Name = Str(m, "name"), RealName = Str(m, "real_name"), Path = Str(m, "path"),
+                    For = Str(m, "for"), Pair = Str(m, "pair"),
                     Source = Str(m, "source"), Description = Str(m, "description"), Error = Str(m, "error"),
                     Enabled = Bool(m, "enabled"), Exists = Bool(m, "exists"), HasManifest = Bool(m, "manifest"),
                     InProfile = !m.ContainsKey("in_profile") || Bool(m, "in_profile"),
