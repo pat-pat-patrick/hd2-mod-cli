@@ -612,7 +612,7 @@ namespace QuickDeploy
             var meta = new WrapPanel();
             if (m.Options.Count > 0)
                 meta.Children.Add(new TextBlock { Text = Texts.F("opts_some", m.Chosen, m.Choices), FontSize = 12, Foreground = B("Muted"), Margin = new Thickness(0, 2, 8, 0), VerticalAlignment = VerticalAlignment.Center });
-            if (m.For != null)
+            if (ShowFor(m))
                 meta.Children.Add(new TextBlock { Text = ForTag(m.For), FontSize = 12, Foreground = B(ForElsewhere(m) ? "Muted" : "Blue"), Margin = new Thickness(0, 2, 8, 0), VerticalAlignment = VerticalAlignment.Center });
             foreach (var t in m.Tags)
                 meta.Children.Add(new Border

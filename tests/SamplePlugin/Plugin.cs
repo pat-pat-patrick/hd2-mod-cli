@@ -58,7 +58,7 @@ namespace Hd2Qd.Sample
         public static Dictionary<string, object> Target(Dictionary<string, object> host) => new Dictionary<string, object>
         {
             ["id"] = "sample", ["title"] = "Sample game", ["found"] = !File.Exists(Path.Combine((string)host["home"], "sample_missing.txt")),
-            ["why"] = "no sample game",
+            ["why"] = "no sample game", ["lua"] = "luajit",
         };
 
         static string Deployed(Dictionary<string, object> host) => Path.Combine((string)host["home"], "sample_target.txt");

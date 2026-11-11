@@ -82,8 +82,16 @@ namespace Hd2Mod
         public IEnumerable<string> Settings => Scripts.SelectMany(s => s.Settings).Distinct();
         /// <summary>Its scripts Chef Shared Loader would start that are too big for it (ChefMaxLua).</summary>
         public IEnumerable<LuaScript> TooBigForChef => Scripts.Where(s => s.Size > LuaMods.ChefMaxLua && (s.Header == "Addon" || s.Header == "Boot"));
-        /// <summary>The scripts the game's Lua cannot run.</summary>
-        public IEnumerable<LuaScript> Broken => Scripts.Where(s => s.Error != null || s.LuaJitBytecode || s.Jit.Count > 0);
+        /// <summary>The game in use runs LuaJIT (a deploy target whose game is older than the
+        /// official game's 2026-10-20 update, such as HellForge's). Set by LuaMods.Of.</summary>
+        public bool OnLuaJit;
+        /// <summary>The scripts the game's Lua cannot run: on the official game's Lua 5.1 code that
+        /// does not compile, LuaJIT bytecode and LuaJIT's libraries; on LuaJIT only code that does not
+        /// compile there either (LuaJIT reads 0x...ULL numbers and goto; likely: the check compiles
+        /// as Lua 5.1 and stops at the first error, so a later one is not seen).</summary>
+        public IEnumerable<LuaScript> Broken => OnLuaJit
+            ? Scripts.Where(s => s.Error != null && s.ErrorKind != "luajit_number" && s.ErrorKind != "goto")
+            : Scripts.Where(s => s.Error != null || s.LuaJitBytecode || s.Jit.Count > 0);
         /// <summary>The mod it translates (by name, see LuaMods.Packs), else null.</summary>
         public Mod PackOf;
         public string PackOfName;
@@ -672,11 +680,21 @@ namespace Hd2Mod
         /// whether it is on or not. Mods with no Lua at all are left out.</summary>
         public static List<ModLua> Of(Library lib) => Of(lib, false, out _);
 
+        /// <summary>The Lua the game of the target in use runs: "luajit" when its plugin says so
+        /// (PluginTargets), null for the official game's Lua 5.1 (since its 2026-10-20 update).</summary>
+        public static string GameLua(Library lib)
+        {
+            var now = Targets.Current(lib);
+            if (now == Targets.Official) return null;
+            return PluginTargets.All(PluginHost.Make()).FirstOrDefault(o => o.Id == now)?.Lua;
+        }
+
         /// <summary>The same; with knownOnly, the archives not yet read are left out and counted
         /// in missing (the answer is then incomplete, and not to be shown).</summary>
         public static List<ModLua> Of(Library lib, bool knownOnly, out int missing)
         {
             missing = 0;
+            var luajit = GameLua(lib) == "luajit";
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var out_ = new List<ModLua>();
             foreach (var m in lib.Mods)
@@ -685,7 +703,7 @@ namespace Hd2Mod
                 List<string> folders;
                 try { folders = Deploy.IncludedFolders(m); }
                 catch (ModError) { continue; }
-                var ml = new ModLua { Mod = m };
+                var ml = new ModLua { Mod = m, OnLuaJit = luajit };
                 foreach (var folder in folders.Where(Directory.Exists))
                     foreach (var f in Deploy.List(folder).Where(f => Deploy.Patch.IsMatch(f)))
                         try

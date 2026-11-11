@@ -2145,6 +2145,8 @@ namespace QuickDeploy
                     Mark("state parsed");
                     Render();
                     Mark("rendered");
+                    RememberTitles();
+                    if (!st.OnOfficial && !st.TargetOffered) FallBack(st.Target);
                     if (!st.LuaPending) AdjoinPacks();
                     if (timing != null) Dispatcher.BeginInvoke(new Action(() => Mark("drawn")), DispatcherPriority.ContextIdle);
                     if (st.LuaPending) WarmLua();
@@ -2958,7 +2960,13 @@ namespace QuickDeploy
                 var basis = new List<string>();
                 // each loader in the library, as far as it is known what it gives, only for the libraries
                 var known = st.Mods.Where(x => x.Lu?.Loader == "bml" || x.Lu?.Loader == "chef").Select(x => LoaderLabel(x.Lu.Loader, x.Lu.LoaderVersion)).Distinct().ToList();
-                basis.Add(used.Count > 0 && known.Count > 0 ? Texts.F("lua_basis_loaders", lacks, string.Join(sep, known)) : Texts.F("lua_basis", lacks));
+                // which game, where there is more than one (a plugin's deploy target): the
+                // official game's Lua 5.1, or the target's (HellForge's older game runs LuaJIT)
+                var game = st.OnOfficial && st.TargetOffers.Count == 0 ? null
+                         : st.OnOfficial ? Texts.Get("lua_game_official") : Texts.F("lua_game_target", st.TargetTitle ?? st.Target);
+                basis.Add(used.Count > 0 && known.Count > 0
+                    ? (game == null ? Texts.F("lua_basis_loaders", lacks, string.Join(sep, known)) : Texts.F("lua_basis_loaders_of", lacks, string.Join(sep, known), game))
+                    : (game == null ? Texts.F("lua_basis", lacks) : Texts.F("lua_basis_of", lacks, game)));
                 if (used.Count > 0)
                 {
                     foreach (var x in st.Mods.Where(x => x.Lu?.Loader == "bsl"))
@@ -5422,7 +5430,7 @@ namespace QuickDeploy
                 meta.Children.Add(ver);
             }
             meta.Children.Add(Fact(m.Options.Count > 0 ? Texts.F("opts_some", m.Chosen, m.Choices) : Texts.Get("opts_none"), "Muted"));
-            if (m.For != null) meta.Children.Add(Fact(ForTag(m.For), ForElsewhere(m) ? "Muted" : "Blue"));
+            if (ShowFor(m)) meta.Children.Add(Fact(ForTag(m.For), ForElsewhere(m) ? "Muted" : "Blue"));
             // a LUA tag when the mod ships a script (any option of it): here, beside the
             // other facts about the mod, not in front of its name
             // the player's own labels first, in their own colour

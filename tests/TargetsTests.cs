@@ -31,6 +31,37 @@ namespace Hd2Mod.Tests
             return a;
         }
 
+        /// <summary>What the game's Lua cannot run follows the target in use (the user, 2026-11-12:
+        /// on HellForge the window still said the game does not run LuaJIT bytecode). The official
+        /// game's Lua 5.1 refuses LuaJIT bytecode, its libraries and its syntax; a target whose
+        /// plugin says "luajit" (HellForge's older game) refuses only code LuaJIT cannot compile.</summary>
+        [Fact]
+        public void WhatTheGamesLuaCannotRunFollowsTheTarget()
+        {
+            AddTwo();
+            PluginFiles.Install(Sample);
+            var lib = Library.Load();
+            Assert.Null(LuaMods.GameLua(lib));
+            Cli("target", "sample");
+            Assert.Equal("luajit", LuaMods.GameLua(Library.Load()));
+
+            var scripts = new List<LuaScript>
+            {
+                new LuaScript { Name = "bytecode", Bytecode = true, LuaJitBytecode = true },
+                new LuaScript { Name = "ffi", Jit = { "ffi" } },
+                new LuaScript { Name = "number", Error = (3, "malformed number near '0x1ULL'"), ErrorKind = "luajit_number" },
+                new LuaScript { Name = "goto", Error = (5, "'=' expected near 'continue'"), ErrorKind = "goto" },
+                new LuaScript { Name = "slash", Error = (7, "unexpected symbol near '/'"), ErrorKind = "new_operator" },
+            };
+            var official = new ModLua { Scripts = scripts };
+            Assert.Equal(new[] { "bytecode", "ffi", "number", "goto", "slash" }, official.Broken.Select(s => s.Name));
+            var luajit = new ModLua { Scripts = scripts, OnLuaJit = true };
+            Assert.Equal(new[] { "slash" }, luajit.Broken.Select(s => s.Name));
+
+            PluginFiles.Remove("HD2QD.Sample.dll");                          // no plugin: the official game's Lua
+            Assert.Null(LuaMods.GameLua(Library.Load()));
+        }
+
         [Fact]
         public void EachTargetKeepsItsOwnList()
         {

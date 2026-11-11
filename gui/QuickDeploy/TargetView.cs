@@ -144,6 +144,39 @@ namespace QuickDeploy
         /// <summary>A mod for another target than the one in use (Mod.For): off here, its switch locked.</summary>
         bool ForElsewhere(ModRow m) => m.For != null && st != null && m.For != st.Target;
 
+        /// <summary>Whether a mod's target is worth saying: always while a plugin offers a target;
+        /// without one (the plugin removed), only for a mod made for a target no plugin offers,
+        /// which is off and locked, so the player sees why (the user, 2026-11-12: with the HellForge
+        /// plugin removed, its switch and words stayed).</summary>
+        bool ShowFor(ModRow m) => m.For != null && st != null && (st.TargetOffers.Count > 0 || m.For != "official");
+
+        string fellBackFrom;
+
+        /// <summary>The target in use is one no added plugin offers any more (the plugin removed):
+        /// the library goes back to the official game, once, and says so. The target's list is
+        /// kept (Targets.Switch), so adding the plugin again brings it back. Said in a dialog: the
+        /// list in use changes under the player, and the status line is soon taken by other news.</summary>
+        void FallBack(string gone)
+        {
+            if (fellBackFrom == gone) return;
+            fellBackFrom = gone;
+            var said = Texts.F("target_fell_back", TargetName(gone));
+            bool switched = false;
+            var act = Act(() => Cli.Call(() =>
+            {
+                var lib = Library.Load();
+                if (Targets.Current(lib) == gone)
+                {
+                    Targets.Switch(lib, Targets.Official);
+                    lib.Save();
+                    switched = true;
+                }
+                return said;
+            }), true, () => { if (switched) Dialog.Tell(this, said); else fellBackFrom = null; });
+            // the window busy with something else: Act did nothing, so the next reading tries again
+            if (act.IsCompleted && !act.Result) fellBackFrom = null;
+        }
+
         /// <summary>"仅官方", "仅 HellForge": in Chinese a Latin name gets a space before it.</summary>
         string ForTag(string id)
         {
@@ -152,16 +185,48 @@ namespace QuickDeploy
             return Texts.F("for_tag", (latin && (Texts.Lang ?? "").StartsWith("zh") ? " " : "") + name);
         }
 
-        /// <summary>A target's name for the player: Official, or the title its plugin gives it.</summary>
+        /// <summary>A target's name for the player: Official, or the title its plugin gives it, or
+        /// the title it had when a plugin last offered it (the plugin removed: "HellForge", not the
+        /// id "hellforge").</summary>
         string TargetName(string id) =>
             id == null ? Texts.Get("for_both") : id == "official" ? Texts.Get("target_official")
-            : st?.TargetOffers.FirstOrDefault(o => o.Id == id).Title ?? id;
+            : st?.TargetOffers.FirstOrDefault(o => o.Id == id).Title ?? KnownTitle(id) ?? id;
+
+        Dictionary<string, object> knownTitles;
+
+        /// <summary>The titles plugins gave their targets, kept in gui.json ("target_titles"), so a
+        /// mod made for a target whose plugin is gone is still named as it was.</summary>
+        string KnownTitle(string id)
+        {
+            if (knownTitles == null)
+            {
+                try { knownTitles = Json.Obj(Store.Load("gui.json"), "target_titles") ?? new Dictionary<string, object>(); }
+                catch (Exception e) when (e is System.IO.IOException || e is UnauthorizedAccessException || e is FormatException) { knownTitles = new Dictionary<string, object>(); }
+            }
+            return knownTitles.TryGetValue(id, out var t) ? t as string : null;
+        }
+
+        /// <summary>The offered targets' titles remembered (only when one is new or changed).</summary>
+        void RememberTitles()
+        {
+            if (st == null) return;
+            var changed = st.TargetOffers.Where(o => !string.IsNullOrEmpty(o.Title) && KnownTitle(o.Id) != o.Title).ToList();
+            if (changed.Count == 0) return;
+            foreach (var o in changed) knownTitles[o.Id] = o.Title;
+            try
+            {
+                var d = Store.Load("gui.json");
+                d["target_titles"] = knownTitles;
+                Store.Save("gui.json", d);
+            }
+            catch (Exception e) when (e is System.IO.IOException || e is UnauthorizedAccessException || e is FormatException) { }
+        }
 
         /// <summary>The details' card: which target the mod is for (both, Official, a plugin's), and
         /// its other build when it has one. Only where a plugin offers a target, or the mod says one.</summary>
         UIElement ForPanel(ModRow m)
         {
-            if (st == null || (st.TargetOffers.Count == 0 && m.For == null)) return null;
+            if (st == null || (st.TargetOffers.Count == 0 && !ShowFor(m))) return null;
             var box = new StackPanel();
             box.Children.Add(new TextBlock { Text = Texts.Get("for_head"), FontWeight = FontWeights.SemiBold });
             var row = new System.Windows.Controls.Primitives.UniformGrid { Rows = 1, Margin = new Thickness(0, 8, 0, 0) };

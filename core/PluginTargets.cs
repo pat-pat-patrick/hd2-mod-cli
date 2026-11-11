@@ -7,7 +7,9 @@ namespace Hd2Mod
     /// <summary>Deploy targets plugins offer (Targets): another copy of the game a plugin deploys
     /// the library to, such as HellForge's. The manager knows no target by name. A plugin offers
     /// one with these optional members, called by name like the rest of the contract:
-    /// - Dictionary Target(host): {id, title (in host lang), found, why, running}; null: none;
+    /// - Dictionary Target(host): {id, title (in host lang), found, why, running, lua}; null: none.
+    ///   lua is the Lua that target's game runs: "luajit" (LuaJIT 2.1 with ffi, bit and jit, as the
+    ///   official game had before its 2026-10-20 update), absent for the official game's own;
     /// - Dictionary TargetStatus(host): {pending (long), running (bool), said}: cheap, read with the
     ///   window's state;
     /// - Dictionary TargetDeploy(host): {said, refused: [text]}: host["mods"] is the list in use
@@ -22,6 +24,8 @@ namespace Hd2Mod
         public sealed class Offer
         {
             public string File, Id, Title, Why;
+            /// <summary>The Lua the target's game runs: "luajit", or null for the official game's.</summary>
+            public string Lua;
             public bool Found, Running;
             public Type Type;
         }
@@ -41,7 +45,7 @@ namespace Hd2Mod
                     offers.Add(new Offer
                     {
                         File = file, Type = type, Id = id, Title = Json.Str(d, "title") ?? id, Why = Json.Str(d, "why"),
-                        Found = Json.Bool(d, "found"), Running = Json.Bool(d, "running"),
+                        Found = Json.Bool(d, "found"), Running = Json.Bool(d, "running"), Lua = Json.Str(d, "lua"),
                     });
                 }
                 catch (Exception e) { ManagerLog.Warn("plugin " + file + ": Target: " + e.Message); }
