@@ -410,6 +410,8 @@ namespace Hd2Mod
                 var entry = new Dictionary<string, object>
                 {
                     ["name"] = m.Name, ["archives"] = new List<object>(), ["id"] = m.Id, ["path"] = m.Path, ["files"] = new List<object>(),
+                    // the target it is made for (Mod.For): a build for this target is not made ready again
+                    ["for"] = m.For,
                 };
                 byId[m.Id] = entry;
                 mods.Add(entry);
