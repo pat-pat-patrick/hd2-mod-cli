@@ -64,7 +64,23 @@ namespace Hd2Mod
         static Dictionary<string, object> Ask(Offer o, string method, Dictionary<string, object> host)
         {
             if (o.Type.GetMethod(method) == null) throw new ModError("the plugin " + o.File + " cannot " + method, "target_cannot", method);
-            return PluginFiles.Call(o.Type, method, host) as Dictionary<string, object> ?? new Dictionary<string, object>();
+            return Guarded(o, method, () => PluginFiles.Call(o.Type, method, host)) as Dictionary<string, object> ?? new Dictionary<string, object>();
+        }
+
+        /// <summary>A plugin's call whose failure is a refusal: what the plugin throws (its own
+        /// exception types, as HellForge's "a session is running") becomes a ModError
+        /// "plugin_failed" with the plugin's message, so the command line ends with exit code 1 and
+        /// the window says the message. Before (2026-11-12), a plugin's exception left
+        /// Commands.Run unhandled and ended hd2qd.exe (.NET Runtime event 1026). The whole
+        /// exception, with its stack, goes to the log.</summary>
+        static object Guarded(Offer o, string method, Func<object> call)
+        {
+            try { return call(); }
+            catch (Exception e) when (!(e is ModError) && !(e is OutOfMemoryException))
+            {
+                ManagerLog.Warn("plugin " + o.File + ": " + method + ": " + e);
+                throw new ModError(e.Message, "plugin_failed", o.File);
+            }
         }
 
         /// <summary>The target a plugin claims a mod folder for (its own kind of mod, as
@@ -111,7 +127,7 @@ namespace Hd2Mod
         public static string Purge(Offer o, Dictionary<string, object> host)
         {
             if (o.Type.GetMethod("TargetPurge") == null) throw new ModError("the plugin " + o.File + " cannot purge", "target_cannot", "TargetPurge");
-            return PluginFiles.Call(o.Type, "TargetPurge", host) as string ?? "";
+            return Guarded(o, "TargetPurge", () => PluginFiles.Call(o.Type, "TargetPurge", host)) as string ?? "";
         }
     }
 }

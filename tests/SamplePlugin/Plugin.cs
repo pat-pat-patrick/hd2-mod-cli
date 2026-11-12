@@ -7,6 +7,9 @@ namespace Hd2Qd.Sample
 {
     /// <summary>A plugin made for the manager's tests: every call the manager makes, answered in
     /// the plainest way, so the tests see what the manager does with the answers.</summary>
+    /// <summary>An exception type the manager does not know.</summary>
+    public sealed class SampleError : Exception { public SampleError(string m) : base(m) { } }
+
     public static class Plugin
     {
         public const int Api = 2;
@@ -80,9 +83,17 @@ namespace Hd2Qd.Sample
         /// <summary>Writes the list in use, one mod a line, into sample_target.txt.</summary>
         public static Dictionary<string, object> TargetDeploy(Dictionary<string, object> host)
         {
+            Refuse(host);
             var lines = Lines(host);
             File.WriteAllLines(Deployed(host), lines);
             return new Dictionary<string, object> { ["said"] = "sample: " + lines.Count + " mods", ["refused"] = new List<object>() };
+        }
+
+        /// <summary>The sample game refuses, with an exception of the plugin's own (as HellForge
+        /// while a session runs), when the settings folder holds sample_refuse.txt.</summary>
+        static void Refuse(Dictionary<string, object> host)
+        {
+            if (File.Exists(Path.Combine((string)host["home"], "sample_refuse.txt"))) throw new SampleError("a session is running");
         }
 
         /// <summary>A folder holding sample_claim.txt is the sample game's own kind of mod.</summary>
@@ -90,6 +101,7 @@ namespace Hd2Qd.Sample
 
         public static string TargetPurge(Dictionary<string, object> host)
         {
+            Refuse(host);
             File.Delete(Deployed(host));
             return "sample: purged";
         }

@@ -185,6 +185,28 @@ namespace Hd2Mod.Tests
             Assert.Null(Library.Load().Target);
         }
 
+        /// <summary>A target plugin that throws refuses: hd2qd ends with exit code 1 and the
+        /// plugin's message, not an unhandled exception (2026-11-12: HellForge's "a session is
+        /// running" ended hd2qd.exe, .NET Runtime event 1026).</summary>
+        [Fact]
+        public void APluginThatThrowsRefusesTheDeployAndThePurge()
+        {
+            AddTwo();
+            PluginFiles.Install(Sample);
+            Cli("target", "sample");
+            File.WriteAllText(Path.Combine(Store.Home, "sample_refuse.txt"), "1");
+            var err = new StringWriter();
+            Assert.Equal(1, Commands.Run(new[] { "deploy" }, new StringWriter(), err, out var refused));
+            Assert.Equal("plugin_failed", refused.Kind);
+            Assert.Equal("a session is running", refused.Message);
+            Assert.Contains("hd2qd: a session is running", err.ToString());
+            Assert.Equal("plugin_failed", Refused("purge", "--yes"));
+            Assert.False(File.Exists(Path.Combine(Store.Home, "sample_target.txt")));
+
+            File.Delete(Path.Combine(Store.Home, "sample_refuse.txt"));
+            Assert.Contains("sample: ", Cli("deploy"));
+        }
+
         [Fact]
         public void ProfilesStayWithTheirTarget()
         {

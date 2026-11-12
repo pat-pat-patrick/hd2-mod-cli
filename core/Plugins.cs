@@ -169,8 +169,23 @@ namespace Hd2Mod
         public static string Kind(Type t) => t?.GetField("Kind")?.GetValue(null) as string;
         /// <summary>A plugin's title and summary in lang (a language tag): the plugin's own best
         /// match for it, English when it has none.</summary>
-        public static string Title(Type t, string lang) => t?.GetMethod("Title")?.Invoke(null, new object[] { lang }) as string;
-        public static string Summary(Type t, string lang) => t?.GetMethod("Summary")?.Invoke(null, new object[] { lang }) as string;
+        public static string Title(Type t, string lang) => Text(t, "Title", lang);
+        public static string Summary(Type t, string lang) => Text(t, "Summary", lang);
+
+        /// <summary>A plugin's Title or Summary; null (the caller shows the file name) when the
+        /// plugin has none or throws, so a plugin's failure never ends the manager.</summary>
+        static string Text(Type t, string method, string lang)
+        {
+            var m = t?.GetMethod(method);
+            if (m == null) return null;
+            try { return m.Invoke(null, new object[] { lang }) as string; }
+            catch (Exception e) when (!(e is OutOfMemoryException))
+            {
+                ManagerLog.Warn("plugin " + t.Assembly.GetName().Name + ": " + method + ": " + (e.InnerException ?? e).Message);
+                return null;
+            }
+        }
+
         public static string Version(Type t) => t?.Assembly.GetName().Version?.ToString(3);
 
         /// <summary>A plugin's own icon, the bytes of an ICO: what its optional
