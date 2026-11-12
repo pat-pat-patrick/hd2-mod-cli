@@ -358,6 +358,29 @@ namespace Hd2Mod
             return notes;
         }
 
+        /// <summary>What a mod holds, as short tags drawn like the manager's own LUA tag: each
+        /// added plugin's optional ModTags(modFolder, host), a list of {text, tip} in the host's
+        /// language (the HellForge plugin: C, DLL, STATS for the kinds of HellForge mod; the user,
+        /// 2026-11-12). The manager only draws them, so a plugin's tags go when it is removed. A
+        /// plugin that fails gives none (it is logged).</summary>
+        public static List<Dictionary<string, object>> Tags(string modFolder, Dictionary<string, object> host)
+        {
+            var tags = new List<Dictionary<string, object>>();
+            foreach (var (file, type) in Usable())
+            {
+                if (type.GetMethod("ModTags") == null) continue;
+                try
+                {
+                    if (Call(type, "ModTags", modFolder, host) is System.Collections.IEnumerable list)
+                        foreach (var t in list.OfType<Dictionary<string, object>>())
+                            if (!string.IsNullOrEmpty(Json.Str(t, "text")) && !tags.Any(x => Json.Str(x, "text") == Json.Str(t, "text")))
+                                tags.Add(new Dictionary<string, object> { ["plugin"] = file, ["text"] = Json.Str(t, "text"), ["tip"] = Json.Str(t, "tip") });
+                }
+                catch (Exception e) { ManagerLog.Warn("plugin " + file + ": ModTags: " + e.Message); }
+            }
+            return tags;
+        }
+
         /// <summary>The command-line commands the added plugins offer (their Commands: rows of
         /// [name, help]); a name the manager has itself is left out.</summary>
         public static List<(string Name, string Help, string File, Type Type)> Commands(ICollection<string> taken)

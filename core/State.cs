@@ -664,6 +664,8 @@ namespace Hd2Mod
                     ["shown_version"] = Origins.VersionOf(m).Version, ["version_from"] = Origins.VersionOf(m).From,
                     ["site_author"] = m.Site?.Author, ["site_summary"] = m.Site?.Summary, ["site_version"] = m.Site?.Version,
                     ["tags"] = m.Tags.Cast<object>().ToList(), ["group"] = m.Group,
+                    // what it holds, as the added plugins name it (C, DLL, STATS for HellForge's kinds)
+                    ["plugin_tags"] = (exists ? PluginFiles.Tags(m.Path, pluginHost) : new List<Dictionary<string, object>>()).Cast<object>().ToList(),
                     // what the added plugins say of it, and the official plugins it needs that are not added
                     ["notes"] = AlteredNotes(check, m.Name).Concat(exists ? PluginFiles.Notes(m.Path, pluginHost) : new List<Dictionary<string, object>>()).Cast<object>().ToList(),
                     // the version kept for a rollback (Versions), and the newest one skipped

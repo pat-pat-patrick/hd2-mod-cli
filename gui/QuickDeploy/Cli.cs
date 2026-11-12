@@ -123,6 +123,8 @@ namespace QuickDeploy
         /// ("licensed", "expired", "none", ... as core\Plugins.cs), else null.</summary>
         /// <summary>What the plugins say of it (PluginFiles.Notes).</summary>
         public List<Note> Notes = new List<Note>();
+        /// <summary>What it holds, as the added plugins name it ({text, tip}), drawn like LUA.</summary>
+        public List<(string Text, string Tip)> PluginTags = new List<(string, string)>();
         /// <summary>Its Lua scripts, when it has any.</summary>
         public LuaInfo Lu;
         /// <summary>In the profile in use (always, with profiles off).</summary>
@@ -491,6 +493,7 @@ namespace QuickDeploy
                         Colour = Str(n, "colour"), Needs = n.TryGetValue("needs", out var nd) && nd is bool nb && nb,
                     }).ToList(),
                     LibraryBytes = Long(m, "library_bytes"),
+                    PluginTags = List(m, "plugin_tags").OfType<Dictionary<string, object>>().Select(t => (Str(t, "text"), Str(t, "tip"))).ToList(),
                 };
                 foreach (var o in List(m, "options").OfType<Dictionary<string, object>>())
                 {

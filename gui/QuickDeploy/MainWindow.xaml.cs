@@ -3248,6 +3248,20 @@ namespace QuickDeploy
         bool FromOne(ModRow m) => fromFilter.Count == 0 || fromFilter.Contains(FromOf(m));
 
         /// <summary>What the mod is: a loader, another Lua mod, or files only.</summary>
+        /// <summary>A tag for what a mod holds (LUA, or a plugin's such as HellForge's C), on a row.</summary>
+        Border ContentTag(string text, string tip) => new Border
+        {
+            // the box is taller than the words it stands beside, so it is nudged up by
+            // its own overhang: the ink of both then shares one middle
+            BorderBrush = B("Blue"), BorderThickness = new Thickness(1), Padding = new Thickness(4, 1, 4, 1), Margin = new Thickness(0, -0.75, 10, 0.75),
+            VerticalAlignment = VerticalAlignment.Center, ToolTip = tip,
+            Child = new TextBlock
+            {
+                Text = text, FontFamily = Mono, FontSize = 10, FontWeight = FontWeights.Bold, Foreground = B("Blue"),
+                VerticalAlignment = VerticalAlignment.Center, TextAlignment = TextAlignment.Center,
+            },
+        };
+
         static string KindOf(ModRow m) => m.Loader ? "loader" : m.Lua ? "lua" : "asset";
 
         bool OfKind(ModRow m) => kindFilter.Count == 0 || kindFilter.Contains(KindOf(m));
@@ -3271,6 +3285,7 @@ namespace QuickDeploy
             }
             foreach (var f in m.Files) { Add(f.Name); Add(f.Src); }
             if (m.Lua) Add("lua");
+            foreach (var t in m.PluginTags) Add(t.Text);
             if (m.Lu != null) foreach (var s in m.Lu.Scripts) Add(s);      // a script's name from a log finds its mod
             if (m.Loader) Add("loader");
             foreach (var t in m.Tags) Add(t);
@@ -5275,7 +5290,7 @@ namespace QuickDeploy
             Add(m.Id == selectedId); Add(picked.Contains(m.Id)); Add(open.Contains(m.Id));
             Add(m.InProfile); Add(viewLibrary); Add(st.Profile);
             Add(st.Target); Add(m.For); Add(StatusText(m).Item1);
-            Add(m.Index); Add(m.Name); Add(m.Path); Add(m.Enabled); Add(m.Icon); Add(m.Status); Add(m.Error); Add(m.Lua); Add(m.Loader); Add(string.Join("|", m.Notes.Select(n => n.Text + n.Colour))); Add(string.Join(",", m.Tags)); Add(HasUpdate(m)); Add(m.ShownVersion); Add(m.VersionFrom);
+            Add(m.Index); Add(m.Name); Add(m.Path); Add(m.Enabled); Add(m.Icon); Add(m.Status); Add(m.Error); Add(m.Lua); Add(string.Join(",", m.PluginTags.Select(t => t.Text + t.Tip))); Add(m.Loader); Add(string.Join("|", m.Notes.Select(n => n.Text + n.Colour))); Add(string.Join(",", m.Tags)); Add(HasUpdate(m)); Add(m.ShownVersion); Add(m.VersionFrom);
             Add(Checked(m)?.Status); Add(checkingOne.Contains(m.Id)); Add(checking); Add(updated.Contains(m.Id));
             Add(m.Files.Count); Add(m.DeployBytes); Add(m.LibraryBytes); Add(m.Changes); Add(m.Conflicts); Add(m.Shared); Add(m.Chosen); Add(m.Choices);
             Add(NoRun(m)?.Text);
@@ -5461,19 +5476,9 @@ namespace QuickDeploy
                         VerticalAlignment = VerticalAlignment.Center, TextAlignment = TextAlignment.Center,
                     },
                 });
-            if (m.Lua)
-                meta.Children.Add(new Border
-                {
-                    // the box is taller than the words it stands beside, so it is nudged up by
-                    // its own overhang: the ink of both then shares one middle
-                    BorderBrush = B("Blue"), BorderThickness = new Thickness(1), Padding = new Thickness(4, 1, 4, 1), Margin = new Thickness(0, -0.75, 10, 0.75),
-                    VerticalAlignment = VerticalAlignment.Center, ToolTip = Texts.Get("lua_tip"),
-                    Child = new TextBlock
-                    {
-                        Text = "LUA", FontFamily = Mono, FontSize = 10, FontWeight = FontWeights.Bold, Foreground = B("Blue"),
-                        VerticalAlignment = VerticalAlignment.Center, TextAlignment = TextAlignment.Center,
-                    },
-                });
+            // what it holds: the added plugins' tags (HellForge's C, DLL, STATS), then LUA, side by side
+            foreach (var (text, tip) in m.PluginTags) meta.Children.Add(ContentTag(text, tip));
+            if (m.Lua) meta.Children.Add(ContentTag("LUA", Texts.Get("lua_tip")));
             if (m.Conflicts > 0) meta.Children.Add(Fact(Texts.F("row_clash", m.Conflicts), "Yellow"));
             foreach (var (text, tip, colour) in NotesOf(m)) meta.Children.Add(Fact(text, colour, tip));
             // the same bytes in two mods are only worth a mention (the user, 2026-10-24)

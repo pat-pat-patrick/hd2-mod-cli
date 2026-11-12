@@ -198,6 +198,34 @@ namespace Hd2Mod.Tests
             Assert.Empty(Json.List(Row("Failing"), "notes"));
         }
 
+        /// <summary>A plugin's tags for what a mod holds (ModTags) reach the state in the
+        /// window's language, once each; a failing plugin gives none; removed, its tags go.</summary>
+        [Fact]
+        public void A_plugins_tags_for_what_a_mod_holds_reach_the_state()
+        {
+            var tagged = Mod("Tagged", Files(("sample_tags.txt", "x"), (A + ".patch_0", "a")));
+            var failing = Mod("Failing", Files(("sample_throw.txt", "x"), (B + ".patch_0", "b")));
+            var plain = Mod("Plain", Files(("c0ffee00c0ffee00.patch_0", "c")));
+            Cli("add", tagged, "--name", "Tagged");
+            Cli("add", failing, "--name", "Failing");
+            Cli("add", plain, "--name", "Plain");
+            List<Dictionary<string, object>> TagsOf(string name) =>
+                Json.List(Json.List(StateDoc.Build(Library.Load(), Game, false), "mods").Cast<Dictionary<string, object>>().Single(m => Json.Str(m, "name") == name), "plugin_tags")
+                    .Cast<Dictionary<string, object>>().ToList();
+            Assert.Empty(TagsOf("Tagged"));                                      // not added yet
+            AddSample();
+            var tag = TagsOf("Tagged").Single();
+            Assert.Equal("SAMPLE", Json.Str(tag, "text"));
+            Assert.Equal("Holds a sample.", Json.Str(tag, "tip"));
+            Assert.Equal("HD2QD.Sample.dll", Json.Str(tag, "plugin"));
+            Assert.Empty(TagsOf("Plain"));
+            Assert.Empty(TagsOf("Failing"));
+            PluginHost.Lang = () => "zh-CN";
+            Assert.Equal("示例", Json.Str(TagsOf("Tagged").Single(), "text"));
+            PluginFiles.Remove("Sample");
+            Assert.Empty(TagsOf("Tagged"));
+        }
+
         /// <summary>A mod that ships a file an official plugin reads (hd2_license.json) says it
         /// needs that plugin while it is not added; the Plugins page lists it first.</summary>
         [Fact]

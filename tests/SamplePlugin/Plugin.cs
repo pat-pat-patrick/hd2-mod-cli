@@ -18,8 +18,8 @@ namespace Hd2Qd.Sample
         /// <summary>Its words, one table per language tag; anything else is English.</summary>
         static readonly Dictionary<string, Dictionary<string, string>> Words = new Dictionary<string, Dictionary<string, string>>
         {
-            ["en"] = new Dictionary<string, string> { ["title"] = "Sample plugin", ["summary"] = "A plugin for the tests.", ["note"] = "Sampled" },
-            ["zh-CN"] = new Dictionary<string, string> { ["title"] = "示例插件", ["summary"] = "测试用插件。", ["note"] = "已采样" },
+            ["en"] = new Dictionary<string, string> { ["title"] = "Sample plugin", ["summary"] = "A plugin for the tests.", ["note"] = "Sampled", ["tag"] = "SAMPLE", ["tag_tip"] = "Holds a sample." },
+            ["zh-CN"] = new Dictionary<string, string> { ["title"] = "示例插件", ["summary"] = "测试用插件。", ["note"] = "已采样", ["tag"] = "示例", ["tag_tip"] = "含有示例。" },
         };
 
         static string Say(string lang, string key) =>
@@ -39,6 +39,17 @@ namespace Hd2Qd.Sample
             return File.Exists(Path.Combine(modFolder, "sample_note.txt"))
                 ? new Dictionary<string, object> { ["text"] = Say(host["lang"] as string, "note"), ["colour"] = "Blue" }
                 : null;
+        }
+
+        /// <summary>A mod with sample_tags.txt holds a sample: one tag, given twice (the manager
+        /// keeps one), and one without text (left out). sample_throw.txt makes it fail.</summary>
+        public static List<Dictionary<string, object>> ModTags(string modFolder, Dictionary<string, object> host)
+        {
+            if (File.Exists(Path.Combine(modFolder, "sample_throw.txt"))) throw new InvalidOperationException("asked to fail");
+            if (!File.Exists(Path.Combine(modFolder, "sample_tags.txt"))) return null;
+            var lang = host["lang"] as string;
+            var tag = new Dictionary<string, object> { ["text"] = Say(lang, "tag"), ["tip"] = Say(lang, "tag_tip") };
+            return new List<Dictionary<string, object>> { tag, tag, new Dictionary<string, object> { ["tip"] = "no text" } };
         }
 
         /// <summary>sample-echo, and list, a name the manager has itself (left out).</summary>

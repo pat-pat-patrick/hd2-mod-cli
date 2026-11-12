@@ -328,7 +328,7 @@ namespace QuickDeploy
             foreach (var m in shown.Where(m => m.Group == parent))
             {
                 Add(m.Id); Add(m.Name); Add(m.Enabled); Add(m.InProfile); Add(m.Icon); Add(m.Options.Count); Add(m.Chosen); Add(m.Choices);
-                Add(string.Join(",", m.Tags)); Add(m.Lua); Add(m.Conflicts); Add(m.Error);
+                Add(string.Join(",", m.Tags)); Add(m.Lua); Add(string.Join(",", m.PluginTags.Select(t => t.Text + t.Tip))); Add(m.Conflicts); Add(m.Error);
                 foreach (var (text, tip, colour) in NotesOf(m)) { Add(text); Add(tip); Add(colour); }
                 foreach (var p in PacksOf(m))
                 {
@@ -372,7 +372,7 @@ namespace QuickDeploy
             void Add(object x) => sb.Append(x).Append('\u001f');
             Add(m.Id); Add(m.Name); Add(m.Enabled); Add(m.InProfile); Add(st.ProfilesOn); Add(m.Icon); Add(m.Options.Count); Add(m.Chosen); Add(m.Choices);
             Add(st.Target); Add(m.For);
-            Add(string.Join(",", m.Tags)); Add(m.Lua); Add(m.Conflicts); Add(m.Error); Add(m.Group); Add(LevelOf(m.Group));
+            Add(string.Join(",", m.Tags)); Add(m.Lua); Add(string.Join(",", m.PluginTags.Select(t => t.Text + t.Tip))); Add(m.Conflicts); Add(m.Error); Add(m.Group); Add(LevelOf(m.Group));
             foreach (var (text, tip, colour) in NotesOf(m)) { Add(text); Add(tip); Add(colour); }
             return sb.ToString();
         }
@@ -572,6 +572,14 @@ namespace QuickDeploy
             return item;
         }
 
+        /// <summary>A tag for what a mod holds (LUA, or a plugin's such as HellForge's C), in a group.</summary>
+        Border GroupContentTag(string text, string tip) => new Border
+        {
+            BorderBrush = B("Blue"), BorderThickness = new Thickness(1), Padding = new Thickness(4, 0, 4, 0), Margin = new Thickness(0, 2, 6, 0),
+            VerticalAlignment = VerticalAlignment.Center, ToolTip = tip,
+            Child = new TextBlock { Text = text, FontFamily = Mono, FontSize = 10, FontWeight = FontWeights.Bold, Foreground = B("Blue") },
+        };
+
         Border ClashTag(string tip) => new Border
         {
             BorderBrush = B("Yellow"), BorderThickness = new Thickness(1), Padding = new Thickness(4, 0, 4, 0), Margin = new Thickness(0, 2, 6, 0),
@@ -625,13 +633,8 @@ namespace QuickDeploy
                     VerticalAlignment = VerticalAlignment.Center, ToolTip = Texts.Get("tag_tip"),
                     Child = new TextBlock { Text = t, FontSize = 10, FontWeight = FontWeights.Bold, Foreground = B("Ink") },
                 });
-            if (m.Lua)
-                meta.Children.Add(new Border
-                {
-                    BorderBrush = B("Blue"), BorderThickness = new Thickness(1), Padding = new Thickness(4, 0, 4, 0), Margin = new Thickness(0, 2, 6, 0),
-                    VerticalAlignment = VerticalAlignment.Center, ToolTip = Texts.Get("lua_tip"),
-                    Child = new TextBlock { Text = "LUA", FontFamily = Mono, FontSize = 10, FontWeight = FontWeights.Bold, Foreground = B("Blue") },
-                });
+            foreach (var (text, tip) in m.PluginTags) meta.Children.Add(GroupContentTag(text, tip));
+            if (m.Lua) meta.Children.Add(GroupContentTag("LUA", Texts.Get("lua_tip")));
             if (m.Enabled && m.Conflicts > 0) meta.Children.Add(ClashTag(Texts.F("row_clash", m.Conflicts)));
             foreach (var (text, tip, colour) in NotesOf(m))
                 meta.Children.Add(new TextBlock { Text = text, FontSize = 12, Foreground = B(colour), Margin = new Thickness(0, 2, 6, 0), ToolTip = tip });
