@@ -243,6 +243,10 @@ namespace Hd2Mod
         /// hand is often renamed.</summary>
         public static OfficialPlugin OfficialOf(string file) => OfficialBySha(PathOf(file));
 
+        /// <summary>Whether the file at path is an official plugin's release, by its SHA-256 in the
+        /// official list (false when the list was never read).</summary>
+        public static bool IsOfficialRelease(string path) => OfficialBySha(path) != null;
+
         /// <summary>The official plugin one of whose released versions has the SHA-256 of the file
         /// at path, else null (also when the list was never read, or the file cannot be read).
         /// Hashed once while the file is unchanged.</summary>

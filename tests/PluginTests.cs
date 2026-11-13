@@ -177,6 +177,24 @@ namespace Hd2Mod.Tests
             finally { OfficialList = List(null); }
         }
 
+        /// <summary>An official release is added without the trusted-source question (the user,
+        /// 2026-11-14: it was asked at every update of an official plugin). Must live: the file
+        /// whose SHA-256 the list names is an official release. Must die: the same file while the
+        /// list has other bytes, or no list at all, is not, and is still asked about.</summary>
+        [Fact]
+        public void Only_a_file_the_official_list_names_skips_the_trust_question()
+        {
+            OfficialList = List(@"{""version"": ""1.0.0"", ""tag"": ""v1.0.0"", ""sha256"": """ + new string('0', 64) + @"""}");
+            try
+            {
+                Assert.False(PluginFiles.IsOfficialRelease(Sample));
+                OfficialList = List(@"{""version"": ""1.0.0"", ""tag"": ""v1.0.0"", ""sha256"": """ + Sha(Sample) + @"""}");
+                Assert.True(PluginFiles.IsOfficialRelease(Sample));
+            }
+            finally { OfficialList = List(null); }
+            Assert.False(PluginFiles.IsOfficialRelease(Sample));
+        }
+
         /// <summary>A plugin's word on a mod's row reaches the state; one that fails says
         /// nothing, and the row is still there.</summary>
         [Fact]

@@ -597,9 +597,12 @@ namespace QuickDeploy
                 }
                 var old = PluginFiles.All().FirstOrDefault(p => string.Equals(p.File, file, StringComparison.OrdinalIgnoreCase));
                 bool replace = old.File != null;
+                // an official release (its SHA-256 in the official list) goes in without the
+                // trusted-source question: it is the file the list names, and asking at every
+                // update of one was needless (the user, 2026-11-14)
                 var ask = replace ? Texts.F("plugin_replace_ask", file, version, old.Type != null ? PluginFiles.Version(old.Type) : "?")
                                   : Texts.F("plugin_add_ask", file, version);
-                if (!Dialog.Ask(this, ask, Texts.Get(replace ? "plugin_replace_go" : "plugin_add_go"))) continue;
+                if (!PluginFiles.IsOfficialRelease(path) && !Dialog.Ask(this, ask, Texts.Get(replace ? "plugin_replace_go" : "plugin_add_go"))) continue;
                 try { PluginFiles.Install(path); added.Add(file + " " + version); }
                 catch (Exception e) when (e is ModError || e is System.IO.IOException || e is UnauthorizedAccessException)
                 { Dialog.Tell(this, Texts.F("failed", e.Message)); }
