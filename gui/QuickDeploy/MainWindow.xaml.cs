@@ -2153,6 +2153,7 @@ namespace QuickDeploy
                 } while (refreshAgain);
             }
             finally { refreshing = false; }
+            CollectWhenIdle();
             if (!setupDone)
             {
                 setupDone = true;
@@ -2328,6 +2329,27 @@ namespace QuickDeploy
 
         /// <summary>The mods' scripts read in the background, once, then the state read again:
         /// the list never waits for them (the user, 2026-10-26).</summary>
+        /// <summary>A full collection once the window is idle after a state read: a read allocates
+        /// hundreds of megabytes (864 MB on 102 mods, 2.8 GB when every script is read again), and
+        /// an idle window allocates nothing more, so no collection ever came and the last read's
+        /// garbage stayed: 700 MB at rest on 102 mods where 75 MB is live, a player's window at
+        /// 2.9 GB (2026-11-14). One collection per read, after it is drawn.</summary>
+        void CollectWhenIdle()
+        {
+            if (collectQueued) return;
+            collectQueued = true;
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                collectQueued = false;
+                if (refreshing || warming) return;      // the read or the scan that is still on calls this again
+                var clock = Stopwatch.StartNew();
+                System.Runtime.GCSettings.LargeObjectHeapCompactionMode = System.Runtime.GCLargeObjectHeapCompactionMode.CompactOnce;
+                GC.Collect();
+                Mark("collected in " + clock.ElapsedMilliseconds + " ms");
+            }), DispatcherPriority.ApplicationIdle);
+        }
+        bool collectQueued;
+
         async void WarmLua()
         {
             if (warming) return;
