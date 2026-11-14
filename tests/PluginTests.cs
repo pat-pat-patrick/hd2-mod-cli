@@ -152,6 +152,26 @@ namespace Hd2Mod.Tests
             Assert.False(Directory.Exists(PluginFiles.Dir) && Directory.GetFiles(PluginFiles.Dir).Length > 0);
         }
 
+        /// <summary>A plugin is one copy in the process however often its file is read: WPF finds a
+        /// window's XAML by the assembly's name, and a second copy broke the Settings plugin's
+        /// window (a player, 2026-11-14). Must live: read to be added, read again on a cancelled
+        /// add and on a replace by the same file, it stays one assembly and one plugin class. Must
+        /// die: a second file of it under another name ("HD2QD.Sample (1).dll") is not loaded.</summary>
+        [Fact]
+        public void A_plugin_is_one_copy_however_often_it_is_read()
+        {
+            int Copies() => AppDomain.CurrentDomain.GetAssemblies().Count(a => a.GetName().Name == "HD2QD.Sample");
+            AddSample();
+            var used = PluginFiles.All().Single().Type;
+            int before = Copies();
+            Assert.Null(PluginFiles.Inspect(Sample).Why);                           // picked again, then cancelled
+            PluginFiles.Install(Sample);                                             // the same file over itself
+            Assert.Same(used, PluginFiles.All().Single().Type);
+            File.Copy(Sample, Path.Combine(PluginFiles.Dir, "HD2QD.Sample (1).dll"));
+            Assert.Equal("HD2QD.Sample.dll", PluginFiles.All().Single().File);
+            Assert.Equal(before, Copies());
+        }
+
         /// <summary>An official release is known by its SHA-256 alone, under any name, and goes in
         /// under the list's name with its own version (the user, 2026-11-10: a file passed around by
         /// hand is renamed by a browser or a chat program). Must live: renamed, its bytes listed.

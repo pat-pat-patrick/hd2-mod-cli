@@ -42,7 +42,7 @@ namespace Hd2Mod
             else
                 try
                 {
-                    var asm = Assembly.Load(File.ReadAllBytes(path));
+                    var asm = Bytes(path);
                     var t = typeName != null ? asm.GetType(typeName, true) : asm.GetTypes().Single(x => x.Name == "Plugin" && x.IsPublic);
                     var a = t.GetField("Api")?.GetValue(null);
                     if (!(a is int n) || n != api) why = "api";
@@ -56,6 +56,27 @@ namespace Hd2Mod
             // a missing file is looked for again next time: the player may put it there
             if (why != "missing") loaded[key] = (found, why);
             return found;
+        }
+
+        static readonly Dictionary<string, Assembly> byContent = new Dictionary<string, Assembly>(StringComparer.Ordinal);
+
+        /// <summary>The assembly in the file at path, loaded once a process for each content. Each
+        /// Assembly.Load(bytes) is a copy of its own, and WPF finds a window's XAML by the
+        /// assembly's name only ("/HD2QD.Settings;component/mainwindow.xaml"): with two copies of a
+        /// plugin it takes the one loaded last, and a window of the other fails with "does not have
+        /// a resource identified by the URI" (a player, 2026-11-14; reproduced: two loads of the
+        /// same bytes, the window from the first). Reading a file to add it, then cancelling, made
+        /// that second copy.</summary>
+        static Assembly Bytes(string path)
+        {
+            var bytes = File.ReadAllBytes(path);
+            string key;
+            using (var h = System.Security.Cryptography.SHA256.Create()) key = Convert.ToBase64String(h.ComputeHash(bytes));
+            lock (byContent)
+            {
+                if (!byContent.TryGetValue(key, out var asm)) byContent[key] = asm = Assembly.Load(bytes);
+                return asm;
+            }
         }
 
         /// <summary>The file read again next time (it was added, replaced or removed).</summary>
@@ -78,7 +99,7 @@ namespace Hd2Mod
             if (!Name.IsMatch(file)) return (file, null, "name");
             try
             {
-                var asm = Assembly.Load(File.ReadAllBytes(path));
+                var asm = Bytes(path);
                 var version = asm.GetName().Version?.ToString(3);
                 var t = asm.GetTypes().Where(x => x.Name == "Plugin" && x.IsPublic).ToList();
                 if (t.Count != 1) return (file, version, "broken");
@@ -155,6 +176,10 @@ namespace Hd2Mod
             if (!Directory.Exists(dir)) return found;
             foreach (var path in Directory.GetFiles(dir, "HD2QD.*.dll").OrderBy(p => p, StringComparer.OrdinalIgnoreCase))
             {
+                // only a plugin's own name: "HD2QD.Settings (1).dll" beside HD2QD.Settings.dll (a
+                // browser's second download) is the same plugin again, and a second copy of it in
+                // the process breaks its windows (Bytes); Install never writes such a name
+                if (!Name.IsMatch(Path.GetFileName(path))) continue;
                 var t = Load(path, null, Api, out var why);
                 found.Add((Path.GetFileName(path), t, why));
             }
