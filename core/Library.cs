@@ -107,6 +107,9 @@ namespace Hd2Mod
         /// <summary>The player's labels, kept whether or not a mod carries one: a label made
         /// before its mods are chosen has to outlive the window (the user, 2026-10-24).</summary>
         public List<string> Tags = new List<string>();
+        /// <summary>Tags is in the player's own order (tag-order, a drag on the labels page): shown
+        /// so everywhere. Until the player orders them, the most used come first.</summary>
+        public bool TagsOrdered;
         /// <summary>The player's groups, up to Groups.Depth levels, in the order they were made.</summary>
         public List<ModGroup> Groups = new List<ModGroup>();
         public string ImportedFrom;
@@ -151,6 +154,7 @@ namespace Hd2Mod
             foreach (var t in Json.List(d, "tags"))
                 if (t is string tag && tag.Trim().Length > 0 && !lib.Tags.Any(x => string.Equals(x, tag.Trim(), StringComparison.CurrentCultureIgnoreCase)))
                     lib.Tags.Add(tag.Trim());
+            lib.TagsOrdered = Json.Bool(d, "tags_ordered");
             var unpackedNames = new List<(Mod Mod, string Bare)>();
             foreach (var m in Json.List(d, "mods").OfType<Dictionary<string, object>>())
             {
@@ -317,6 +321,7 @@ namespace Hd2Mod
                 foreach (var t in m.Tags)
                     if (!labels.Any(x => string.Equals(x, t, StringComparison.CurrentCultureIgnoreCase))) labels.Add(t);
             if (labels.Count > 0) d["tags"] = labels.Cast<object>().ToList();
+            if (TagsOrdered) d["tags_ordered"] = true;
             if (Groups.Count > 0)
                 d["groups"] = Groups.Select(g =>
                 {

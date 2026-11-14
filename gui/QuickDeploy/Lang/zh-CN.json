@@ -619,6 +619,7 @@
   "tag_mine": "我的标签",
   "tag_auto": "来自 MANIFEST",
   "tag_no_match": "无匹配的标签",
+  "tag_drag_hint": "拖动标签可调整顺序。",
   "tag_hidden": "已隐藏",
   "tag_kind_mine": "我的标签",
   "tag_kind_auto": "来自 MANIFEST · 只读",

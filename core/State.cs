@@ -719,7 +719,7 @@ namespace Hd2Mod
                 ["can_undo"] = Json.Obj(record, "library") is Dictionary<string, object> snap && !lib.Matches(snap)
                                && (lib.ProfilesOn ? Json.Str(snap, "profile") == lib.Active : Json.Str(snap, "profile") == null),
                 ["deploys"] = Json.Long(record, "deploys"), ["deletes"] = deletes.Cast<object>().ToList(),
-                ["mods"] = mods, ["conflicts"] = clashes, ["all_conflicts"] = allClashes, ["resource_names"] = ResourceNames.HaveNames, ["tags"] = lib.Tags.Cast<object>().ToList(),
+                ["mods"] = mods, ["conflicts"] = clashes, ["all_conflicts"] = allClashes, ["resource_names"] = ResourceNames.HaveNames, ["tags"] = lib.Tags.Cast<object>().ToList(), ["tags_ordered"] = lib.TagsOrdered,
                 // the player's groups (Groups): shown only, in the order they were made
                 ["groups"] = lib.Groups.Select(g => (object)new Dictionary<string, object> { ["id"] = g.Id, ["name"] = g.Name, ["parent"] = g.Parent }).ToList(),
                 ["lua_check"] = luaCheck,

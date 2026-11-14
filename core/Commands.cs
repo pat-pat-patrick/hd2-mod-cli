@@ -88,6 +88,8 @@ namespace Hd2Mod
             Cmd("tag-many", new Spec { Help = "put one label on several mods: tag-many NAME MOD...",
                                        Positionals = new[] { "name" }, Many = true, Run = TagMany }),
             Cmd("tag-new", new Spec { Help = "make a label, before any mod carries it", Positionals = new[] { "name" }, Run = TagNew }),
+            Cmd("tag-order", new Spec { Help = "put the labels in this order (the ones not named follow, as they were): tag-order NAME...",
+                                        Positionals = new[] { "name" }, Many = true, Run = TagOrder }),
             Cmd("tag-rename", new Spec { Help = "rename a label everywhere it is used", Positionals = new[] { "name", "to" }, Run = TagRename }),
             Cmd("tag-delete", new Spec { Help = "take a label off every mod", Positionals = new[] { "name" }, Run = TagDelete }),
             Cmd("groups", new Spec { Help = "the player's groups, up to " + Groups.Depth + " levels, with their mods (shown only: no file moves, the deploy is the same)", Run = GroupList }),
@@ -877,7 +879,8 @@ namespace Hd2Mod
                     if (i < 0) counts.Add((t, 1));
                     else counts[i] = (counts[i].Name, counts[i].N + 1);
                 }
-            foreach (var (name, n) in counts.OrderByDescending(x => x.N).ThenBy(x => x.Name, StringComparer.CurrentCultureIgnoreCase))
+            // the player's order once they gave one, else the most used first
+            foreach (var (name, n) in lib.TagsOrdered ? counts : counts.OrderByDescending(x => x.N).ThenBy(x => x.Name, StringComparer.CurrentCultureIgnoreCase).ToList())
                 o.WriteLine(n.ToString().PadLeft(4) + "  " + name);
             if (counts.Count == 0) o.WriteLine("no labels yet");
         }
@@ -921,6 +924,29 @@ namespace Hd2Mod
             else foreach (var name in Names(a)) mod.Tags.RemoveAll(t => string.Equals(t, name, StringComparison.OrdinalIgnoreCase));
             lib.Save();
             o.WriteLine(mod.Name + ": " + (mod.Tags.Count == 0 ? "no labels" : string.Join(", ", mod.Tags)));
+        }
+
+        /// <summary>The labels in the player's order (the user, 2026-11-14: dragged on the labels
+        /// page): the named ones first, as named, then every other label as it was.</summary>
+        static void TagOrder(Args a, TextWriter o)
+        {
+            var lib = Library.Load();
+            var all = new List<string>(lib.Tags);
+            foreach (var mod in lib.Mods)
+                foreach (var t in mod.Tags)
+                    if (!all.Any(x => string.Equals(x, t, StringComparison.CurrentCultureIgnoreCase))) all.Add(t);
+            var order = new List<string>();
+            foreach (var name in a.Rest.Select(x => (x ?? "").Trim()).Where(x => x.Length > 0))
+            {
+                var known = all.FirstOrDefault(x => string.Equals(x, name, StringComparison.CurrentCultureIgnoreCase))
+                            ?? throw new ModError("no label is called " + name, "no_tag", name);
+                if (!order.Contains(known)) order.Add(known);
+            }
+            order.AddRange(all.Where(x => !order.Contains(x)));
+            lib.Tags = order;
+            lib.TagsOrdered = true;
+            lib.Save();
+            o.WriteLine("labels in order: " + string.Join(", ", order));
         }
 
         static void TagRename(Args a, TextWriter o)

@@ -2156,6 +2156,34 @@ namespace Hd2Mod.Tests
             Assert.DoesNotContain("later", Cli("tags"));
         }
 
+        /// <summary>The labels go in the player's order (the user, 2026-11-14: dragged on the labels
+        /// page). Must live: the most used first until then; once ordered, the named ones as named
+        /// and the rest after as they were, kept by a rename, said by the state. Must die: a name
+        /// that is no label is refused and changes nothing.</summary>
+        [Fact]
+        public void LabelsGoInThePlayersOrder()
+        {
+            Cli("add", Mod("One", Files((A + ".patch_0", "one"))));
+            Cli("add", Mod("Two", Files((B + ".patch_0", "two"))));
+            Cli("tag-new", "alpha");
+            Cli("tag", "One", "beta");
+            Cli("tag", "Two", "beta", "gamma");
+            Assert.Matches(@"2  beta\r?\n\s+1  gamma\r?\n\s+0  alpha", Cli("tags"));     // the most used first
+            Assert.False(Library.Load().TagsOrdered);
+
+            CliCode(1, "tag-order", "delta");
+            Assert.False(Library.Load().TagsOrdered);
+
+            Cli("tag-order", "gamma", "ALPHA");
+            Assert.Equal(new[] { "gamma", "alpha", "beta" }, Library.Load().Tags);
+            Assert.Matches(@"1  gamma\r?\n\s+0  alpha\r?\n\s+2  beta", Cli("tags"));
+            Cli("tag-rename", "alpha", "first");
+            Assert.Equal(new[] { "gamma", "first", "beta" }, Library.Load().Tags);
+            var state = Json.Parse(Cli("state")) as Dictionary<string, object>;
+            Assert.True(Json.Bool(state, "tags_ordered"));
+            Assert.Equal(new object[] { "gamma", "first", "beta" }, Json.List(state, "tags"));
+        }
+
         /// <summary>A patch file the library does not account for is the hardest kind of mistake
         /// to find: the game's own integrity check does not know these files and never removes
         /// them (HS历史学家 on bilibili, 2026-10-25). check says what is missing, what no mod

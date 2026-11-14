@@ -632,6 +632,7 @@
   "tag_mine": "MY LABELS",
   "tag_auto": "FROM THE MANIFEST",
   "tag_no_match": "No label matches",
+  "tag_drag_hint": "Drag a label to change the order.",
   "tag_hidden": "hidden",
   "tag_kind_mine": "MY LABEL",
   "tag_kind_auto": "FROM THE MANIFEST · READ ONLY",

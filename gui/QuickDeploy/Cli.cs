@@ -263,6 +263,8 @@ namespace QuickDeploy
         public List<string> Profiles = new List<string>();
         /// <summary>Every label the library knows, whether or not a mod carries it.</summary>
         public List<string> Tags = new List<string>();
+        /// <summary>Tags is in the player's own order (a drag on the labels page).</summary>
+        public bool TagsOrdered;
         /// <summary>The player's groups, in the order they were made (Groups).</summary>
         public List<GroupRow> Groups = new List<GroupRow>();
         public List<Clash> Clashes = new List<Clash>();
@@ -393,6 +395,7 @@ namespace QuickDeploy
             }
             foreach (var x in List(d, "deletes")) if (x is string f) s.Deletes.Add(f);
             foreach (var t in List(d, "tags")) if (t is string tag) s.Tags.Add(tag);
+            s.TagsOrdered = Bool(d, "tags_ordered");
             foreach (var g in List(d, "groups").OfType<Dictionary<string, object>>())
                 s.Groups.Add(new GroupRow { Id = Str(g, "id"), Name = Str(g, "name"), Parent = Str(g, "parent") });
             var bs = Json.Obj(d, "deploying");

@@ -1235,6 +1235,74 @@ namespace QuickDeploy
                 t19.Start();
                 return;
             }
+            if (Environment.GetEnvironmentVariable("HD2QD_CLICK_TEST") == "tagdrag")
+            {
+                // "tagdrag" (measuring only): the labels page, the first of my labels taken up and
+                // carried below the last through the drag's own steps (a test move's position is
+                // read off the real cursor, so press and moves are not sent as input), held 3 s
+                // for a picture, then let go; my labels' order before and after to HD2QD_WHEEL_OUT
+                var path = Environment.GetEnvironmentVariable("HD2QD_WHEEL_OUT");
+                var t20 = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+                t20.Tick += (s, e) =>
+                {
+                    t20.Stop();
+                    ShowPage("tags");
+                    UpdateLayout();
+                    var log = new List<string> { "before\t" + string.Join(", ", tagRows.Select(r => r.Name)) };
+                    if (tagRows.Count < 2) { if (path != null) System.IO.File.WriteAllText(path, "fewer than two labels\r\n"); return; }
+                    var first = tagRows[0];
+                    var last = tagRows[tagRows.Count - 1];
+                    var from = first.Row.TranslatePoint(new Point(40, first.Row.ActualHeight / 2), tagHost);
+                    // a real press: the label's button holds the mouse until the drag takes it
+                    // (taken first: taking it raises a move, which in a test has no button down)
+                    first.Row.CaptureMouse();
+                    tagPress = (first.Name, from, first.Row.ActualHeight / 2);
+                    log.Add("pressed\t" + (Mouse.Captured == first.Row));
+                    if (!BeginTagDrag() || tagPress == null || tagGhost == null)
+                    {
+                        log.Add("drag ended at its start");
+                        if (path != null) System.IO.File.WriteAllText(path, string.Join("\r\n", log) + "\r\n");
+                        return;
+                    }
+                    TagDragAt(last.Row.TranslatePoint(new Point(40, last.Row.ActualHeight * 0.8), tagHost));
+                    log.Add("line\t" + (tagLine?.Visibility == Visibility.Visible) + "\tcaptured\t" + (Mouse.Captured == tagHost));
+                    UpdateLayout();
+                    var gh = tagGhost as FrameworkElement;
+                    log.Add("ghost\t" + gh?.ActualWidth + "x" + gh?.ActualHeight + " at " + Canvas.GetLeft(gh) + "," + Canvas.GetTop(gh) + " visible " + gh?.IsVisible
+                            + "\tline at " + Canvas.GetTop(tagLine) + "\tlayer " + tagLayer.ActualWidth + "x" + tagLayer.ActualHeight + " children " + tagLayer.Children.Count);
+                    if (path != null)
+                    {
+                        // the labels column as WPF draws it mid-drag, beside the output
+                        var col = tagHost;
+                        var bmp = new RenderTargetBitmap((int)col.ActualWidth * 2, (int)col.ActualHeight * 2, 192, 192, PixelFormats.Pbgra32);
+                        bmp.Render(col);
+                        var png = new PngBitmapEncoder();
+                        png.Frames.Add(BitmapFrame.Create(bmp));
+                        using (var f = System.IO.File.Create(path + ".png")) png.Save(f);
+                    }
+                    var t21 = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+                    t21.Tick += (s2, e2) =>
+                    {
+                        t21.Stop();
+                        // the player's real mouse moving meanwhile moves the drop too: set again
+                        if (tagGhost != null) TagDragAt(last.Row.TranslatePoint(new Point(40, last.Row.ActualHeight * 0.8), tagHost));
+                        log.Add("dropping\t" + (tagDropOrder == null ? "-" : string.Join(", ", tagDropOrder)) + "\tbusy\t" + busy + "\tdragging\t" + (tagGhost != null));
+                        EndTagDrag(true);
+                        log.Add("at drop\t" + string.Join(", ", tagRows.Select(r => r.Name)));
+                        var t22 = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+                        t22.Tick += (s3, e3) =>
+                        {
+                            t22.Stop();
+                            log.Add("after\t" + string.Join(", ", tagRows.Select(r => r.Name)));
+                            log.Add("ordered\t" + st?.TagsOrdered);
+                            if (path != null) System.IO.File.WriteAllText(path, string.Join("\r\n", log) + "\r\n");
+                        };
+                        t22.Start();
+                    };
+                    t21.Start();
+                };
+                t20.Start();
+            }
             if (Environment.GetEnvironmentVariable("HD2QD_CLICK_TEST") == "selectmouse")
             {
                 // "selectmouse": a drag through all of WPF's input (the user, 2026-11-06: selectacross
@@ -3460,7 +3528,17 @@ namespace QuickDeploy
 #endif
             if (StoragePage.Visibility == Visibility.Visible) RenderStorage();
             if (LuaPage.Visibility == Visibility.Visible) RenderLua();
-            if (startPage == "download" || startPage == "storage" || startPage == "tags" || startPage == "lua") ShowPage(startPage);
+            // the labels page shows the new read too (a drag of labels put in order, 2026-11-14,
+            // stayed in the old order until the page was opened again); not under a drag, which
+            // the drawing would end: drawn once it is let go
+            // nor while a label's note is being typed (its box is made anew): a later read draws it
+            if (TagsPage.Visibility == Visibility.Visible)
+            {
+                bool noting = Keyboard.FocusedElement is TextBox typed && typed != tagHunt && typed != tagFind && TagsBox.IsAncestorOf(typed);
+                if (tagGhost != null) tagRedraw = true;
+                else if (!noting && !PageFresh("tags")) RenderTags();
+            }
+            if (startPage =="download" || startPage == "storage" || startPage == "tags" || startPage == "lua") ShowPage(startPage);
             startPage = null;
         }
 
@@ -7658,7 +7736,8 @@ namespace QuickDeploy
             if (st != null) { RenderList(); RenderDetail(); }
         }
 
-        /// <summary>Every label in the library, the most used first.</summary>
+        /// <summary>Every label in the library: in the player's order once they dragged one on the
+        /// labels page, else the most used first.</summary>
         List<(string Name, int N)> AllTags()
         {
             var counts = new List<(string Name, int N)>();
@@ -7674,11 +7753,144 @@ namespace QuickDeploy
                 if (!counts.Any(x => string.Equals(x.Name, t, StringComparison.CurrentCultureIgnoreCase))) counts.Add((t, 0));
             if (newTag != null && !counts.Any(x => string.Equals(x.Name, newTag, StringComparison.CurrentCultureIgnoreCase))) counts.Add((newTag, 0));
             return counts.OrderByDescending(x => x.N).ThenBy(x => x.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
+            if (st != null && st.TagsOrdered)
+            {
+                // the library's order; a label it does not list yet (just made) goes last
+                int At(string name)
+                {
+                    int i = st.Tags.FindIndex(t => string.Equals(t, name, StringComparison.CurrentCultureIgnoreCase));
+                    return i < 0 ? int.MaxValue : i;
+                }
+                return counts.Select((x, i) => (x, i)).OrderBy(p => At(p.x.Name)).ThenBy(p => p.i).Select(p => p.x).ToList();
+            }
         }
 
         // ---------------------------------------------------------------- the labels page
 
         // the label the page is showing (and whether it is one of the manifests'), one just
+        // dragging my labels into an order: the press (which label, where, where inside its row),
+        // the rows that take part, the picture under the pointer and the line where it would land
+        (string Name, Point Start, double GrabY)? tagPress;
+        readonly List<(string Name, Button Row, Border Edge)> tagRows = new List<(string, Button, Border)>();
+        Grid tagHost;
+        Canvas tagLayer;
+        UIElement tagGhost;
+        Border tagLine;
+        List<string> tagDropOrder;
+        bool tagRedraw;
+
+        /// <summary>The mouse on the list of labels: a press on one of mine that moves becomes a
+        /// drag of it; let go, the labels go in the order shown. Our own drag, as the load
+        /// order's: the mouse stays this window's.</summary>
+        void HookTagDrag(Grid host)
+        {
+            host.PreviewMouseMove += (s, e) =>
+            {
+                if (tagPress == null || host != tagHost) return;
+                var at = e.GetPosition(host);
+                if (tagGhost == null)
+                {
+                    if (e.LeftButton != MouseButtonState.Pressed) { tagPress = null; return; }
+                    if (Math.Abs(at.X - tagPress.Value.Start.X) < 6 && Math.Abs(at.Y - tagPress.Value.Start.Y) < 6) return;
+                    if (!BeginTagDrag()) return;
+                }
+                TagDragAt(at);
+                e.Handled = true;
+            };
+            host.PreviewMouseLeftButtonUp += (s, e) =>
+            {
+                if (tagGhost == null) { tagPress = null; return; }
+                e.Handled = true;
+                EndTagDrag(true);
+            };
+            // the pressed label loses the mouse to the list when a drag starts, and that bubbles
+            // here too: only the list's own loss ends the drag (as the load order's)
+            host.LostMouseCapture += (s, e) => { if (tagGhost != null && !ReferenceEquals(Mouse.Captured, host)) EndTagDrag(false); };
+        }
+
+        /// <summary>The pressed label taken up: its picture first, then the mouse taken (taking it
+        /// raises a move at once). False when its row is gone.</summary>
+        bool BeginTagDrag()
+        {
+            if (tagPress == null) return false;
+            var row = tagRows.FirstOrDefault(r => r.Name == tagPress.Value.Name);
+            if (row.Row == null || row.Edge.ActualWidth < 1) { tagPress = null; return false; }
+            tagGhost = Ghost(row.Edge);
+            tagLayer.Children.Add(tagGhost);
+            tagLine = new Border { Height = 3, Background = B("Yellow"), Visibility = Visibility.Collapsed };
+            tagLayer.Children.Add(tagLine);
+            row.Row.Opacity = 0.3;
+            tagHost.CaptureMouse();
+            return true;
+        }
+
+        /// <summary>The picture under the pointer, and the line where the label would land: between
+        /// the rows whose middle the pointer is past. A place that keeps the order shows none.</summary>
+        void TagDragAt(Point at)
+        {
+            if (tagPress == null || tagGhost == null) return;
+            var name = tagPress.Value.Name;
+            Canvas.SetLeft(tagGhost, 0);
+            Canvas.SetTop(tagGhost, at.Y - tagPress.Value.GrabY);
+            int to = 0;
+            foreach (var r in tagRows)
+            {
+                double top = r.Row.TranslatePoint(new Point(0, 0), tagHost).Y;
+                if (at.Y > top + r.Row.ActualHeight / 2) to++;
+            }
+            var names = tagRows.Select(r => r.Name).ToList();
+            int from = names.IndexOf(name);
+            var order = names.Where(x => x != name).ToList();
+            order.Insert(to > from ? to - 1 : to, name);
+            tagDropOrder = order.SequenceEqual(names) ? null : order;
+            if (tagDropOrder == null) { tagLine.Visibility = Visibility.Collapsed; return; }
+            // the line on the top edge of the row it goes before, or under the last row
+            var edgeRow = to < tagRows.Count ? tagRows[to].Row : tagRows[tagRows.Count - 1].Row;
+            double y = edgeRow.TranslatePoint(new Point(0, 0), tagHost).Y + (to < tagRows.Count ? -1 : edgeRow.ActualHeight - 2);
+            tagLine.Width = edgeRow.ActualWidth;
+            Canvas.SetLeft(tagLine, 0);
+            Canvas.SetTop(tagLine, y - 1);
+            tagLine.Visibility = Visibility.Visible;
+        }
+
+        /// <summary>The drag over: the labels put in the order shown (commit), or left alone.</summary>
+        void EndTagDrag(bool commit)
+        {
+            var order = tagDropOrder;
+            var host = tagHost;
+            if (tagLayer != null) { tagLayer.Children.Remove(tagGhost); tagLayer.Children.Remove(tagLine); }
+            foreach (var r in tagRows) r.Row.Opacity = 1;
+            tagGhost = null; tagLine = null; tagPress = null; tagDropOrder = null;
+            if (host != null && host.IsMouseCaptured) host.ReleaseMouseCapture();
+            // a read that came during the drag, drawn now
+            if (tagRedraw)
+            {
+                tagRedraw = false;
+                Dispatcher.BeginInvoke(new Action(() => { if (TagsPage.Visibility == Visibility.Visible && tagGhost == null && !PageFresh("tags")) RenderTags(); }));
+            }
+            if (!commit || order == null || st == null || busy) return;
+            var args = new List<string> { "tag-order" };
+            args.AddRange(order);
+            // shown at once from what it implies, saved in the background, as the load order's
+            // drag (the user, 2026-11-14: the list stood still a second or two after the drop)
+            var rest = st.Tags.Where(t => !order.Contains(t, StringComparer.CurrentCultureIgnoreCase)).ToList();
+            st.Tags = order.Concat(rest).ToList();
+            st.TagsOrdered = true;
+            RenderTags();
+            TagOrderSaved(args.ToArray());
+        }
+
+        /// <summary>The labels' new order written, the window not held; then the state again.</summary>
+        async void TagOrderSaved(string[] args)
+        {
+            waiting++;
+            var r = await Queued(() => Cli.Run(args));
+            waiting--;
+            quietUntil = DateTime.Now.AddSeconds(1.5);
+            Refused(r);
+            Refresh();
+        }
+
         // made that is on no mod yet, and what the page last did
         string tagSel, newTag, tagDone;
         bool tagAuto;
@@ -7789,6 +8001,8 @@ namespace QuickDeploy
         void RenderTags()
         {
             TagsBox.Children.Clear();
+            // a drag under way ends with the rows it was over
+            if (tagGhost != null) EndTagDrag(false);
             if (st == null) return;
             var mine = AllTags();
             var auto = AutoTags();
@@ -7818,8 +8032,17 @@ namespace QuickDeploy
 
             // ---------------------------------------------------------- the labels
             var left = new StackPanel();
-            Grid.SetColumn(left, 0);
-            two.Children.Add(left);
+            // the list, with the dragged label's picture and where it would land drawn over it
+            var leftHost = new Grid();
+            Grid.SetColumn(leftHost, 0);
+            two.Children.Add(leftHost);
+            leftHost.Children.Add(left);
+            var layer = new Canvas { IsHitTestVisible = false };
+            leftHost.Children.Add(layer);
+            tagHost = leftHost;
+            tagLayer = layer;
+            tagRows.Clear();
+            HookTagDrag(leftHost);
 
             // the name goes in the box, the button makes it: a box that only searched was taken
             // for the name every time (the user, 2026-10-24). There are never enough labels to
@@ -7882,6 +8105,17 @@ namespace QuickDeploy
                 var mineName = name;
                 b.Click += (s, e) => { tagSel = mineName; tagAuto = isAuto; RenderTags(); };
                 left.Children.Add(b);
+                // my labels are put in order by dragging them (the user, 2026-11-14); a press
+                // that does not move is still a click
+                if (!isAuto && mineShown.Count > 1)
+                {
+                    tagRows.Add((mineName, b, edge));
+                    b.PreviewMouseLeftButtonDown += (s, e) =>
+                    {
+                        var at = e.GetPosition(leftHost);
+                        tagPress = (mineName, at, at.Y - b.TranslatePoint(new Point(0, 0), leftHost).Y);
+                    };
+                }
             }
 
             if (mineShown.Count > 0)
@@ -7889,6 +8123,7 @@ namespace QuickDeploy
                 left.Children.Add(Label("tag_mine", new Thickness(2, 6, 0, 6)));
                 foreach (var (name, n) in mineShown) Row(name, n, false);
             }
+                if (mineShown.Count > 1 && Texts.Hints) left.Children.Add(Small(Texts.Get("tag_drag_hint"), new Thickness(2, 6, 0, 0)));
             if (autoShown.Count > 0)
             {
                 left.Children.Add(Label("tag_auto", new Thickness(2, 14, 0, 6)));
