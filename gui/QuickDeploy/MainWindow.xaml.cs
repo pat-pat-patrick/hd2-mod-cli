@@ -2856,6 +2856,7 @@ namespace QuickDeploy
                 case "chef": case "chef_stub": return "Chef Shared Loader" + (version != null ? " " + version : "");
                 case "bsl": return "Bingus Shared Loader" + (version != null ? " " + version : "");
                 case "mdl3": return "MDL3" + (version != null ? " " + version : "");
+                case "uml": return "Universal Mod Loader" + (version != null ? " " + version : "");
                 default: return null;
             }
         }
@@ -7752,7 +7753,6 @@ namespace QuickDeploy
             foreach (var t in st?.Tags ?? new List<string>())
                 if (!counts.Any(x => string.Equals(x.Name, t, StringComparison.CurrentCultureIgnoreCase))) counts.Add((t, 0));
             if (newTag != null && !counts.Any(x => string.Equals(x.Name, newTag, StringComparison.CurrentCultureIgnoreCase))) counts.Add((newTag, 0));
-            return counts.OrderByDescending(x => x.N).ThenBy(x => x.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
             if (st != null && st.TagsOrdered)
             {
                 // the library's order; a label it does not list yet (just made) goes last
@@ -7763,11 +7763,11 @@ namespace QuickDeploy
                 }
                 return counts.Select((x, i) => (x, i)).OrderBy(p => At(p.x.Name)).ThenBy(p => p.i).Select(p => p.x).ToList();
             }
+            return counts.OrderByDescending(x => x.N).ThenBy(x => x.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
         }
 
         // ---------------------------------------------------------------- the labels page
 
-        // the label the page is showing (and whether it is one of the manifests'), one just
         // dragging my labels into an order: the press (which label, where, where inside its row),
         // the rows that take part, the picture under the pointer and the line where it would land
         (string Name, Point Start, double GrabY)? tagPress;
@@ -7891,6 +7891,7 @@ namespace QuickDeploy
             Refresh();
         }
 
+        // the label the page is showing (and whether it is one of the manifests'), one just
         // made that is on no mod yet, and what the page last did
         string tagSel, newTag, tagDone;
         bool tagAuto;
@@ -8000,9 +8001,9 @@ namespace QuickDeploy
         /// done to it, the mods that carry it and a box to find a mod and add it.</summary>
         void RenderTags()
         {
-            TagsBox.Children.Clear();
             // a drag under way ends with the rows it was over
             if (tagGhost != null) EndTagDrag(false);
+            TagsBox.Children.Clear();
             if (st == null) return;
             var mine = AllTags();
             var auto = AutoTags();
@@ -8031,11 +8032,11 @@ namespace QuickDeploy
             TagsBox.Children.Add(two);
 
             // ---------------------------------------------------------- the labels
-            var left = new StackPanel();
             // the list, with the dragged label's picture and where it would land drawn over it
             var leftHost = new Grid();
             Grid.SetColumn(leftHost, 0);
             two.Children.Add(leftHost);
+            var left = new StackPanel();
             leftHost.Children.Add(left);
             var layer = new Canvas { IsHitTestVisible = false };
             leftHost.Children.Add(layer);
@@ -8104,7 +8105,6 @@ namespace QuickDeploy
                 b.Content = edge;
                 var mineName = name;
                 b.Click += (s, e) => { tagSel = mineName; tagAuto = isAuto; RenderTags(); };
-                left.Children.Add(b);
                 // my labels are put in order by dragging them (the user, 2026-11-14); a press
                 // that does not move is still a click
                 if (!isAuto && mineShown.Count > 1)
@@ -8116,14 +8116,15 @@ namespace QuickDeploy
                         tagPress = (mineName, at, at.Y - b.TranslatePoint(new Point(0, 0), leftHost).Y);
                     };
                 }
+                left.Children.Add(b);
             }
 
             if (mineShown.Count > 0)
             {
                 left.Children.Add(Label("tag_mine", new Thickness(2, 6, 0, 6)));
                 foreach (var (name, n) in mineShown) Row(name, n, false);
-            }
                 if (mineShown.Count > 1 && Texts.Hints) left.Children.Add(Small(Texts.Get("tag_drag_hint"), new Thickness(2, 6, 0, 0)));
+            }
             if (autoShown.Count > 0)
             {
                 left.Children.Add(Label("tag_auto", new Thickness(2, 14, 0, 6)));

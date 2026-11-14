@@ -79,6 +79,13 @@ namespace Hd2Mod
             // Bingus Shared Loader
             new Row { Kind = "bsl", Cap = Addons },
             new Row { Kind = "bsl", Cap = Bingus },
+
+            // Universal Mod Loader: its boot read 2026-11-15 (v1.0.1, v2.0.0-v2.0.3), not tried in game.
+            // Every version reads "-- HD2-Addon:" from the patches and sets CowboyBingusModLoader;
+            // "-- HD2-Boot:" and "-- HD2-Requires:" (the mods made for Chef) from 2.0.1
+            new Row { Kind = "uml", Cap = Addons },
+            new Row { Kind = "uml", Cap = Bingus },
+            new Row { Kind = "uml", Cap = ChefMods, Since = "2.0.1" },
         };
 
         /// <summary>The markers to look for in a loader's boot and Chef's core (LuaMods.Look).</summary>
@@ -115,7 +122,7 @@ namespace Hd2Mod
 
         /// <summary>What a kind of loader is for: the service named when another does it too.</summary>
         public static string Own(string kind) =>
-            kind == "bml" ? Addons : kind == "chef" ? ChefMods : kind == "mdl3" ? Mdl3Api : kind == "bsl" ? Bingus : null;
+            kind == "bml" || kind == "uml" ? Addons : kind == "chef" ? ChefMods : kind == "mdl3" ? Mdl3Api : kind == "bsl" ? Bingus : null;
 
         /// <summary>The capabilities a way of going together asks of the loader in effect and of the one beside it.</summary>
         public static (string[] In, string[] Beside) Requires(string how) =>

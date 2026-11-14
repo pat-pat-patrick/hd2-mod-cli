@@ -14,7 +14,7 @@ namespace QuickDeploy
     /// the levels, the session, the search are each view's own.</summary>
     class LogView
     {
-        /// <summary>The logs it can show ("bml", "chef", "bsl", "mdl3", "manager"), there or not.</summary>
+        /// <summary>The logs it can show ("bml", "chef", "bsl", "mdl3", "uml", "manager"), there or not.</summary>
         public Func<List<string>> Kinds;
         /// <summary>The one shown at first, when it is there; else the first there.</summary>
         public Func<string> First = () => null;

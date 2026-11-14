@@ -399,7 +399,7 @@ namespace QuickDeploy
             st.Mods.Where(x => x.Loader && st.RunsLoader(x.LoaderKind) && x.Lu?.Caps.Contains(cap) == true).Select(x => x.LoaderKind).Distinct().ToList();
 
         // the loaders in the order the compatibility table pairs them
-        static readonly string[] CompatKinds = { "bml", "chef", "mdl3", "bsl" };
+        static readonly string[] CompatKinds = { "bml", "chef", "mdl3", "bsl", "uml" };
 
         /// <summary>Which of the library's loaders can be used together, a line for each pair: whether,
         /// how and under what conditions (the user, 2026-11-01: no basis column). The verdict is
@@ -596,7 +596,7 @@ namespace QuickDeploy
         {
             Group = "lualog", Height = 620,
             Kinds = () => st.Mods.Where(x => x.Loader && x.LoaderKind != null).Select(x => x.LoaderKind).Distinct()
-                            .Concat(new[] { "bml", "chef", "bsl", "mdl3" }).Distinct().ToList(),
+                            .Concat(new[] { "bml", "chef", "bsl", "mdl3", "uml" }).Distinct().ToList(),
             First = () => st.Lua?.Running ?? ById(st.LoaderChoice)?.LoaderKind,
         });
 

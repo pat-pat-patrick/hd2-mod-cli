@@ -28,7 +28,7 @@ namespace Hd2Mod
         public string ErrorKind;
         /// <summary>LuaJIT libraries it uses without a fallback: "ffi", "bit", "jit".</summary>
         public List<string> Jit = new List<string>();
-        /// <summary>For the script "boot": whose it is ("bml", "chef_stub", "chef", "bsl", "mdl3", "other") and its version.</summary>
+        /// <summary>For the script "boot": whose it is ("bml", "chef_stub", "chef", "bsl", "mdl3", "uml", "other") and its version.</summary>
         public string BootKind, BootVersion;
         /// <summary>Whether it wraps the old menus' register calls (a translation pack does).</summary>
         public bool WrapsMenus;
@@ -62,7 +62,7 @@ namespace Hd2Mod
     {
         public Mod Mod;
         public List<LuaScript> Scripts = new List<LuaScript>();
-        /// <summary>A loader itself: "bml", "chef", "bsl", "mdl3"; null otherwise.</summary>
+        /// <summary>A loader itself: "bml", "chef", "bsl", "mdl3", "uml"; null otherwise.</summary>
         public string Loader;
         /// <summary>"any" (Boot Mod Loader or Chef Shared Loader), "chef" (Chef Shared Loader
         /// only), null (no mod script).</summary>
@@ -387,6 +387,11 @@ namespace Hd2Mod
             // boot 9ba626afa44a3aa3, for the mods made for that loader, and was taken for it
             var mdl3 = Regex.Match(text, @"^-- MDL3 (\d+\.\d+\.\d+[A-Za-z0-9.\-]*) game boot \(PUC Lua 5\.1\)");
             if (mdl3.Success) return ("mdl3", mdl3.Groups[1].Value);
+            // Universal Mod Loader also names CowboyBingusModLoader and Bingus's boot 9ba626afa44a3aa3
+            // (it gives Bingus's interface) and was taken for Bingus Shared Loader (issues 12, 23);
+            // every version's boot opens with its own name (proven: v1.0.1, v2.0.0-v2.0.3 read 2026-11-15)
+            var uml = Regex.Match(text, @"^-- Universal Mod Loader v(\d+\.\d+\.\d+[A-Za-z0-9.\-]*)");
+            if (uml.Success) return ("uml", uml.Groups[1].Value);
             var bml = Regex.Match(text, @"boot-mod-loader-(\d+\.\d+\.\d+)");
             if (text.StartsWith("-- Boot Mod Loader", StringComparison.Ordinal) || bml.Success)
                 return ("bml", bml.Success ? bml.Groups[1].Value : null);
@@ -722,7 +727,7 @@ namespace Hd2Mod
                 var boot = ml.Boot;
                 if (ml.Scripts.Any(s => s.Id == ChefCoreId) || boot?.BootKind == "chef") ml.Loader = "chef";
                 else if (boot?.BootKind == "bml") ml.Loader = "bml";
-                else if (boot?.BootKind == "bsl" || boot?.BootKind == "mdl3") ml.Loader = boot.BootKind;
+                else if (boot?.BootKind == "bsl" || boot?.BootKind == "mdl3" || boot?.BootKind == "uml") ml.Loader = boot.BootKind;
                 else if (bsl) { ml.Loader = "bsl"; ml.ManifestVersion = Loaders.BslVersion(m); }
                 if (ml.Loader == null)
                 {

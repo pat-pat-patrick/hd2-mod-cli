@@ -25,7 +25,7 @@ namespace Hd2Mod
     {
         public class Source
         {
-            /// <summary>The loader ("bml", "chef", "bsl", "mdl3"), the file's name and its path.</summary>
+            /// <summary>The loader ("bml", "chef", "bsl", "mdl3", "uml"), the file's name and its path.</summary>
             public string Kind, Name, Path;
             /// <summary>How a session starts in it; null: the file is one session.</summary>
             public Regex Session;
@@ -67,6 +67,13 @@ namespace Hd2Mod
                         new Source { Kind = kind, Name = "MDL3.log", Path = System.IO.Path.Combine(Mdl3Home, "MDL3", "Logs", "MDL3.log"), Session = new Regex(@"^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d BOOT ") },
                         new Source { Kind = kind, Name = "MDL.log", Path = System.IO.Path.Combine(Mdl3Home, "MDL", "Helldivers2", "Logs", "MDL.log") },
                         new Source { Kind = kind, Name = "MDL-Boot.log", Path = System.IO.Path.Combine(bingus, "MDL-Boot.log") },
+                    };
+                // Universal Mod Loader: the first of its places it can write (its boot, v2.0.3)
+                case "uml":
+                    return new List<Source>
+                    {
+                        new Source { Kind = kind, Name = "UniversalModLoader.log", Path = System.IO.Path.Combine(Roaming, "UniversalModLoader.log"), Session = new Regex(@"^--- Universal Mod Loader v\S+ Booted at ") },
+                        new Source { Kind = kind, Name = @"Logs\UniversalModLoader.log", Path = System.IO.Path.Combine(Local,"UniversalModLoader", "Logs", "UniversalModLoader.log"), Session = new Regex(@"^--- Universal Mod Loader v\S+ Booted at ") },
                     };
                 // the manager's own (ManagerLog): a session from each start of the window
                 case "manager":

@@ -300,6 +300,32 @@ namespace Hd2Mod.Tests
             Assert.Equal("bsl", Loaders.KindOf(Library.Load().Mods.Single(m => m.Name == "Other")));
         }
 
+        /// <summary>Universal Mod Loader replaces the boot and sets CowboyBingusModLoader with Bingus's
+        /// boot named, to give Bingus's interface: it was taken for Bingus Shared Loader (issues 12, 23).
+        /// Every version's boot opens with its own name (v1.0.1, v2.0.0-v2.0.3).</summary>
+        [Fact]
+        public void UmlIsALoaderOfItsOwn()
+        {
+            const string bingus = "rawset(_G, \"CowboyBingusModLoader\", loader_state)\n-- Replaces engine boot resource 0xF476DF93691895FA in bundle 9ba626afa44a3aa3\n";
+            string Boot(string folder, string text) => Mod(folder, new Dictionary<string, byte[]> { [A + ".patch_0"] = LuaArchive((LuaMods.BootId, text)) });
+            Cli("add", Addon("Lamp", "mods/me/lamp"));
+            Cli("add", Boot("UML", "-- Universal Mod Loader v2.0.3 for Helldivers 2 (Steam Builds 25988413 / 26088801 / 26251122+ / Lua 5.1)\n" + bingus));
+            Assert.Equal("uml", Loaders.KindOf(Library.Load().Mods.Single(m => m.Name == "UML")));
+            var now = Now();
+            Assert.Equal("uml", now.Running);
+            Assert.Empty(now.Issues);                                    // it runs the Addon mods
+            var lua = Cli("lua");
+            Assert.Contains("Universal Mod Loader 2.0.3", lua);
+            Assert.DoesNotContain("Bingus", lua);
+            // the mods made for Chef from 2.0.1 (its boot reads "-- HD2-Boot:" from then on)
+            Assert.DoesNotContain(LoaderCaps.ChefMods, LoaderCaps.Of("uml", "2.0.0", null));
+            Assert.Contains(LoaderCaps.ChefMods, LoaderCaps.Of("uml", "2.0.1", null));
+            Assert.Equal(new[] { LoaderCaps.Addons, LoaderCaps.Bingus }, LoaderCaps.Of("uml", "1.0.1", null));
+            // must fail: not on the first line, the same boot is not UML's
+            Cli("add", Boot("Other", "-- a boot\n-- Universal Mod Loader v2.0.3 for Helldivers 2\n" + bingus.Replace("rawset(_G, \"CowboyBingusModLoader\", loader_state)", "local loader = CowboyBingusModLoader")));
+            Assert.Equal("bsl", Loaders.KindOf(Library.Load().Mods.Single(m => m.Name == "Other")));
+        }
+
         /// <summary>A state read keeps each mod's loader answers for that read only (Loaders.Pass:
         /// asked again for every choice of loader, they were 1.3 s of a 2.4 s read, the user,
         /// 2026-11-03). Must live: the read keeps what it saw. Must die: the next read sees a change.</summary>

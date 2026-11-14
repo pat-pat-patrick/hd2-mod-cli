@@ -1197,6 +1197,7 @@ namespace Hd2Mod
             kind == "bml" ? "Boot Mod Loader" + (ml?.Boot?.BootVersion != null ? " " + ml.Boot.BootVersion : "")
             : kind == "chef" ? "Chef Shared Loader" : kind == "chef_stub" ? "Chef Shared Loader's start-up stub"
             : kind == "bsl" ? "Bingus Shared Loader" + (ml?.LoaderVersion != null ? " " + ml.LoaderVersion : "") : kind == "mdl3" ? "MDL3" + (ml?.Boot?.BootVersion != null ? " " + ml.Boot.BootVersion : "")
+            : kind == "uml" ? "Universal Mod Loader" + (ml?.Boot?.BootVersion != null ? " " + ml.Boot.BootVersion : "")
             : kind == "other" ? (ml != null ? ml.Mod.Name + "'s own start-up script" : "another start-up script")
             : "none (the game's own)";
 

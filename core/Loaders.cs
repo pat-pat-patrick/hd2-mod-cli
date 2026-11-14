@@ -52,7 +52,7 @@ namespace Hd2Mod
         // what a mod's archives make it, by the archives' sizes and times
         static readonly Dictionary<string, (string Sig, string Kind)> known = new Dictionary<string, (string, string)>(StringComparer.OrdinalIgnoreCase);
 
-        /// <summary>"bml", "chef", "bsl", "mdl3", or null: as LuaMods names a loader, but read only from the
+        /// <summary>"bml", "chef", "bsl", "mdl3", "uml", or null: as LuaMods names a loader, but read only from the
         /// archives that hold a boot or Chef Shared Loader's core (a row scan for the others), so a
         /// state read can ask it of every mod without reading their scripts.</summary>
         public static string KindOf(Mod mod) => Kept(mod, "kind", () => KindOfNow(mod));
@@ -106,7 +106,7 @@ namespace Hd2Mod
                 catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { }
             }
             if (chefCore || boot == "chef") kind = "chef";
-            else if (boot == "bml" || boot == "bsl" || boot == "mdl3") kind = boot;
+            else if (boot == "bml" || boot == "bsl" || boot == "mdl3" || boot == "uml") kind = boot;
             lock (known) known[mod.Path] = (sig, kind);
             return kind;
         }

@@ -42,11 +42,11 @@ namespace QuickDeploy
     /// <summary>A mod's Lua, as the core read it from its archives (LuaMods).</summary>
     class LuaInfo
     {
-        /// <summary>"any", "chef" or null; a loader itself: "bml", "chef", "bsl", "mdl3".</summary>
+        /// <summary>"any", "chef" or null; a loader itself: "bml", "chef", "bsl", "mdl3", "uml".</summary>
         public string Needs, Loader, LoaderVersion;
         /// <summary>A loader's capabilities (LoaderCaps); empty for a mod.</summary>
         public List<string> Caps = new List<string>();
-        /// <summary>Its own start-up script's kind (bml, chef_stub, chef, bsl, mdl3, other), else null.</summary>
+        /// <summary>Its own start-up script's kind (bml, chef_stub, chef, bsl, mdl3, uml, other), else null.</summary>
         public string Boot;
         public List<string> Scripts = new List<string>();
         public List<(string Script, int Line, string Message, string Kind, List<string> Jit, bool LuaJitBytecode)> Broken =
@@ -117,7 +117,7 @@ namespace QuickDeploy
         public bool Enabled, Exists, HasManifest, SameDrive, Lua, Loader;
         /// <summary>The deploy target it is for (null: both), and its other build's id (Mod.For, Mod.Pair).</summary>
         public string For, Pair;
-        /// <summary>"bml", "chef", "bsl", "mdl3" for a loader, else null.</summary>
+        /// <summary>"bml", "chef", "bsl", "mdl3", "uml" for a loader, else null.</summary>
         public string LoaderKind;
         /// <summary>For its author's members (hd2_license.json): where its license stands here
         /// ("licensed", "expired", "none", ... as core\Plugins.cs), else null.</summary>
