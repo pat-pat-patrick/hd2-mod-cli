@@ -474,7 +474,29 @@ namespace Hd2Mod
                 ["mods"] = (Func<List<Dictionary<string, object>>>)(() => Mods(Library.Load())),
                 ["target"] = (Func<string>)(() => Targets.Current(Library.Load())),
                 ["library"] = (Func<List<Dictionary<string, object>>>)(() => LibraryMods(Library.Load())),
+                ["add_to_library"] = (Func<string, string, bool, string>)AddToLibrary,
             };
+        }
+
+        /// <summary>A mod a plugin's target holds that the library does not, put into the library
+        /// (the user, 2026-11-16: HellForge's own copy of a mod whose download is lost, kept when
+        /// HellForge is reinstalled): a copy in the mod folder, as `add PATH --copy --for TARGET`
+        /// (a zip is unpacked there), then on or off as the target had it. Returns the new mod's
+        /// id; a refusal of add (a name or a folder the library has, ...) is thrown as it is.</summary>
+        public static string AddToLibrary(string path, string target, bool enabled)
+        {
+            var argv = new List<string> { "add", path, "--copy" };
+            if (!string.IsNullOrEmpty(target)) { argv.Add("--for"); argv.Add(target); }
+            var said = new StringWriter();
+            int code = Commands.Run(argv.ToArray(), said, said, out var refused);
+            if (refused != null) throw refused;
+            if (code != 0) throw new ModError(said.ToString().Trim(), "add_failed", path);
+            var lib = Library.Load();
+            var from = Paths.Abs(path).TrimEnd('\\');
+            var mod = lib.Mods.LastOrDefault(m => string.Equals(Paths.AbsOrEmpty(m.Source).TrimEnd('\\'), from, StringComparison.OrdinalIgnoreCase))
+                      ?? throw new ModError("not added: " + path, "add_failed", path);
+            if (!enabled && mod.Enabled) { mod.Enabled = false; lib.Save(); }
+            return mod.Id;
         }
 
         /// <summary>The enabled mods in load order, each {name, archives, id, path, files}: archives,
