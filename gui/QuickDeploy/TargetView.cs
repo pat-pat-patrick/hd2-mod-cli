@@ -235,7 +235,29 @@ namespace QuickDeploy
         UIElement ForPanel(ModRow m)
         {
             if (st == null || (st.TargetOffers.Count == 0 && !ShowFor(m))) return null;
+            var other = m.Pair == null ? null : st.Mods.FirstOrDefault(x => x.Id == m.Pair);
+            // its manifest says which targets it is for ("Targets"): nothing to choose, so no
+            // card (the user, 2026-11-15); its row says it ("仅限 HellForge"), and its other build
+            // is still named
+            if (m.ForDeclared && other == null) return null;
             var box = new StackPanel();
+            if (!m.ForDeclared) AddChoice(box, m);
+            if (other != null)
+            {
+                var line = new DockPanel { Margin = new Thickness(0, m.ForDeclared ? 0 : 10, 0, 0) };
+                var unpair = new Button { Content = Texts.Get("pair_off"), Style = (Style)FindResource("Ghost"), MinHeight = 30, Padding = new Thickness(10, 0, 10, 0) };
+                unpair.Click += (s, e) => _ = Act(() => Cli.Run("unpair", m.Id), false);
+                DockPanel.SetDock(unpair, Dock.Right);
+                line.Children.Add(unpair);
+                line.Children.Add(new TextBlock { Text = Texts.F("pair_line", other.Name, TargetName(other.For)), TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center });
+                box.Children.Add(line);
+            }
+            return Panel(box, new Thickness(0, 20, 0, 0));
+        }
+
+        /// <summary>The choice of target, for a mod whose manifest does not say it.</summary>
+        void AddChoice(StackPanel box, ModRow m)
+        {
             box.Children.Add(new TextBlock { Text = Texts.Get("for_head"), FontWeight = FontWeights.SemiBold });
             var row = new System.Windows.Controls.Primitives.UniformGrid { Rows = 1, Margin = new Thickness(0, 8, 0, 0) };
             var choices = new List<(string Value, string Title)> { ("both", Texts.Get("for_both")), ("official", Texts.Get("target_official")) };
@@ -254,18 +276,6 @@ namespace QuickDeploy
             }
             box.Children.Add(new Border { BorderBrush = B("Grid"), BorderThickness = new Thickness(1), Child = row });
             box.Children.Add(Small(Texts.Get("for_note"), new Thickness(0, 8, 0, 0)));
-            var other = m.Pair == null ? null : st.Mods.FirstOrDefault(x => x.Id == m.Pair);
-            if (other != null)
-            {
-                var line = new DockPanel { Margin = new Thickness(0, 10, 0, 0) };
-                var unpair = new Button { Content = Texts.Get("pair_off"), Style = (Style)FindResource("Ghost"), MinHeight = 30, Padding = new Thickness(10, 0, 10, 0) };
-                unpair.Click += (s, e) => _ = Act(() => Cli.Run("unpair", m.Id), false);
-                DockPanel.SetDock(unpair, Dock.Right);
-                line.Children.Add(unpair);
-                line.Children.Add(new TextBlock { Text = Texts.F("pair_line", other.Name, TargetName(other.For)), TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center });
-                box.Children.Add(line);
-            }
-            return Panel(box, new Thickness(0, 20, 0, 0));
         }
 
         /// <summary>A mod added whose Guid one in the library has, while a plugin offers a target:

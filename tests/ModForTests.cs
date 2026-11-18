@@ -77,6 +77,76 @@ namespace Hd2Mod.Tests
             Assert.StartsWith(sampleBuild.Id + " ", line);              // the sample game's build, and only it
         }
 
+        string Declared(string name, string targets, string guid = null, string body = null) =>
+            Mod(name, Files((A + ".patch_0", body ?? name)),
+                @"{""Guid"": """ + (guid ?? System.Guid.NewGuid().ToString()) + @""", ""Name"": """ + name + @"""" + (targets == null ? "" : @", ""Targets"": " + targets) + "}");
+
+        /// <summary>A manifest's "Targets" says which games a mod is for (the user, 2026-11-15): the
+        /// library takes it as Mod.For, the player is not asked, and the for command cannot change
+        /// it. Names in any case; one name, that target only; several, each of them.</summary>
+        [Fact]
+        public void AManifestThatSaysItsTargetsDecidesThem()
+        {
+            PluginFiles.Install(Sample);
+            Cli("add", Declared("Port", @"[""Sample""]"));
+            Cli("add", Declared("Both", @"[""Official"", ""sample""]"));
+            Cli("add", Declared("Vanilla", @"[""official""]"));
+            Cli("add", Declared("Plain", null));
+            Cli("add", Declared("Empty", "[]"));
+            var lib = Library.Load();
+            Mod Get(string n) => lib.Mods.Single(m => m.Name == n);
+            Assert.Equal("sample", Get("Port").For);
+            Assert.True(Get("Port").ForDeclared);
+            Assert.False(Get("Port").Enabled);                           // the official game is in use
+            Assert.Null(Get("Both").For);
+            Assert.True(Get("Both").ForDeclared);
+            Assert.True(Get("Both").Enabled);
+            Assert.Equal("official", Get("Vanilla").For);
+            Assert.True(Get("Vanilla").ForDeclared);
+            // must live: no "Targets", or none named in it, and the player chooses, as before
+            Assert.False(Get("Plain").ForDeclared);
+            Assert.False(Get("Empty").ForDeclared);
+            Cli("for", "Plain", "sample");
+            Assert.Equal("sample", Library.Load().Mods.Single(m => m.Name == "Plain").For);
+            // must die: a declared mod's target is not the command's to change
+            Assert.Equal("for_declared", Refused("for", "Port", "both"));
+            Assert.Equal("sample", Library.Load().Mods.Single(m => m.Name == "Port").For);
+            // the state says so, for the window to show no choice
+            Assert.Contains("\"for_declared\": true", Cli("state"));
+
+            // a manifest changed in place counts at the next load, and a mod no longer for the
+            // target in use goes off
+            var both = Library.Load().Mods.Single(m => m.Name == "Both").Path;
+            File.WriteAllText(Path.Combine(both, "manifest.json"), @"{""Guid"": ""cccccccc-0000-0000-0000-000000000009"", ""Name"": ""Both"", ""Targets"": [""Sample""], ""Description"": ""now the sample game's only""}");
+            lib = Library.Load();
+            Assert.Equal("sample", Get("Both").For);
+            Assert.False(Get("Both").Enabled);
+        }
+
+        /// <summary>A mod added whose Guid the library has: a declared one is not asked about. For
+        /// the same target, it is that build's new version; for another the library offers, it
+        /// goes beside as that target's build.</summary>
+        [Fact]
+        public void ADeclaredBuildOfTheSameModIsNotAskedAbout()
+        {
+            PluginFiles.Install(Sample);
+            Cli("add", Declared("Holo", @"[""Official""]", Guid1, "official build"));
+            Cli("add", Declared("Holo port", @"[""Sample""]", Guid1, "the sample game's build"));
+            var lib = Library.Load();
+            Assert.Equal(2, lib.Mods.Count);
+            var off = lib.Mods.Single(m => m.For == "official");
+            var port = lib.Mods.Single(m => m.For == "sample");
+            Assert.Equal(port.Id, off.Pair);
+            // its new version replaces the port only
+            var port2 = Declared("Holo port 2", @"[""Sample""]", Guid1, "the sample game's newer build");
+            Cli("add", port2);
+            lib = Library.Load();
+            Assert.Equal(2, lib.Mods.Count);
+            Assert.Equal(Path.GetFullPath(port2).TrimEnd('\\'), Path.GetFullPath(lib.Mods.Single(m => m.For == "sample").Path).TrimEnd('\\'));
+            // must die: the same mod undeclared is still asked about
+            Assert.Equal("same_guid", Refused("add", Build("Holo again", "which one?")));
+        }
+
         [Fact]
         public void APairTurnsItsOtherBuildOff()
         {

@@ -327,6 +327,43 @@ namespace Hd2Mod.Tests
             CliCode(1, "profile-new", "online");                                 // names are one regardless of case
         }
 
+        /// <summary>A mod of one profile copied into another, with its on/off and options there (the
+        /// user, 2026-11-16: "从A配置文件把1号MOD复制进B配置文件"); a number is its place in the first.</summary>
+        [Fact]
+        public void ProfileCopyTakesModsWithTheirOnOffAndOptions()
+        {
+            string[] Names() => Library.Load().Mods.Select(m => m.Name).ToArray();
+            string[] On() => Library.Load().Mods.Where(m => m.Enabled).Select(m => m.Name).ToArray();
+            string Chosen() => Library.Load().Mods.Single(m => m.Name == "Cape").Options[0].Subs.Single(s => s.Enabled).Name;
+            Cli("add", Mod("Cape", Files(("a/" + B + ".patch_0", "cape-a"), ("b/" + B + ".patch_0", "cape-b")),
+                           "{\"Name\": \"Cape\", \"Options\": [{\"Name\": \"Pick\", \"SubOptions\": [" +
+                           "{\"Name\": \"A\", \"Include\": [\"a\"]}, {\"Name\": \"B\", \"Include\": [\"b\"]}]}]}"));
+            Cli("profiles-on");
+            Cli("set", "Cape", "1.2", "on"); Cli("set", "Cape", "1.1", "off");  // Default: Cape on B
+            Cli("disable", "Two");                                               // Default: Two off
+            Cli("profile-new", "Solo", "--empty");
+            // into a profile not in use: Default's 4th (Cape) and 2nd (Two), at Solo's bottom in that order
+            Assert.Contains("2 added at its bottom, 0 updated", Cli("profile-copy", "Default", "Solo", "4", "2"));
+            Assert.Contains("* Default  (4 mods, 3 on)", Cli("profiles"));       // the first profile unchanged
+            Assert.Contains("  Solo  (2 mods, 1 on)", Cli("profiles"));
+            Cli("set", "Cape", "1.1", "on"); Cli("set", "Cape", "1.2", "off");  // Default changed after: Cape on A
+            Cli("profile-use", "Solo", "--no-deploy");
+            Assert.Equal(new[] { "Cape", "Two" }, Names().Take(2));
+            Assert.Equal(new[] { "Cape" }, On());
+            Assert.Equal("B", Chosen());                                         // Solo's copy kept B
+            // into the profile in use: a mod it has keeps its place and takes the other's on/off and
+            // options (A now); a new one goes to its bottom
+            Assert.Contains("1 added at its bottom, 1 updated", Cli("profile-copy", "Default", "Solo", "Cape", "One"));
+            Assert.Equal(new[] { "Cape", "Two", "One" }, Names().Take(3));
+            Assert.Equal(new[] { "Cape", "One" }, On());
+            Assert.Equal("A", Chosen());
+            Assert.Contains("  Default  (4 mods, 3 on)", Cli("profiles"));
+            // refused: the same profile, a mod not in the first, a number past its end
+            Assert.Equal("same_profile", Refused("profile-copy", "Solo", "solo", "Cape"));
+            Assert.Equal("not_in_profile", Refused("profile-copy", "Solo", "Default", "Three"));
+            Assert.Equal("no_mod", Refused("profile-copy", "Default", "Solo", "9"));
+        }
+
         [Fact]
         public void ReorderOnlyRenames()
         {

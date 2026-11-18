@@ -29,6 +29,9 @@ namespace Hd2Mod
         /// target it is off and cannot be turned on. Pair: the id of its version for the other
         /// target (the same mod, two builds): turning one on turns the other off.</summary>
         public string For, Pair;
+        /// <summary>For comes from the mod's manifest ("Targets"), not the player: set on every
+        /// load (Targets.Declare), never saved; the window shows no choice for it.</summary>
+        public bool ForDeclared;
         /// <summary>The name the mod came with, kept from the first time it was renamed by hand
         /// (null while Name is still that name).</summary>
         public string RealName;
@@ -222,6 +225,7 @@ namespace Hd2Mod
             Hd2Mod.Groups.Tidy(lib);
             var was = Json.List(d, "known").OfType<string>().ToList();
             lib.known = new HashSet<string>(was.Count > 0 ? was : lib.Mods.Select(m => m.Id));
+            Hd2Mod.Targets.Declare(lib);
             Hd2Mod.Targets.Enforce(lib);
             return lib;
         }
@@ -451,8 +455,13 @@ namespace Hd2Mod
         /// <summary>The options were folder names (HD2ModManager's first manifests): one group, pick one.</summary>
         public bool FolderOptions;
         public List<ManifestOption> Options = new List<ManifestOption>();
+        /// <summary>The games the author made it for: "Targets" in manifest.json, ["Official"],
+        /// ["HellForge"] or both (the user, 2026-11-15: a mod that says so needs no choice in the
+        /// window). Deploy-target ids, lower case ("official", "hellforge"); null when the manifest
+        /// says nothing (then the player chooses, Mod.For).</summary>
+        public List<string> Targets;
 
-        static readonly string[] Keys = { "Version", "Guid", "Name", "Description", "IconPath", "Options", "SubOptions", "Include", "Image", "Tags", "Categories" };
+        static readonly string[] Keys = { "Version", "Guid", "Name", "Description", "IconPath", "Options", "SubOptions", "Include", "Image", "Tags", "Categories", "Targets" };
 
         /// <summary>The managers' spelling of a key, whatever case the author used.</summary>
         static string Canon(string k) => Keys.FirstOrDefault(x => string.Equals(x, k, StringComparison.OrdinalIgnoreCase)) ?? k;
@@ -532,6 +541,9 @@ namespace Hd2Mod
             foreach (var t in Json.List(d, "Tags").Concat(Json.List(d, "Categories")))
                 if (t is string tag && tag.Trim().Length > 0 && !m.Tags.Any(x => string.Equals(x, tag.Trim(), StringComparison.CurrentCultureIgnoreCase)))
                     m.Tags.Add(tag.Trim());
+            // "Targets": names in any case; a list with no name in it says nothing
+            var targets = Json.List(d, "Targets").OfType<string>().Select(t => t.Trim().ToLowerInvariant()).Where(t => t.Length > 0).Distinct().ToList();
+            if (targets.Count > 0) m.Targets = targets;
             var options = Json.List(d, "Options");
             if (options.Count > 0 && options.All(o => o is string))
             {

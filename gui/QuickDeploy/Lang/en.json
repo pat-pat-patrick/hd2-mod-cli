@@ -497,6 +497,8 @@
   "pf_add_n": "Put these {1} into “{0}”",
   "pf_remove": "Take out of “{0}”",
   "pf_remove_n": "Take these {1} out of “{0}”",
+  "pf_copy_to": "Copy to profile",
+  "pf_copy_to_n": "Copy these {0} to profile",
   "pf_outside": "not in this profile",
   "set_order": "DISPLAY ORDER",
   "set_order_bottom": "1 at the top",

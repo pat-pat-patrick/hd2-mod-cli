@@ -19,6 +19,13 @@ A mod manager for Helldivers 2. What sets it apart:
   only when it is wanted.
 - **Problem reports.** One upload gives a report number to pass to the mods'
   author.
+- **Licensed mods.** Some mods are for a creator's members: the public package
+  is only a shell, and the feature code is licensed to your game account. For
+  such a mod whose creator turns the integrity check on, Quick Deploy sends the
+  hashes and version of that mod's files and this computer's game account id to
+  that mod's creator, so altered or shared licensed content can be found. It
+  does this for no other mod, sends nothing about any other mod, and never
+  blocks a deploy. `hd2qd integrity` shows exactly what this computer would send.
 
 It comes in two parts that share one library and one set of settings:
 
@@ -760,6 +767,42 @@ A plugin is a DLL of its own (`HD2QD.<name>.dll`) that adds one feature.
 - **Writing one**: see
   [hd2qd-plugins](https://github.com/pat-pat-patrick/hd2qd-plugins).
 
+### Deploy targets
+
+A plugin can offer another game to deploy to, such as
+[HellForge](https://github.com/pat-pat-patrick/hd2qd-hellforge). The switch
+above the library picks the target; each target keeps its own enabled mods,
+order and options.
+
+- **Which target a mod is for**: Official, the plugin's target, or both. A mod
+  for one target only stays off on the others, and says so on its row.
+- Without a declaration, the player chooses it under *Target* in the mod's
+  details (`hd2qd for MOD TARGET`).
+- Two builds of one mod (the same Guid), one for each target, can stay in the
+  library side by side: turning one on turns the other off.
+
+**For mod authors**: declare the targets in `manifest.json`, and players have
+nothing to choose. The *Target* choice is then not shown, and a build added
+with the same Guid is taken as that target's build without a question.
+
+```json
+{
+  "Version": 2,
+  "Guid": "…",
+  "Name": "My mod",
+  "Targets": ["HellForge"]
+}
+```
+
+| `"Targets"` | The mod is for |
+|---|---|
+| `["Official"]` | the official game only |
+| `["HellForge"]` | HellForge only |
+| `["Official", "HellForge"]` | both |
+| absent | the player's choice, as before |
+
+The names are not case-sensitive. Other mod managers ignore the field.
+
 ### Asking about a problem
 
 Settings → *About and diagnostics* → **Problem report…** opens a window:
@@ -886,6 +929,7 @@ name.
 | `profile-new NAME [--empty]` / `profile-use NAME` | Make a profile (a copy of the one in use, or empty); switch to one (it deploys). |
 | `profile-rename NAME NEW` / `profile-delete NAME` | Rename or delete a profile. |
 | `profile-add MOD...` / `profile-remove MOD...` | Put library mods into the profile in use, or take them out (they stay in the library). |
+| `profile-copy FROM TO MOD...` | Copy mods of one profile into another with their on/off and options; a number is the mod's place in FROM. A mod TO has already keeps its place and takes FROM's on/off and options; any other goes to TO's bottom. |
 
 **Mod folders**
 
@@ -1033,6 +1077,7 @@ Helldivers 2 的 mod 管理器。主要特点：
 - **检查更新无需登录**：支持来自 Nexus Mods 和 GitHub 的 mod，包括手动下载的压缩包，并列出每个版本的改动。
 - **插件**：资源检查、模型修复、HD2 MOD 控制台等，需要时再添加。
 - **问题报告**：上传后得到一个报告编号，发给 mod 作者即可。
+- **授权 MOD**：有些 MOD 只向创作者的会员提供，公开包里只有一个外壳，功能代码按你的游戏账号授权。对于这类 MOD 中创作者开启了完整性检查的，Quick Deploy 会把该 MOD 文件的哈希、版本和本机的游戏账号标识发送给该 MOD 的创作者，用于发现被改动或被分享的授权内容。对其他任何 MOD 都不会这样做，不发送其他 MOD 的任何信息，也从不因此拦截部署。运行 `hd2qd integrity` 可以查看本机会上报什么。
 
 本程序分为两部分，共用同一个 mod 库和同一份设置：
 

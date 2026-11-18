@@ -4696,6 +4696,21 @@ namespace QuickDeploy
                 take.Click += (s, e) => Run(new[] { "profile-remove" }.Concat(inside.Select(x => x.Id)).ToArray());
                 menu.Items.Add(take);
             }
+            // a copy into another profile, with how each stands here: on/off and options (the user,
+            // 2026-11-16: "从A配置文件把1号MOD复制进B配置文件")
+            var others = st.Profiles.Where(p => p != st.Profile).ToList();
+            if (inside.Count > 0 && others.Count > 0)
+            {
+                var copy = new MenuItem { Header = inside.Count == 1 ? Texts.Get("pf_copy_to") : Texts.F("pf_copy_to_n", inside.Count) };
+                foreach (var other in others)
+                {
+                    var to = other;
+                    var it = new MenuItem { Header = ProfileName(to) };
+                    it.Click += (s, e) => Run(new[] { "profile-copy", st.Profile, to }.Concat(inside.Select(x => x.Id)).ToArray());
+                    copy.Items.Add(it);
+                }
+                menu.Items.Add(copy);
+            }
             menu.Items.Add(new Separator());
         }
 

@@ -484,6 +484,8 @@
   "pf_add_n": "将选中的 {1} 个加入“{0}”",
   "pf_remove": "移出“{0}”",
   "pf_remove_n": "将选中的 {1} 个移出“{0}”",
+  "pf_copy_to": "复制到配置文件",
+  "pf_copy_to_n": "将选中的 {0} 个复制到配置文件",
   "pf_outside": "不在当前配置中",
   "set_order": "显示顺序",
   "set_order_bottom": "1 在最上方",

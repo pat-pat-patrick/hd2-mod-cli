@@ -190,6 +190,51 @@ namespace Hd2Mod
             return n;
         }
 
+        /// <summary>Mods of one profile copied into another (the user, 2026-11-16: "从A配置文件把1号MOD
+        /// 复制进B配置文件"), each with how it stands in the first: on or off, and its options. A mod
+        /// the second profile has already keeps its place there and takes the first one's on/off and
+        /// options; any other goes to its bottom. The first profile is not changed, and neither is the
+        /// game: the caller saves the library, and a copy into the profile in use waits for a deploy.
+        /// Returns how many were added (the rest were updated).</summary>
+        public static (int Added, int Updated) CopyMods(Library lib, string from, string to, IEnumerable<Mod> mods)
+        {
+            var a = Find(lib, from);
+            var b = Find(lib, to);
+            if (Same(a.Name, b.Name)) throw new ModError("a mod is copied into another profile, not into " + Ops.Repr(a.Name) + " itself", "same_profile", a.Name);
+            var list = mods.Distinct().ToList();
+            var outside = list.Where(m => !a.Order.Contains(m.Id)).ToList();
+            if (outside.Count > 0)
+                throw new ModError("not in the profile " + Ops.Repr(a.Name) + ": " + string.Join("; ", outside.Select(m => m.Name)), "not_in_profile", a.Name);
+            bool live = Same(b.Name, lib.Active);
+            int added = 0, updated = 0;
+            foreach (var m in list)
+            {
+                bool on = a.On.Contains(m.Id);
+                var options = a.Options.TryGetValue(m.Id, out var o) ? Copy(o) : new List<OptionChoice>();
+                if (live)
+                {
+                    // the profile in use is the library's own list
+                    if (lib.Members.Contains(m.Id)) updated++;
+                    else
+                    {
+                        lib.Members.Add(m.Id);
+                        lib.Mods.Remove(m);
+                        lib.Mods.Insert(lib.Mods.FindLastIndex(x => lib.Members.Contains(x.Id)) + 1, m);
+                        added++;
+                    }
+                    m.Enabled = on;
+                    m.Options = options;
+                    continue;
+                }
+                if (b.Order.Contains(m.Id)) updated++;
+                else { b.Order.Add(m.Id); added++; }
+                if (on) b.On.Add(m.Id); else b.On.Remove(m.Id);
+                b.Options[m.Id] = options;
+            }
+            if (live) InUse(lib);
+            return (added, updated);
+        }
+
         /// <summary>Profiles imported from another manager added, their names made unique. With
         /// profiles on already, the one in use stays in use (an import never changes the game on
         /// its own); else the one named inUse (else the first) is put in use.</summary>

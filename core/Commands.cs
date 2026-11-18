@@ -142,6 +142,8 @@ namespace Hd2Mod
             Cmd("profile-new", new Spec { Help = "a new profile, a copy of the one in use, which stays in use (--empty: no mods)", Positionals = new[] { "name" }, Flags = new[] { "--empty" }, Run = ProfileNew }),
             Cmd("profile-add", new Spec { Help = "put mods of the library into the profile in use, at its bottom, on", Positionals = new[] { "mods" }, Many = true, Run = (a, o) => ProfileMembers(a, o, true) }),
             Cmd("profile-remove", new Spec { Help = "take mods out of the profile in use (they stay in the library)", Positionals = new[] { "mods" }, Many = true, Run = (a, o) => ProfileMembers(a, o, false) }),
+            Cmd("profile-copy", new Spec { Help = "copy mods of one profile into another, with their on/off and options: profile-copy FROM TO MOD... (a number is the mod's place in FROM)",
+                                           Positionals = new[] { "from", "to", "mods" }, Many = true, Run = ProfileCopy }),
             Cmd("profile-use", new Spec { Help = "switch to a profile and deploy it (--no-deploy: switch only)", Positionals = new[] { "name" }, Flags = new[] { "--no-deploy" }, Run = ProfileUse }),
             Cmd("profile-rename", new Spec { Help = "rename a profile", Positionals = new[] { "name", "to" }, Run = ProfileRename }),
             Cmd("profile-delete", new Spec { Help = "delete a profile (not the one in use); the mods stay in the library", Positionals = new[] { "name" }, Run = ProfileDelete }),
@@ -149,6 +151,7 @@ namespace Hd2Mod
                                      Flags = new[] { "--dry-run", "--copy", "--verify" }, Run = DeployCmd }),
             Cmd("status", new Spec { Help = "what a deploy would change", Flags = new[] { "--verify" }, Run = Status }),
             Cmd("targets", new Spec { Help = "where the library can deploy: the official game, and the targets plugins offer (HellForge); * marks the one in use", Run = TargetCmd }),
+            Cmd("integrity", new Spec { Help = "list what this computer would report for licensed mods whose files or segments do not match the creator's signed manifest and receipt (dry run: never sends, never writes)", Flags = new[] { "--dry-run" }, Run = IntegrityCmd }),
             Cmd("target", new Spec { Help = "deploy to another target (official, or a target a plugin offers): each target keeps its own list, " +
                                             "so switching changes which mods are on, their order and options",
                                      Positionals = new[] { "which" }, Run = TargetCmd }),
@@ -234,7 +237,7 @@ namespace Hd2Mod
         /// record or the game folder.</summary>
         static readonly HashSet<string> ReadOnly = new HashSet<string>
         {
-            "folders", "list", "tags", "groups", "status", "check", "which", "state", "conflicts", "profiles", "report", "nexus-info", "targets",
+            "folders", "list", "tags", "groups", "status", "check", "which", "state", "conflicts", "profiles", "report", "nexus-info", "targets", "integrity",
         };
 
         static bool Writes(string command, Args a) =>
@@ -371,6 +374,11 @@ namespace Hd2Mod
         static bool IsNumber(string x) => x.Length > 1 && x.Skip(1).All(char.IsDigit);
 
         // ------------------------------------------------------------ the commands
+
+        // The licensed-mod integrity check (Integrity, IntegrityWiring): list what this computer
+        // would report, dry run always -- it sends nothing and writes nothing. The window's
+        // background run does the sending (IntegrityWiring.RunBackground), not the command line.
+        static void IntegrityCmd(Args a, TextWriter o) => IntegrityWiring.Command(o);
 
         static void Init(Args a, TextWriter o)
         {
@@ -578,8 +586,12 @@ namespace Hd2Mod
             var mod = Ops.NewMod(folder, a.Value("--name"), Paths.Abs(path));
             // A stable manifest identity survives versioned names and the player's rename.
             // --name explicitly requests a separate entry (for example a variant).
-            var identity = Manifest.Read(folder)?.Guid;
+            var manifest = Manifest.Read(folder);
+            var identity = manifest?.Guid;
             var forTarget = a.Value("--for");
+            // the targets its manifest declares ("Targets"): one, that one; several, null (each)
+            bool declared = manifest?.Targets != null;
+            string declaredFor = declared && manifest.Targets.Count == 1 ? manifest.Targets[0] : null;
             var offered = forTarget != null || !a.Flag("--replace") ? PluginTargets.All(PluginHost.Make()).Select(t => t.Id).ToList() : new List<string>();
             if (forTarget != null && forTarget != Targets.Official && !offered.Contains(forTarget))
                 throw new ModError("no plugin offers the deploy target " + Ops.Repr(forTarget) + " (hd2qd targets lists them)", "no_target", forTarget);
@@ -591,6 +603,14 @@ namespace Hd2Mod
                     try { return string.Equals(Manifest.Read(m.Path)?.Guid, identity, StringComparison.OrdinalIgnoreCase); }
                     catch (Exception e) when (e is ModError || e is IOException || e is UnauthorizedAccessException) { return false; }
                 }).ToList();
+                // a declared mod answers the question itself: the build for the same target is its
+                // new version; for another target the library offers, it goes beside as that build
+                if (forTarget == null && declared && matches.Count > 0 && !a.Flag("--replace"))
+                {
+                    var same = matches.FirstOrDefault(m => m.For == declaredFor);
+                    if (same != null) { a.Pos["mod"] = same.Id; Replace(a, o); return; }
+                    if (declaredFor != null && (declaredFor == Targets.Official || offered.Contains(declaredFor))) forTarget = declaredFor;
+                }
                 // one build for each target: the one of the target asked for, else ask
                 if (forTarget != null)
                 {
@@ -646,6 +666,8 @@ namespace Hd2Mod
             // a target's own mod (a plugin knows its own kind, as HellForge's hellforge-mod.json)
             if (forTarget == null) mod.For = PluginTargets.Claim(folder, PluginHost.Make());
             else if (pairWith == null) mod.For = forTarget;
+            // what the manifest declares comes before a plugin's claim and --for (Targets.Declare)
+            if (declared) { mod.For = declaredFor; mod.ForDeclared = true; }
             if (pairWith != null)
             {
                 // beside the other build, in the same place of the order
@@ -1544,6 +1566,22 @@ namespace Hd2Mod
             o.WriteLine(n + " mods " + (add ? "put into " : "taken out of ") + Ops.Repr(lib.Active) + (add ? "" : " (still in the library)"));
         }
 
+        static void ProfileCopy(Args a, TextWriter o)
+        {
+            var lib = Library.Load();
+            var from = Profiles.Find(lib, a.Pos["from"]);
+            var to = Profiles.Find(lib, a.Pos["to"]);
+            // a number is a place in FROM's own order (its mod 1 is its first), not in the profile in use
+            var mods = a.Rest.Select(r => Ops.IsDigits(r) && int.TryParse(r, out var n)
+                                         ? (n >= 1 && n <= from.Order.Count ? lib.Mods.FirstOrDefault(m => m.Id == from.Order[n - 1]) : null)
+                                           ?? throw new ModError(Ops.Repr(from.Name) + " has no mod " + r + " (it has " + from.Order.Count + ")", "no_mod", r)
+                                         : Ops.Pick(lib, r)).ToList();
+            var (added, updated) = Profiles.CopyMods(lib, from.Name, to.Name, mods);
+            lib.Save();
+            o.WriteLine("copied " + mods.Count + " mods from " + Ops.Repr(from.Name) + " into " + Ops.Repr(to.Name) + ": " + added + " added at its bottom, " + updated + " updated" +
+                        (string.Equals(to.Name, lib.Active, StringComparison.CurrentCultureIgnoreCase) ? " (in use: hd2qd deploy puts them in the game)" : ""));
+        }
+
         static void ProfileNew(Args a, TextWriter o)
         {
             var lib = Library.Load();
@@ -1661,6 +1699,9 @@ namespace Hd2Mod
             var lib = Library.Load();
             var mod = Ops.Pick(lib, a.Pos["mod"]);
             var t = a.Pos["target"];
+            if (mod.ForDeclared)
+                throw new ModError(mod.Name + "'s manifest says which targets it is for (" + (mod.For ?? "both") + "): its \"Targets\" decides, not this command",
+                                   "for_declared", mod.Name + "\n" + (mod.For ?? "both"));
             if (t == "both") t = null;
             else if (t != Targets.Official && PluginTargets.All(PluginHost.Make()).All(x => x.Id != t))
                 throw new ModError("no plugin offers the deploy target " + Ops.Repr(t) + " (hd2qd targets lists them)", "no_target", t);

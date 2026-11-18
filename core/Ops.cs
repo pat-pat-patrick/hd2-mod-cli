@@ -14,7 +14,7 @@ namespace Hd2Mod
         /// <summary>A name as Python's %r writes it, near enough for a message.</summary>
         public static string Repr(string s) => "'" + s + "'";
 
-        static bool IsDigits(string s) => s.Length > 0 && s.All(c => c >= '0' && c <= '9');
+        public static bool IsDigits(string s) => s.Length > 0 && s.All(c => c >= '0' && c <= '9');
 
         /// <summary>The game folder from HD2 Arsenal's settings or Steam's library list, if either knows it.</summary>
         public static string FindGame()

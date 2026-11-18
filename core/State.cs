@@ -650,7 +650,7 @@ namespace Hd2Mod
                 mods.Add(new Dictionary<string, object>
                 {
                     ["index"] = (long)index, ["id"] = m.Id, ["name"] = m.Name, ["real_name"] = m.RealName, ["enabled"] = m.Enabled, ["path"] = m.Path,
-                    ["for"] = m.For, ["pair"] = m.Pair,
+                    ["for"] = m.For, ["for_declared"] = m.ForDeclared, ["pair"] = m.Pair,
                     ["in_profile"] = Profiles.InProfile(lib, m),
                     ["source"] = m.Source, ["exists"] = exists, ["manifest"] = manifest != null,
                     ["description"] = Or(manifest?.Description, m.Description) ?? "", ["options"] = options,

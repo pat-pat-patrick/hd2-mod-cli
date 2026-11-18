@@ -73,6 +73,35 @@ namespace Hd2Mod
         /// <summary>Whether a mod belongs to the target in use (Mod.For).</summary>
         public static bool Belongs(Library lib, Mod m) => m.For == null || m.For == Current(lib);
 
+        /// <summary>Each mod's target as its manifest declares it ("Targets", Manifest.Targets):
+        /// Mod.For follows it and ForDeclared is on, and a mod that no longer belongs to the target
+        /// in use goes off. Done on every load, so a manifest changed in place counts at once; an
+        /// undeclared mod keeps the player's choice (the user, 2026-11-15).</summary>
+        public static void Declare(Library lib)
+        {
+            foreach (var m in lib.Mods)
+            {
+                m.ForDeclared = DeclaredFor(m, out var f);
+                if (!m.ForDeclared) continue;
+                m.For = f;
+                if (m.Enabled && !Belongs(lib, m)) m.Enabled = false;
+            }
+        }
+
+        /// <summary>Whether the mod's manifest declares its targets, and Mod.For as it says: one
+        /// target, that one; several (Official and HellForge), null: for each of them.</summary>
+        public static bool DeclaredFor(Mod m, out string forTarget)
+        {
+            forTarget = null;
+            if (string.IsNullOrEmpty(m?.Path)) return false;
+            Manifest man;
+            try { man = Manifest.Read(m.Path); }
+            catch (Exception e) when (e is ModError || e is System.IO.IOException || e is UnauthorizedAccessException || e is ArgumentException) { return false; }
+            if (man?.Targets == null) return false;
+            forTarget = man.Targets.Count == 1 ? man.Targets[0] : null;
+            return true;
+        }
+
         /// <summary>Mods for another target off; of a pair, only one on.</summary>
         public static void Enforce(Library lib)
         {
