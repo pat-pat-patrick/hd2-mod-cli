@@ -67,6 +67,14 @@ namespace Hd2Mod.Tests
             return Sign(t);
         }
 
+        /// <summary>A sealed (C1) claim's receipt: sealed_hash over the ciphertext blobs on disk.</summary>
+        static string Receipt2(string[] blobs, string account = Acct, string version = Version, string id = "super-beacon")
+        {
+            var t = "HD2 MOD SEGMENTS 2\nissuer=" + Issuer + "\nid=" + id + "\nversion=" + version + "\naccount=" + account
+                + "\nalg=A256CBC\nsegments_hash=" + Sha("plain") + "\nsealed_hash=" + Sha(string.Concat(blobs)) + "\nissued=1000\n";
+            return Sign(t);
+        }
+
         sealed class FakeEnv : Integrity.IIntegrityEnv
         {
             public long Now = 2000;
@@ -78,7 +86,7 @@ namespace Hd2Mod.Tests
             public readonly Dictionary<string, long> Sent = new Dictionary<string, long>();
 
             public long NowUnix() => Now;
-            public string Manifest(string issuer, string guid) => ManifestText;
+            public string Manifest(Integrity.LicensedMod mod) => ManifestText;
             public IEnumerable<string> LocalAccounts() => Accounts;
             public string[] ReadSegments(string issuer, string id, string version, int count, out string receipt)
             { receipt = ReceiptText; return Segs; }
@@ -198,6 +206,95 @@ namespace Hd2Mod.Tests
                 Add("plain", null);                            // no licence at all
                 var got = IntegrityWiring.Licensed(lib).Count;
                 Assert.Equal(3, got);
+            }
+            finally { try { System.IO.Directory.Delete(root, true); } catch { } }
+        }
+
+        /// <summary>A member's own sealed (C1) claim holds only ciphertext between sessions: it is
+        /// checked against sealed_hash and is not reported. Before (2026-11-19 audit) every honest C1
+        /// member read as "incomplete", and a copied claim was never "someone else's".</summary>
+        [Fact]
+        public void OurSealedClaimIsNotReportedAndSomeoneElsesIsWithItsReceipt()
+        {
+            var blobs = new[] { "QUJD", "REVG" };
+            var env = new FakeEnv { ManifestText = Manifest(Shell), Segs = blobs, ReceiptText = Receipt2(blobs) };
+            Assert.Empty(Integrity.Scan(new[] { Mod(Shell, segCount: 2) }, env));
+            env.ReceiptText = Receipt2(blobs, account: Other);           // a claim made for another account
+            var f = Assert.Single(Integrity.Scan(new[] { Mod(Shell, segCount: 2) }, env));
+            Assert.Equal("segments", f.Kind);
+            Assert.Equal(env.ReceiptText, f.Receipt);                    // the issuer can verify whose claim it is
+            Assert.Contains("\"receipt\":", Integrity.ReportJson(f));
+            env.ReceiptText = Receipt2(new[] { "QUJD", "XXXX" });        // ciphertext that is not what was signed
+            Assert.Single(Integrity.Scan(new[] { Mod(Shell, segCount: 2) }, env), x => x.Kind == "segments");
+        }
+
+        /// <summary>The manifest is found by the licence's segments id; one signed for another Guid
+        /// than manifest.json names means the Guid was edited, which used to make the lookup miss
+        /// and the check go quiet (2026-11-19 audit).</summary>
+        [Fact]
+        public void AnEditedGuidIsAPackage()
+        {
+            var env = new FakeEnv { ManifestText = Manifest(Shell) };
+            var mod = Mod(Shell, segCount: 2);
+            mod.Guid = "00000000-0000-0000-0000-000000000000";
+            Assert.Single(Integrity.Scan(new[] { mod }, env), f => f.Kind == "package");
+        }
+
+        /// <summary>A last-sent time still to come does not silence a mod (2026-11-19 audit).</summary>
+        [Fact]
+        public void ASentTimeStillToComeDoesNotThrottle()
+        {
+            var env = new FakeEnv { ManifestText = Manifest(Shell, version: "v9.9.9") };
+            var findings = Integrity.Scan(new[] { Mod(Shell) }, env);
+            env.Sent[Guid + ":package"] = env.Now + 999999;
+            Assert.Equal(1, Integrity.Report(findings, env));
+            Assert.Equal(0, Integrity.Report(findings, env));             // and the real throttle still holds
+        }
+
+        /// <summary>The issuer and key are read as the members' plugin reads them: a key padded with
+        /// zeros or spaces, which still claims there, is still checked here (2026-11-19 audit).</summary>
+        [Fact]
+        public void APaddedKeyIsStillALicensedMod()
+        {
+            var root = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "hd2qd-integrity-" + System.Guid.NewGuid().ToString("N"));
+            try
+            {
+                var dir = System.IO.Path.Combine(root, "padded");
+                System.IO.Directory.CreateDirectory(dir);
+                System.IO.File.WriteAllText(System.IO.Path.Combine(dir, "manifest.json"), "{\"Guid\":\"" + Guid + "\",\"Name\":\"Super Beacon v1.0.0\"}");
+                System.IO.File.WriteAllText(System.IO.Path.Combine(dir, "hd2_license.json"),
+                    "{\"protocol\":1,\"issuer\":\" LIC.test \",\"key\":\" 00" + Modulus.ToUpperInvariant() + " \"}");
+                var lib = new Library();
+                lib.Mods.Add(new Mod { Id = "padded", Name = "padded", Path = dir });
+                var m = Assert.Single(IntegrityWiring.Licensed(lib));
+                Assert.Equal(Issuer, m.Issuer);
+                Assert.Equal(Modulus, m.KeyModulusHex);
+            }
+            finally { try { System.IO.Directory.Delete(root, true); } catch { } }
+        }
+
+        /// <summary>The live environment: the accounts are the game's own save files, never the
+        /// receipt being checked; a sealed claim is read as its ciphertext.</summary>
+        [Fact]
+        public void TheLiveEnvironmentReadsSavesAndCiphertext()
+        {
+            var root = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "hd2qd-integrity-" + System.Guid.NewGuid().ToString("N"));
+            try
+            {
+                var hd2 = System.IO.Path.Combine(root, "Arrowhead", "Helldivers2");
+                System.IO.Directory.CreateDirectory(System.IO.Path.Combine(hd2, "saves"));
+                System.IO.File.WriteAllText(System.IO.Path.Combine(hd2, "saves", Acct + "_user_settings.config"), "x");
+                var dir = System.IO.Path.Combine(hd2, "licenses", Issuer, "segments", "super-beacon", Version);
+                System.IO.Directory.CreateDirectory(dir);
+                var blobs = new[] { "QUJD", "REVG" };
+                System.IO.File.WriteAllText(System.IO.Path.Combine(dir, "receipt.txt"), Receipt2(blobs, account: Other));
+                System.IO.File.WriteAllText(System.IO.Path.Combine(dir, "seg1.enc"), blobs[0]);
+                System.IO.File.WriteAllText(System.IO.Path.Combine(dir, "seg2.enc"), blobs[1]);
+                var env = new IntegrityWiring.LiveEnv(false, root);
+                Assert.Equal(new[] { Acct }, env.LocalAccounts().ToArray());  // not Other, though the receipt names it
+                var segs = env.ReadSegments(Issuer, "super-beacon", Version, 2, out var receipt);
+                Assert.Equal(blobs, segs);
+                Assert.StartsWith("HD2 MOD SEGMENTS 2", receipt);
             }
             finally { try { System.IO.Directory.Delete(root, true); } catch { } }
         }

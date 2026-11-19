@@ -48,6 +48,7 @@ namespace Hd2Mod
             public List<KeyValuePair<string, string>> Files;  // mismatching files: path, hash
             public List<string> Segments;                     // on-disk segment hashes (segments kind)
             public List<string> Accounts;                     // this machine's game accounts
+            public string Receipt;                            // segments kind: the receipt on disk, which the issuer can verify
         }
 
         /// <summary>The side effects the check needs, so the logic above stays pure and testable.
@@ -58,8 +59,10 @@ namespace Hd2Mod
         {
             long NowUnix();
             /// <summary>The signed integrity manifest text for a mod, fetched at most once a day and
-            /// cached; null when there is none or the fetch failed.</summary>
-            string Manifest(string issuer, string guid);
+            /// cached; null when there is none or the fetch failed. Looked up by the licence's
+            /// segments id when the mod has one (the members' plugin needs it, so it cannot be
+            /// changed and the mod still work), else by the manifest's Guid.</summary>
+            string Manifest(LicensedMod mod);
             /// <summary>This computer's game account ids (16 hex), for checking a receipt is ours.</summary>
             IEnumerable<string> LocalAccounts();
             /// <summary>The on-disk segment texts seg1..segN and the receipt for one account's claim,
@@ -74,6 +77,9 @@ namespace Hd2Mod
         }
 
         public const int ThrottleSeconds = 24 * 3600;   // section 10.4: one of a kind a day
+
+        /// <summary>The first line of a sealed (C1) claim's receipt.</summary>
+        public const string SegmentsHeader2 = "HD2 MOD SEGMENTS 2\n";
 
         // ---- the signed-text crypto (mirrors lua/license_check.lua) -------------
         // RSASSA-PKCS1-v1_5 over SHA-256, exponent 65537, over every byte up to and
@@ -125,11 +131,22 @@ namespace Hd2Mod
         public static Dictionary<string, Dictionary<string, string>> ParseManifest(
             string text, string issuerHost, string guid, string modulusHex)
         {
+            var r = ParseManifest(text, issuerHost, modulusHex, out var mod);
+            return r != null && string.Equals(mod, guid, StringComparison.OrdinalIgnoreCase) ? r : null;
+        }
+
+        /// <summary>The manifest's releases when it is signed by the key for this issuer, with the
+        /// mod (Guid) it signs for; null when it is not a good manifest.</summary>
+        public static Dictionary<string, Dictionary<string, string>> ParseManifest(
+            string text, string issuerHost, string modulusHex, out string signedMod)
+        {
+            signedMod = null;
             if (string.IsNullOrEmpty(text)) return null;
             if (!text.StartsWith("HD2 MOD INTEGRITY 1\n", StringComparison.Ordinal)) return null;
             if (!SignatureOk(text, modulusHex)) return null;
             if (!string.Equals(Field(text, "issuer"), issuerHost, StringComparison.OrdinalIgnoreCase)) return null;
-            if (!string.Equals(Field(text, "mod"), guid, StringComparison.OrdinalIgnoreCase)) return null;
+            signedMod = Field(text, "mod");
+            if (string.IsNullOrEmpty(signedMod)) return null;
             var byVersion = new Dictionary<string, Dictionary<string, string>>(StringComparer.Ordinal);
             foreach (var raw in text.Split('\n'))
             {
@@ -161,11 +178,19 @@ namespace Hd2Mod
             foreach (var m in mods)
             {
                 if (m == null || string.IsNullOrEmpty(m.Guid) || string.IsNullOrEmpty(m.Issuer) || m.Files == null) continue;
-                var manifest = ParseManifest(env.Manifest(m.Issuer, m.Guid), m.Issuer, m.Guid, m.KeyModulusHex);
+                var manifest = ParseManifest(env.Manifest(m), m.Issuer, m.KeyModulusHex, out var signedMod);
                 // no manifest signed with the mod's key: its creator has not turned the check on
                 // (or this computer has never reached the issuer). Nothing at all is checked or
                 // sent for it, its segments included.
                 if (manifest == null) continue;
+                // found by the licence's segments id, but signed for another Guid than the mod's
+                // manifest.json names: the Guid was changed (2026-11-19 audit: an edited Guid used to
+                // make the lookup miss and the whole check go quiet). A package of its own.
+                if (!string.Equals(signedMod, m.Guid, StringComparison.OrdinalIgnoreCase))
+                {
+                    findings.Add(Make(m, "package", m.Files.OrderBy(d => d.Key).Take(64).ToList(), null, accounts));
+                    continue;
+                }
 
                 // shell / package: the library's files against the signed manifest for this version.
                 if (manifest.TryGetValue(m.Version, out var want))
@@ -190,9 +215,13 @@ namespace Hd2Mod
                 // segments: the on-disk claim against its receipt (section 5, 6).
                 if (!string.IsNullOrEmpty(m.SegmentsId) && m.SegmentsCount > 0)
                 {
-                    var segProblem = SegmentsProblem(m, env, accounts, out var segHashes);
+                    var segProblem = SegmentsProblem(m, env, accounts, out var segHashes, out var receiptText);
                     if (segProblem)
-                        findings.Add(Make(m, "segments", null, segHashes, accounts));
+                    {
+                        var f = Make(m, "segments", null, segHashes, accounts);
+                        if (receiptText != null && receiptText.Length <= 8192) f.Receipt = receiptText;
+                        findings.Add(f);
+                    }
                 }
             }
             return findings;
@@ -201,10 +230,11 @@ namespace Hd2Mod
         /// <summary>True when the on-disk segments do not match a good receipt for an account on
         /// this machine (missing receipt, bad signature, not our account, or a hash that disagrees
         /// -- someone else's segments). segHashes gets the on-disk segment hashes either way.</summary>
-        static bool SegmentsProblem(LicensedMod m, IIntegrityEnv env, List<string> accounts, out List<string> segHashes)
+        static bool SegmentsProblem(LicensedMod m, IIntegrityEnv env, List<string> accounts, out List<string> segHashes, out string receiptText)
         {
             segHashes = new List<string>();
             var segs = env.ReadSegments(m.Issuer, m.SegmentsId, m.Version, m.SegmentsCount, out var receipt);
+            receiptText = receipt;
             if (segs == null) return false;                 // not installed yet: nothing to check, not a problem
             foreach (var s in segs) segHashes.Add(s == null ? "" : Sha256Hex(Encoding.UTF8.GetBytes(s)));
             if (segs.Any(s => s == null)) return true;      // an incomplete claim on disk
@@ -215,7 +245,11 @@ namespace Hd2Mod
             if (!string.Equals(Field(receipt, "version"), m.Version, StringComparison.Ordinal)) return true;
             var acct = (Field(receipt, "account") ?? "").ToLowerInvariant();
             if (!accounts.Contains(acct)) return true;      // a receipt for an account not on this machine
-            var want = Field(receipt, "segments_hash") ?? "";
+            // a sealed (C1) claim keeps only its ciphertext on disk between sessions: its blobs are
+            // what the receipt's sealed_hash covers (ReadSegments gives them for such a receipt). A
+            // plaintext-era receipt covers the texts with segments_hash.
+            bool sealedClaim = receipt.StartsWith(SegmentsHeader2, StringComparison.Ordinal);
+            var want = Field(receipt, sealedClaim ? "sealed_hash" : "segments_hash") ?? "";
             var got = Sha256Hex(Encoding.UTF8.GetBytes(string.Concat(segs)));
             if (!string.Equals(want, got, StringComparison.OrdinalIgnoreCase)) return true;
             return false;
@@ -244,7 +278,9 @@ namespace Hd2Mod
             {
                 string key = f.Mod + ":" + f.Kind;
                 long last = env.LastSent(key);
-                if (last != 0 && now - last < ThrottleSeconds) continue;   // 0 = never sent -> allowed
+                // 0 = never sent -> allowed; a time still to come is no sending at all (2026-11-19
+                // audit: one set far ahead in the state file silenced the mod for good)
+                if (last != 0 && last <= now && now - last < ThrottleSeconds) continue;
                 var url = "https://" + f.Issuer + "/integrity/report";
                 bool ok;
                 try { ok = env.Post(url, ReportJson(f)); } catch { ok = false; }
@@ -266,6 +302,7 @@ namespace Hd2Mod
                 d["files"] = f.Files.Select(p => (object)new Dictionary<string, object> { ["path"] = p.Key, ["hash"] = p.Value }).ToList();
             if (f.Segments != null) d["segments"] = f.Segments.Cast<object>().ToList();
             if (f.Accounts != null) d["accounts"] = f.Accounts.Cast<object>().ToList();
+            if (f.Receipt != null) d["receipt"] = f.Receipt;
             return Json.Write(d);
         }
 

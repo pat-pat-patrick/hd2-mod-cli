@@ -2278,6 +2278,7 @@ namespace QuickDeploy
             }
             finally { refreshing = false; }
             CollectWhenIdle();
+            IntegritySoon();
             if (!setupDone)
             {
                 setupDone = true;
@@ -2474,6 +2475,34 @@ namespace QuickDeploy
             }), DispatcherPriority.ApplicationIdle);
         }
         bool collectQueued;
+
+        /// <summary>The licensed mods' integrity check (IntegrityWiring.RunBackground: only mods
+        /// whose creator publishes a signed manifest, silent, nothing logged) after the first read
+        /// and after a read that found the state files changed, at most every 10 minutes and one
+        /// at a time, off the window's thread. It had no caller, so it never ran (2026-11-19 audit).</summary>
+        void IntegritySoon()
+        {
+            var stamp = readStamp;
+            if (integrityRunning || stamp == integritySaw) return;
+            var wait = integrityAt + TimeSpan.FromMinutes(10) - DateTime.UtcNow;
+            if (wait > TimeSpan.Zero)
+            {
+                if (integrityLater != null) return;                 // one is waiting already
+                integrityLater = new DispatcherTimer { Interval = wait };
+                integrityLater.Tick += (s, e) => { integrityLater.Stop(); integrityLater = null; IntegritySoon(); };
+                integrityLater.Start();
+                return;
+            }
+            integritySaw = stamp;
+            integrityAt = DateTime.UtcNow;
+            integrityRunning = true;
+            Task.Run(() => IntegrityWiring.RunBackground(Library.Load()))
+                .ContinueWith(_ => Dispatcher.BeginInvoke(new Action(() => integrityRunning = false)));
+        }
+        string integritySaw;
+        DateTime integrityAt = DateTime.MinValue;
+        bool integrityRunning;
+        DispatcherTimer integrityLater;
 
         async void WarmLua()
         {
