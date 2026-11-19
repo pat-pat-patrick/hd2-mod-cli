@@ -18,7 +18,7 @@ namespace Hd2Mod.Tests
         const string Guid = "1f5366a3-557d-40ad-a821-553220c8588d";
         const string Issuer = "lic.test";
         const string Version = "v0.35.0";
-        const string Acct = "011000010fbb262c";
+        const string Acct = "0f1e2d3c4b5a6978";   // made up (never a real player's id: this repository is public)
         const string Other = "aaaa1111bbbb2222";
 
         static readonly RSA Key = MakeKey();
