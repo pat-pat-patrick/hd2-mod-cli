@@ -175,6 +175,9 @@ namespace Hd2Mod
                         {
                             var name = Path.GetFileName(f);
                             var id = name.Substring(0, name.IndexOf('_')).ToLowerInvariant();
+                            // the game drops the id's leading zeros from the name (a1b2c3d4e5f6071 for
+                            // 0a1b2c3d4e5f6071); the license and the plugin (1.9.0) name it padded to 16
+                            if (Regex.IsMatch(id, "^[0-9a-f]{1,16}$")) id = id.PadLeft(16, '0');
                             if (Account.IsMatch(id) && id.Length == 16) found.Add(id);
                         }
                 }

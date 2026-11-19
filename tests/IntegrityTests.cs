@@ -292,6 +292,9 @@ namespace Hd2Mod.Tests
                 System.IO.File.WriteAllText(System.IO.Path.Combine(dir, "seg2.enc"), blobs[1]);
                 var env = new IntegrityWiring.LiveEnv(false, root);
                 Assert.Equal(new[] { Acct }, env.LocalAccounts().ToArray());  // not Other, though the receipt names it
+                // the game drops leading zeros from the name: 0a1b2c3d4e5f6071 is saved as a1b2c3d4e5f6071_...
+                System.IO.File.WriteAllText(System.IO.Path.Combine(hd2, "saves", "a1b2c3d4e5f6071_user_settings.config"), "x");
+                Assert.Contains("0a1b2c3d4e5f6071", env.LocalAccounts());
                 var segs = env.ReadSegments(Issuer, "super-beacon", Version, 2, out var receipt);
                 Assert.Equal(blobs, segs);
                 Assert.StartsWith("HD2 MOD SEGMENTS 2", receipt);
