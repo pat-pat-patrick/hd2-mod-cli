@@ -470,6 +470,9 @@ namespace Hd2Mod
             return new Dictionary<string, object>
             {
                 ["api"] = (long)PluginFiles.Api, ["home"] = Store.Home, ["appdata"] = AppData, ["lang"] = Lang(),
+                // (0.22.0) this program's version, so a plugin can say what it needs of it (the
+                // members' plugin: a manager that runs on in the notification area). Absent before.
+                ["version"] = StateDoc.Version,
                 ["data"] = game != null ? Paths.Join(game, "data") : null,
                 ["mods"] = (Func<List<Dictionary<string, object>>>)(() => Mods(Library.Load())),
                 ["target"] = (Func<string>)(() => Targets.Current(Library.Load())),

@@ -467,6 +467,14 @@ namespace Hd2Mod.Tests
             Assert.True(PluginFiles.Pinned("HD2QD.Sample.dll"));
         }
 
+        /// <summary>(0.22.0) The host says this program's version, so a plugin can say what it
+        /// needs of it (the members' plugin: a manager that runs on in the notification area).</summary>
+        [Fact]
+        public void The_host_says_its_version()
+        {
+            Assert.Equal(StateDoc.Version, PluginHost.Make()["version"]);
+        }
+
         [Fact]
         public void A_plugins_start_runs_with_the_host()
         {
