@@ -1104,6 +1104,7 @@
   "target_official": "Official",
   "target_official_tip": "Deploy to the official game (the game folder)",
   "target_tip": "Deploy to {0}. Each target has its own enabled mods, load order and options.",
+  "target_switching": "Switching to {0}…",
   "target_switched": "switched to {0}: its own mod list is in use",
   "target_fell_back": "Switched to the official game: no added plugin provides the deploy target {0}. Its mod list is kept and can be selected again once the plugin is added.",
   "target_summary": "Deploy target: {0}",

@@ -197,6 +197,11 @@ namespace QuickDeploy
         }
 
         System.Windows.Controls.ContextMenu trayMenu;
+        // the parts of the open menu that follow the state while it stays open (a target switch)
+        System.Windows.Controls.TextBlock trayStatus;
+        System.Windows.Shapes.Ellipse trayDot;
+        System.Windows.Controls.MenuItem trayDeploy, trayLaunch;
+        System.Windows.Controls.Primitives.UniformGrid traySwitch;
 
         /// <summary>The icon's menu, in the window's own menu style (the user, 2026-11-19: the
         /// system's two-line menu was too bare): what the manager is doing now (the window's bottom
@@ -210,16 +215,18 @@ namespace QuickDeploy
             if (trayMenu != null && trayMenu.IsOpen) { trayMenu.IsOpen = false; return; }
             bool running = Hd2Mod.Deploy.GameRunning();
             bool ready = st != null && !busy;
-            var menu = new System.Windows.Controls.ContextMenu { MinWidth = 260 };
+            // one width while it is open: the status line changes during a target switch, and the
+            // menu grew under the pointer (measured 2026-11-19); 300 of words + the rows' margins
+            var menu = new System.Windows.Controls.ContextMenu { Width = 334 };
 
             // what is true now: the bottom line of the window, its colour on the dot
             var head = new System.Windows.Controls.StackPanel { MaxWidth = 300 };
             head.Children.Add(new System.Windows.Controls.TextBlock { Text = Texts.Get("title"), FontWeight = FontWeights.Bold, FontSize = 14, Foreground = B("Ink") });
             var said = new System.Windows.Controls.DockPanel { Margin = new Thickness(0, 6, 0, 0) };
-            var dot = new System.Windows.Shapes.Ellipse { Width = 8, Height = 8, Fill = running ? B("Blue") : FootDot.Fill, Margin = new Thickness(0, 2.5, 8, 0), VerticalAlignment = VerticalAlignment.Top };   // centred on the first line's letters (measured 11-19: 5 px low at 2x)
+            var dot = trayDot = new System.Windows.Shapes.Ellipse { Width = 8, Height = 8, Fill = running ? B("Blue") : FootDot.Fill, Margin = new Thickness(0, 2.5, 8, 0), VerticalAlignment = VerticalAlignment.Top };   // centred on the first line's letters (measured 11-19: 5 px low at 2x)
             System.Windows.Controls.DockPanel.SetDock(dot, System.Windows.Controls.Dock.Left);
             said.Children.Add(dot);
-            said.Children.Add(new System.Windows.Controls.TextBlock
+            said.Children.Add(trayStatus = new System.Windows.Controls.TextBlock
             {
                 Text = running ? Texts.Get("tray_game_running") : FootText.Text, FontSize = 12, LineHeight = 16,
                 Foreground = B("Muted"), TextWrapping = TextWrapping.Wrap,
@@ -239,9 +246,10 @@ namespace QuickDeploy
             Item(Texts.Get("tray_open"), BringBack, strong: true);
             // the game of the target in use: the official one, or a plugin target's session
             bool busyGame = st != null && (st.OnOfficial ? running : st.TargetRunning);
-            Item(Texts.Get("launch"), TrayLaunch, ready && !busyGame);
+            trayLaunch = Item(Texts.Get("launch"), TrayLaunch, ready && !busyGame && switchingTo == null);
             int pending = st?.Pending ?? 0;
-            Item(pending > 0 ? Texts.F("deploy_n", pending) : Texts.Get("deploy"), () => { BringBack(); Deploy_Click(null, null); }, ready && pending > 0 && !running);
+            trayDeploy = Item(pending > 0 ? Texts.F("deploy_n", pending) : Texts.Get("deploy"), () => { BringBack(); Deploy_Click(null, null); },
+                              ready && pending > 0 && !running && switchingTo == null);
 
             // the deploy target, official or a plugin's (HellForge), as the window's switch above the
             // library offers them and only when it shows (a plugin offers one); switching is the
@@ -254,23 +262,21 @@ namespace QuickDeploy
                     var all = new List<(string Id, string Title, string Tip)> { ("official", Texts.Get("target_official"), Texts.Get("target_official_tip")) };
                     all.AddRange(offers.Select(o => (o.Id, o.Title, o.Found ? Texts.F("target_tip", o.Title) : o.Why)));
                     if (!st.OnOfficial && all.All(a => a.Id != st.Target)) all.Add((st.Target, st.Target, Texts.F("target_no_plugin", st.Target)));
-                    var current = all.First(a => a.Id == st.Target || (st.OnOfficial && a.Id == "official"));
+                    var current = all.First(a => a.Id == (switchingTo ?? st.Target) || (switchingTo == null && st.OnOfficial && a.Id == "official"));
                     // the window's own switch, in one row: one click changes the target, nothing to
                     // open first (the user, 2026-11-19: a submenu was "太麻烦了")
-                    var row = new System.Windows.Controls.Primitives.UniformGrid { Rows = 1, Columns = all.Count };
+                    var row = traySwitch = new System.Windows.Controls.Primitives.UniformGrid { Rows = 1, Columns = all.Count };
                     foreach (var (id, title, tip) in all)
                     {
                         var rb = new System.Windows.Controls.RadioButton
                         {
                             Content = new System.Windows.Controls.TextBlock { Text = title, TextTrimming = TextTrimming.CharacterEllipsis },
-                            Style = (Style)FindResource("Segment"), GroupName = "tray_target", IsChecked = id == current.Id, ToolTip = tip,
-                            HorizontalAlignment = HorizontalAlignment.Stretch, MinHeight = 34, IsEnabled = ready,
+                            Style = (Style)FindResource("Segment"), GroupName = "tray_target", IsChecked = id == current.Id, ToolTip = tip, Tag = id,
+                            HorizontalAlignment = HorizontalAlignment.Stretch, MinHeight = 34, IsEnabled = ready && switchingTo == null,
                         };
-                        rb.Click += (s, e) =>
-                        {
-                            if (trayMenu != null) trayMenu.IsOpen = false;
-                            if (id != current.Id) SwitchTarget(id, title);
-                        };
+                        // the menu stays open: the new target lit at once and the status line saying
+                        // the switch, then what is true of the new target (UpdateTrayMenu)
+                        rb.Click += (s, e) => { if (id != current.Id) SwitchTarget(id, title); };
                         row.Children.Add(rb);
                     }
                     var frame = new System.Windows.Controls.Border
@@ -338,7 +344,12 @@ namespace QuickDeploy
             {
                 if (PresentationSource.FromVisual(menu) is HwndSource src) SetForegroundWindow(src.Handle);
             };
-            menu.Closed += (s, e) => { if (trayMenu == menu) trayMenu = null; };
+            menu.Closed += (s, e) =>
+            {
+                if (trayMenu != menu) return;
+                trayMenu = null;
+                trayStatus = null; trayDot = null; trayDeploy = trayLaunch = null; traySwitch = null;
+            };
             trayMenu = menu;
             menu.IsOpen = true;
         }
@@ -359,12 +370,7 @@ namespace QuickDeploy
             {
                 if (menu == null) return;
                 var dpi = VisualTreeHelper.GetDpi(menu);
-                var bmp = new System.Windows.Media.Imaging.RenderTargetBitmap((int)Math.Ceiling(menu.ActualWidth * dpi.DpiScaleX),
-                    (int)Math.Ceiling(menu.ActualHeight * dpi.DpiScaleY), dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
-                bmp.Render(menu);
-                var enc = new System.Windows.Media.Imaging.PngBitmapEncoder();
-                enc.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bmp));
-                using (var f = File.Create(file)) enc.Save(f);
+                SavePng(menu, file);
                 var top = menu.PointToScreen(new Point(0, 0));
                 var bottom = menu.PointToScreen(new Point(menu.ActualWidth, menu.ActualHeight));
                 File.WriteAllText(file + ".txt", string.Format(System.Globalization.CultureInfo.InvariantCulture,
@@ -372,6 +378,18 @@ namespace QuickDeploy
                     at.X, at.Y, menu.ActualWidth, menu.ActualHeight, top.X, top.Y, bottom.X, bottom.Y, dpi.DpiScaleX)
                     + "\r\n" + MenuRows(menu.Items, ""));
             }), DispatcherPriority.ContextIdle);
+        }
+
+        /// <summary>An element drawn into a PNG at its screen's scale (pictures only).</summary>
+        static void SavePng(FrameworkElement el, string file)
+        {
+            var dpi = VisualTreeHelper.GetDpi(el);
+            var bmp = new System.Windows.Media.Imaging.RenderTargetBitmap((int)Math.Ceiling(el.ActualWidth * dpi.DpiScaleX),
+                (int)Math.Ceiling(el.ActualHeight * dpi.DpiScaleY), dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
+            bmp.Render(el);
+            var enc = new System.Windows.Media.Imaging.PngBitmapEncoder();
+            enc.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bmp));
+            using (var f = File.Create(file)) enc.Save(f);
         }
 
         /// <summary>Each row of a menu and its submenus as text (pictures only: a submenu's rows are
@@ -395,6 +413,37 @@ namespace QuickDeploy
                 if (mi.Items.Count > 0) sb.Append(MenuRows(mi.Items, indent + "      "));
             }
             return sb.ToString();
+        }
+
+        /// <summary>The open menu brought up to date: during a target switch, the switch said and
+        /// nothing else to click; once the new target's state is drawn, its status, deploy count and
+        /// launch. Nothing when the menu is closed.</summary>
+        void UpdateTrayMenu()
+        {
+            Mark("tray menu update: " + (trayMenu == null ? "no menu" : trayMenu.IsOpen ? "open" : "closed") + (trayStatus == null ? ", no status" : "") + ", switching " + (switchingTo ?? "-"));
+            if (trayMenu == null || !trayMenu.IsOpen || trayStatus == null) return;
+            bool switching = switchingTo != null, ready = st != null && !busy && !switching;
+            bool running = Hd2Mod.Deploy.GameRunning();
+            bool busyGame = st != null && (st.OnOfficial ? running : st.TargetRunning);
+            trayStatus.Text = switching ? Texts.F("target_switching", switchingTitle) : running ? Texts.Get("tray_game_running") : FootText.Text;
+            trayDot.Fill = switching || running ? B("Blue") : FootDot.Fill;
+            int pending = st?.Pending ?? 0;
+            if (trayDeploy != null)
+            {
+                trayDeploy.Header = pending > 0 && !switching ? Texts.F("deploy_n", pending) : Texts.Get("deploy");
+                trayDeploy.IsEnabled = ready && pending > 0 && !running;
+            }
+            if (trayLaunch != null) trayLaunch.IsEnabled = ready && !busyGame;
+            if (traySwitch != null && st != null)
+            {
+                // the target chosen lit at once, then the one in use: from the state, not the click
+                string lit = switchingTo ?? (st.OnOfficial ? "official" : st.Target);
+                foreach (var rb in traySwitch.Children.OfType<System.Windows.Controls.RadioButton>())
+                {
+                    rb.IsEnabled = ready;
+                    rb.IsChecked = rb.Tag as string == lit;
+                }
+            }
         }
 
         /// <summary>A menu row that is only its content, at the rows' margins: no highlight of its

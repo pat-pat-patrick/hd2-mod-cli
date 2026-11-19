@@ -31,7 +31,7 @@ namespace QuickDeploy
                 var rb = new RadioButton
                 {
                     Content = new TextBlock { Text = title, TextTrimming = TextTrimming.CharacterEllipsis }, Style = (Style)FindResource("Segment"),
-                    GroupName = "deploy_target", IsChecked = id == st.Target, ToolTip = tip, HorizontalAlignment = HorizontalAlignment.Stretch,
+                    GroupName = "deploy_target", IsChecked = id == (switchingTo ?? st.Target), ToolTip = tip, HorizontalAlignment = HorizontalAlignment.Stretch,
                 };
                 rb.Click += (s, e) => { if (id != st.Target) SwitchTarget(id, title); };
                 row.Children.Add(rb);
@@ -43,15 +43,61 @@ namespace QuickDeploy
             };
         }
 
-        void SwitchTarget(string id, string title)
+        /// <summary>A target switch on its way: the target chosen, until the first state read begun
+        /// after it is drawn. Meanwhile the switch shows it lit, the bottom line says so and the
+        /// list is dimmed (the user, 2026-11-19: the read takes seconds, and with nothing changing
+        /// the switch looked broken or stuck).</summary>
+        string switchingTo, switchingTitle;
+        int switchReadFrom;
+        // from the click until the new list is drawn: the time the bottom line says it took (the
+        // save alone is milliseconds, and "0.07 s" after a wait of seconds read as untrue)
+        readonly System.Diagnostics.Stopwatch switchClock = new System.Diagnostics.Stopwatch();
+
+        async void SwitchTarget(string id, string title)
         {
-            _ = Act(() => Cli.Call(() =>
+            if (busy || switchingTo != null) return;
+            Mark("switch target: clicked");
+            switchingTo = id;
+            switchingTitle = title;
+            switchReadFrom = readsStarted;
+            switchClock.Restart();
+            if (st != null) RenderNav();
+            Foot(Texts.F("target_switching", title), "Blue");
+            ListArea.Opacity = 0.45;
+            ListArea.IsHitTestVisible = false;
+            UpdateTrayMenu();
+            bool ok = await Act(() => Cli.Call(() =>
             {
                 var lib = Library.Load();
                 Targets.Switch(lib, id);
                 lib.Save();
+                Mark("switch target: saved");
                 return Texts.F("target_switched", title);
-            }), true);
+            }), false);                                   // said with the whole time it took, once shown (EndSwitching)
+            if (!ok) EndSwitching(false);               // refused: no read is coming for it
+        }
+
+        /// <summary>After a state read is drawn: a switch ends once a read begun after it shows.</summary>
+        void SwitchShown(int readNo)
+        {
+            if (switchingTo != null && readNo > switchReadFrom) EndSwitching(true);
+            else UpdateTrayMenu();
+        }
+
+        void EndSwitching(bool switched)
+        {
+            if (switched && switchingTitle != null && st != null)
+            {
+                lastDone = Texts.F("took", Texts.F("target_switched", switchingTitle), Seconds(switchClock.Elapsed.TotalSeconds));
+                FootState();
+            }
+            switchClock.Stop();
+            switchingTo = switchingTitle = null;
+            ListArea.Opacity = 1;
+            ListArea.IsHitTestVisible = true;
+            Mark("switch target: shown");
+            if (st != null) RenderNav();
+            UpdateTrayMenu();
         }
 
         /// <summary>A deploy to the plugin's target: the plugin takes the list in use.</summary>

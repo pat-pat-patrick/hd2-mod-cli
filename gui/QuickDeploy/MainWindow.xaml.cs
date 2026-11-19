@@ -125,9 +125,11 @@ namespace QuickDeploy
                 if (dragRow != null) return;            // a row in hand: the list stays as it is
                 if (busy || DateTime.Now <= quietUntil) return;   // not now: the timer tries again
                 settle.Stop();
-                // the files as the last read found them: that read has shown them already. Our own
-                // command's write was read twice, the list drawn twice (the user, 2026-11-06)
-                if (!refreshing && Written() == readStamp) return;
+                // the files as the last read found them when it began: that read shows them, done or
+                // still going. Our own command's write was read twice, the list drawn twice (the user,
+                // 2026-11-06); and while that read was still going it was read a second time anyway,
+                // 3 s more after a target switch (measured 2026-11-19)
+                if (Written() == readStamp) return;
                 Refresh();
             };
             // a row dragged to another place follows the pointer until the button is let go
@@ -318,6 +320,18 @@ namespace QuickDeploy
                         var rb = FindAll<RadioButton>(trayMenu).FirstOrDefault(r => r.GroupName == "tray_target" && r.IsChecked != true);
                         Mark(rb == null ? "no target to switch to" : "switching to " + ((rb.Content as TextBlock)?.Text ?? "?"));
                         rb?.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+                        // HD2QD_SHOT: the menu as the click leaves it, then once the switch is shown
+                        var shot = Environment.GetEnvironmentVariable("HD2QD_SHOT");
+                        if (string.IsNullOrEmpty(shot)) return;
+                        Dispatcher.BeginInvoke(new Action(() => { if (trayMenu != null) SavePng(trayMenu, shot + "_switching.png"); Mark("shot: switching"); }), DispatcherPriority.ContextIdle);
+                        var wait = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
+                        wait.Tick += (s2, e2) =>
+                        {
+                            if (switchingTo != null) return;
+                            wait.Stop();
+                            Dispatcher.BeginInvoke(new Action(() => { if (trayMenu != null) SavePng(trayMenu, shot + "_shown.png"); Mark("shot: shown"); }), DispatcherPriority.ContextIdle);
+                        };
+                        wait.Start();
                     }), DispatcherPriority.ContextIdle);
                 };
                 tt.Start();
@@ -2289,6 +2303,7 @@ namespace QuickDeploy
                     Mark("state parsed");
                     Render();
                     Mark("rendered");
+                    SwitchShown(readNo);
                     RememberTitles();
                     if (!st.OnOfficial && !st.TargetOffered) FallBack(st.Target);
                     if (!st.LuaPending) AdjoinPacks();
