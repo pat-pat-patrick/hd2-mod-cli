@@ -13,15 +13,17 @@ namespace Hd2Mod
     /// A licensed mod ships only an inert shell in its public package; the feature Lua is 8
     /// per-account segments the member's licence lets them claim, each carrying that account's
     /// combination so a leaked copy can be traced. This check runs in the manager itself: for a
-    /// mod that declares "integrity": 1, it compares the library's files against the creator's
-    /// signed manifest and the on-disk segments against their receipt, and when something does
+    /// licensed mod whose creator publishes a signed integrity manifest on the issuer, it compares
+    /// the library's files against that manifest and the on-disk segments against their receipt, and when something does
     /// not line up it tells the creator's issuer -- silently, at most once a day per mod and
     /// kind, and never in any log. It is how a shared or altered copy is noticed by the people
     /// who did not bother to change managers.
     ///
     /// It never refuses a deploy and never bans: a report is a lead the creator confirms, not a
-    /// verdict. It reads only mods that opt in (the "integrity" declaration, or a Guid in the
-    /// roster). The sending, the throttle, the manifest fetch, the accounts and the clock are an
+    /// verdict. It reads only licensed mods (an hd2_license.json with an issuer and a key), and
+    /// checks only those whose issuer serves a manifest signed with the mod's key: the creator's
+    /// choice lives on the issuer, out of the player's reach (2026-11-19: it was an "integrity": 1
+    /// in the mod's own file, which a player could delete and keep the mod working). The sending, the throttle, the manifest fetch, the accounts and the clock are an
     /// <see cref="IIntegrityEnv"/> seam, so the comparison and the crypto are tested on their own.
     /// </summary>
     public static class Integrity
@@ -160,28 +162,29 @@ namespace Hd2Mod
             {
                 if (m == null || string.IsNullOrEmpty(m.Guid) || string.IsNullOrEmpty(m.Issuer) || m.Files == null) continue;
                 var manifest = ParseManifest(env.Manifest(m.Issuer, m.Guid), m.Issuer, m.Guid, m.KeyModulusHex);
+                // no manifest signed with the mod's key: its creator has not turned the check on
+                // (or this computer has never reached the issuer). Nothing at all is checked or
+                // sent for it, its segments included.
+                if (manifest == null) continue;
 
                 // shell / package: the library's files against the signed manifest for this version.
-                if (manifest != null)
+                if (manifest.TryGetValue(m.Version, out var want))
                 {
-                    if (manifest.TryGetValue(m.Version, out var want))
-                    {
-                        var diff = new List<KeyValuePair<string, string>>();
-                        foreach (var f in m.Files)
-                            if (!want.TryGetValue(f.Key, out var h) || !string.Equals(h, f.Value, StringComparison.OrdinalIgnoreCase))
-                                diff.Add(new KeyValuePair<string, string>(f.Key, f.Value));
-                        foreach (var w in want)        // a file the manifest has that the library dropped
-                            if (!m.Files.ContainsKey(w.Key))
-                                diff.Add(new KeyValuePair<string, string>(w.Key, ""));
-                        if (diff.Count > 0)
-                            findings.Add(Make(m, "shell", diff.OrderBy(d => d.Key).Take(64).ToList(), null, accounts));
-                    }
-                    else
-                    {
-                        // a package with this mod's Guid but a version the creator never released:
-                        // a repackaged/renamed build. Report the files; note the accounts installing it.
-                        findings.Add(Make(m, "package", m.Files.OrderBy(d => d.Key).Take(64).ToList(), null, accounts));
-                    }
+                    var diff = new List<KeyValuePair<string, string>>();
+                    foreach (var f in m.Files)
+                        if (!want.TryGetValue(f.Key, out var h) || !string.Equals(h, f.Value, StringComparison.OrdinalIgnoreCase))
+                            diff.Add(new KeyValuePair<string, string>(f.Key, f.Value));
+                    foreach (var w in want)        // a file the manifest has that the library dropped
+                        if (!m.Files.ContainsKey(w.Key))
+                            diff.Add(new KeyValuePair<string, string>(w.Key, ""));
+                    if (diff.Count > 0)
+                        findings.Add(Make(m, "shell", diff.OrderBy(d => d.Key).Take(64).ToList(), null, accounts));
+                }
+                else
+                {
+                    // a package with this mod's Guid but a version the creator never released:
+                    // a repackaged/renamed build. Report the files; note the accounts installing it.
+                    findings.Add(Make(m, "package", m.Files.OrderBy(d => d.Key).Take(64).ToList(), null, accounts));
                 }
 
                 // segments: the on-disk claim against its receipt (section 5, 6).

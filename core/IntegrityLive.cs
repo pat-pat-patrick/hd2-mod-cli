@@ -28,8 +28,11 @@ namespace Hd2Mod
 
         // ---- building the licensed-mod list from the library --------------------
 
-        /// <summary>The licensed mods in the library that opt in to the check ("integrity": 1 in
-        /// their hd2_license.json). Robust: any mod that cannot be read is skipped, never thrown.</summary>
+        /// <summary>Every licensed mod in the library: one whose hd2_license.json names an issuer
+        /// and a key, which the members' plugin needs to claim its content. Whether its creator
+        /// checks it is the issuer's to say, by publishing a signed manifest (Integrity.Scan), never
+        /// a field in the mod: an "integrity": 1 here could be deleted and the mod still worked
+        /// (the user, 2026-11-19). Robust: any mod that cannot be read is skipped, never thrown.</summary>
         public static List<Integrity.LicensedMod> Licensed(Library lib)
         {
             var mods = new List<Integrity.LicensedMod>();
@@ -38,7 +41,7 @@ namespace Hd2Mod
                 try
                 {
                     var lic = ReadJson(Path.Combine(m.Path, "hd2_license.json"));
-                    if (lic == null || Json.Long(lic, "integrity") != 1) continue;
+                    if (lic == null) continue;
                     var manifest = ReadJson(Path.Combine(m.Path, "manifest.json"));
                     if (manifest == null) continue;
                     var guid = Json.Str(manifest, "Guid");

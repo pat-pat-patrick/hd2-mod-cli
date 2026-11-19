@@ -160,6 +160,48 @@ namespace Hd2Mod.Tests
             Assert.Empty(findings);
         }
 
+        /// <summary>The creator's choice is the issuer's manifest: with none, even someone else's
+        /// segments on disk are not checked or sent (2026-11-19).</summary>
+        [Fact]
+        public void NothingIsCheckedWhenTheIssuerPublishesNoManifest()
+        {
+            var segs = new[] { "s1", "s2" };
+            var env = new FakeEnv { ManifestText = null, Segs = segs, ReceiptText = Receipt(segs, account: Other) };
+            Assert.Empty(Integrity.Scan(new[] { Mod(Shell, segCount: 2) }, env));
+            env.ManifestText = Manifest(Shell);                       // the same files, the check turned on
+            Assert.Single(Integrity.Scan(new[] { Mod(Shell, segCount: 2) }, env), f => f.Kind == "segments");
+        }
+
+        /// <summary>A licensed mod is checked whatever its hd2_license.json says of "integrity":
+        /// deleting that line took it out of the check while the mod still worked (the user,
+        /// 2026-11-19). A folder with no issuer or key is no licensed mod.</summary>
+        [Fact]
+        public void TheIntegrityLineInTheModDoesNotDecide()
+        {
+            var root = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "hd2qd-integrity-" + System.Guid.NewGuid().ToString("N"));
+            try
+            {
+                var lib = new Library();
+                void Add(string folder, string license)
+                {
+                    var dir = System.IO.Path.Combine(root, folder);
+                    System.IO.Directory.CreateDirectory(dir);
+                    System.IO.File.WriteAllText(System.IO.Path.Combine(dir, "manifest.json"), "{\"Guid\":\"" + Guid + "\",\"Name\":\"Super Beacon v1.0.0\"}");
+                    if (license != null) System.IO.File.WriteAllText(System.IO.Path.Combine(dir, "hd2_license.json"), license);
+                    lib.Mods.Add(new Mod { Id = folder, Name = folder, Path = dir });
+                }
+                string Lic(string extra) => "{\"protocol\":1,\"issuer\":\"" + Issuer + "\",\"key\":\"" + Modulus + "\"" + extra + "}";
+                Add("on", Lic(",\"integrity\":1"));
+                Add("deleted", Lic(""));                       // the line taken out
+                Add("zero", Lic(",\"integrity\":0"));          // or set to 0
+                Add("nokey", "{\"protocol\":1,\"issuer\":\"" + Issuer + "\"}");
+                Add("plain", null);                            // no licence at all
+                var got = IntegrityWiring.Licensed(lib).Count;
+                Assert.Equal(3, got);
+            }
+            finally { try { System.IO.Directory.Delete(root, true); } catch { } }
+        }
+
         [Fact]
         public void ABadManifestSignatureIsTreatedAsNoManifest()
         {
