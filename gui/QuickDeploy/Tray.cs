@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
@@ -261,6 +262,26 @@ namespace QuickDeploy
                     profiles.Items.Add(it);
                 }
                 menu.Items.Add(profiles);
+            }
+
+            // the plugins pinned to the title bar, as there: icon and name (the user, 2026-11-19)
+            var pinned = Pinned().ToList();
+            if (pinned.Count > 0)
+            {
+                bool game = Store.GameDir(null, false) != null;
+                menu.Items.Add(new System.Windows.Controls.Separator());
+                foreach (var (type, title, icon) in pinned)
+                {
+                    var row = new System.Windows.Controls.StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal };
+                    if (icon is FrameworkElement fe) { fe.Width = fe.Height = 16; fe.Margin = new Thickness(0, 0, 10, 2); }   // its centre on the letters' (measured 11-19: 2 px low at 2x)
+                    row.Children.Add(icon);
+                    row.Children.Add(new System.Windows.Controls.TextBlock { Text = title, VerticalAlignment = VerticalAlignment.Center });
+                    var it = new System.Windows.Controls.MenuItem { Header = row, IsEnabled = game, ToolTip = game ? null : Texts.Get("plugin_no_game") };
+                    System.Windows.Controls.ToolTipService.SetShowOnDisabled(it, true);
+                    var t = type;
+                    it.Click += (s, e) => OpenPlugin(t);
+                    menu.Items.Add(it);
+                }
             }
 
             menu.Items.Add(new System.Windows.Controls.Separator());

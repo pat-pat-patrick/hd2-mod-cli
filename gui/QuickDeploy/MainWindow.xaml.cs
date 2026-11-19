@@ -303,6 +303,28 @@ namespace QuickDeploy
                 tm.Start();
                 return;
             }
+            if (page == "trayplugin")
+            {
+                // tests only: put away 6 s after the start, then the first pinned plugin opened from
+                // the icon's menu 2 s later, so a test outside can see whether its window shows
+                var tp = new DispatcherTimer { Interval = TimeSpan.FromSeconds(6) };
+                tp.Tick += (s, e) =>
+                {
+                    tp.Stop();
+                    PutAway();
+                    var later = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
+                    later.Tick += (s2, e2) =>
+                    {
+                        later.Stop();
+                        var first = Pinned().FirstOrDefault();
+                        Mark(first.Type == null ? "no pinned plugin" : "opening " + first.Title);
+                        if (first.Type != null) OpenPlugin(first.Type);
+                    };
+                    later.Start();
+                };
+                tp.Start();
+                return;
+            }
             if (page.StartsWith("filter:"))
             {
                 // "filter:conflict" (pictures only): the library's filter chosen 3 s after the start

@@ -459,12 +459,8 @@ namespace QuickDeploy
             PluginDot.Visibility = PluginFiles.NewerReleases().Count > 0 ? Visibility.Visible : Visibility.Collapsed;
             PinnedBox.Children.Clear();
             var game = Store.GameDir(null, false);
-            foreach (var (file, type, _) in ByName(PluginFiles.All()))
+            foreach (var (type, title, icon) in Pinned())
             {
-                if (type == null || !PluginFiles.HasButton(file, type) || !PluginFiles.Pinned(file)) continue;
-                var icon = PluginIcon(type);
-                if (icon == null) continue;
-                var title = PluginFiles.Title(type, Texts.Lang) ?? file;
                 var b = new Button
                 {
                     Width = 38, Height = 38, Margin = new Thickness(0, 0, 12, 0), Padding = new Thickness(0), Cursor = System.Windows.Input.Cursors.Hand,
@@ -475,12 +471,33 @@ namespace QuickDeploy
                 ToolTipService.SetShowOnDisabled(b, true);
                 System.Windows.Shell.WindowChrome.SetIsHitTestVisibleInChrome(b, true);
                 var t = type;
-                b.Click += (s, e) =>
-                {
-                    try { PluginFiles.Call(t, "Open", this, PluginHostHere()); }
-                    catch (Exception x) when (!(x is OutOfMemoryException)) { Dialog.Tell(this, Texts.F("failed", x.Message)); }
-                };
+                b.Click += (s, e) => OpenPlugin(t);
                 PinnedBox.Children.Add(b);
+            }
+        }
+
+        /// <summary>The plugins with a button that are pinned to the title bar, by name: their type,
+        /// title in the window's language and icon. The title bar and the notification-area icon's
+        /// menu both show these (the user, 2026-11-19).</summary>
+        IEnumerable<(Type Type, string Title, UIElement Icon)> Pinned()
+        {
+            foreach (var (file, type, _) in ByName(PluginFiles.All()))
+            {
+                if (type == null || !PluginFiles.HasButton(file, type) || !PluginFiles.Pinned(file)) continue;
+                var icon = PluginIcon(type);
+                if (icon == null) continue;
+                yield return (type, PluginFiles.Title(type, Texts.Lang) ?? file, icon);
+            }
+        }
+
+        /// <summary>A pinned plugin's Open, with the host.</summary>
+        void OpenPlugin(Type type)
+        {
+            try { PluginFiles.Call(type, "Open", this, PluginHostHere()); }
+            catch (Exception x) when (!(x is OutOfMemoryException))
+            {
+                if (inTray) BringBack();              // the word needs a window to stand on
+                Dialog.Tell(this, Texts.F("failed", x.Message));
             }
         }
 
