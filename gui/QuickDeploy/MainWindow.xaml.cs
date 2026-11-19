@@ -120,6 +120,8 @@ namespace QuickDeploy
             PreviewMouseWheel += Wheel;
             settle.Tick += (s, e) =>
             {
+                // put away in the notification area: read when the window is opened (BringBack)
+                if (inTray) { settle.Stop(); return; }
                 if (dragRow != null) return;            // a row in hand: the list stays as it is
                 if (busy || DateTime.Now <= quietUntil) return;   // not now: the timer tries again
                 settle.Stop();
@@ -156,8 +158,19 @@ namespace QuickDeploy
                 ListScroll.ScrollToVerticalOffset(ListScroll.VerticalOffset + edgeBy);
                 DragAt(Mouse.GetPosition(ListArea));
             };
-            Loaded += (s, e) => Start();
+            Loaded += (s, e) =>
+            {
+                if (started) return;
+                started = true;
+                Start();
+                TrayStarted();
+            };
         }
+
+        bool started;
+
+        /// <summary>For a start in the notification area (--tray), before Show.</summary>
+        internal void StartInTray() => StartCloaked();
 
         /// <summary>The window's fixed words, in its language.</summary>
         void Words()
@@ -2075,10 +2088,23 @@ namespace QuickDeploy
 
         protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
         {
+            // closed with the setting on: put away in the notification area, still running
+            if (!Leaving && CloseToTray)
+            {
+                e.Cancel = true;
+                if (!inTray) CloseToNotificationArea();
+                return;
+            }
             SaveWhere();
             SaveList();
             SavePlace();
             base.OnClosing(e);
+        }
+
+        protected override void OnClosed(EventArgs e)
+        {
+            DisposeTrayIcon();
+            base.OnClosed(e);
         }
 
         /// <summary>The library and the deploy record, watched: a change from the
@@ -2414,6 +2440,7 @@ namespace QuickDeploy
                 System.Runtime.GCSettings.LargeObjectHeapCompactionMode = System.Runtime.GCLargeObjectHeapCompactionMode.CompactOnce;
                 GC.Collect();
                 Mark("collected in " + clock.ElapsedMilliseconds + " ms");
+                if (inTray) Lighten();      // a read that ended while the window is away: its pages handed back too
             }), DispatcherPriority.ApplicationIdle);
         }
         bool collectQueued;
@@ -5195,8 +5222,13 @@ namespace QuickDeploy
 
         void Arrived(string link)
         {
-            if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
-            Activate();
+            // another start with --exit: a window put away ends; one on show is left to its player
+            if (link == App.ExitLine)
+            {
+                if (inTray) ExitForGood();
+                return;
+            }
+            BringBack();
 #if HAS_NEXUS
             if (string.IsNullOrEmpty(link)) return;
             links.Enqueue(link);
@@ -8647,6 +8679,30 @@ namespace QuickDeploy
             body.Children.Add(muLine);
             body.Children.Add(Small(Texts.Get("set_mod_updates_note"), new Thickness(0, 8, 0, 0)));
 
+            body.Children.Add(Group("set_group_tray"));
+            // closing the window leaves the program in the notification area (Tray.cs)
+            body.Children.Add(Label("set_tray", new Thickness(0, 20, 0, 6)));
+            var trSw = new CheckBox { Style = (Style)FindResource("Switch"), IsChecked = CloseToTray, VerticalAlignment = VerticalAlignment.Center };
+            var trLine = new StackPanel { Orientation = Orientation.Horizontal };
+            trLine.Children.Add(trSw);
+            trLine.Children.Add(new TextBlock { Text = Texts.Get("set_tray_on"), Foreground = B("Ink"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 0, 0, 0) });
+            trSw.Click += (s, e2) => KeepInTray(trSw.IsChecked == true);
+            body.Children.Add(trLine);
+            body.Children.Add(Small(Texts.Get("set_tray_note"), new Thickness(0, 8, 0, 0)));
+
+            // started with Windows, in the notification area (Autostart)
+            body.Children.Add(Label("set_autostart", new Thickness(0, 20, 0, 6)));
+            var asSw = new CheckBox { Style = (Style)FindResource("Switch"), IsChecked = Autostart.On, VerticalAlignment = VerticalAlignment.Center };
+            var asLine = new StackPanel { Orientation = Orientation.Horizontal };
+            asLine.Children.Add(asSw);
+            asLine.Children.Add(new TextBlock { Text = Texts.Get("set_autostart_on"), Foreground = B("Ink"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 0, 0, 0) });
+            asSw.Click += (s, e2) =>
+            {
+                if (!Autostart.Set(asSw.IsChecked == true)) asSw.IsChecked = Autostart.On;
+            };
+            body.Children.Add(asLine);
+            body.Children.Add(Small(Texts.Get("set_autostart_note"), new Thickness(0, 8, 0, 0)));
+
             // About and diagnostics, built only when it is the tab on show: built behind General every
             // time, its log made General as slow to open as itself (the user, 2026-11-06)
             if (settingsTab != "about") return;
@@ -9244,6 +9300,7 @@ namespace QuickDeploy
         protected override void OnSourceInitialized(EventArgs e)
         {
             base.OnSourceInitialized(e);
+            if (cloakedStart) Cloak(true);      // before it is shown: nothing of it is seen (StartCloaked)
             (PresentationSource.FromVisual(this) as HwndSource)?.AddHook(Hook);
             acrylic = Backdrop.Enable(this);
             if (acrylic) Frame.Background = B("Ground900");
