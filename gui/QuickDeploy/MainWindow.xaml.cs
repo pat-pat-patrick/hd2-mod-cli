@@ -303,6 +303,26 @@ namespace QuickDeploy
                 tm.Start();
                 return;
             }
+            if (page == "traytarget")
+            {
+                // tests only: the icon's menu opened 6 s after the start and the target switch's
+                // segment that is not lit clicked as a click does (the window's switch saves the
+                // library's target and deploys nothing), for a test outside to read library.json
+                var tt = new DispatcherTimer { Interval = TimeSpan.FromSeconds(6) };
+                tt.Tick += (s, e) =>
+                {
+                    tt.Stop();
+                    OpenTrayMenu(new Point(800, 800));
+                    Dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        var rb = FindAll<RadioButton>(trayMenu).FirstOrDefault(r => r.GroupName == "tray_target" && r.IsChecked != true);
+                        Mark(rb == null ? "no target to switch to" : "switching to " + ((rb.Content as TextBlock)?.Text ?? "?"));
+                        rb?.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+                    }), DispatcherPriority.ContextIdle);
+                };
+                tt.Start();
+                return;
+            }
             if (page == "trayplugin")
             {
                 // tests only: put away 6 s after the start, then the first pinned plugin opened from

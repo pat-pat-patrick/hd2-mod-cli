@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -236,9 +237,49 @@ namespace QuickDeploy
                 return it;
             }
             Item(Texts.Get("tray_open"), BringBack, strong: true);
-            Item(Texts.Get("launch"), TrayLaunch, ready && !running);
+            // the game of the target in use: the official one, or a plugin target's session
+            bool busyGame = st != null && (st.OnOfficial ? running : st.TargetRunning);
+            Item(Texts.Get("launch"), TrayLaunch, ready && !busyGame);
             int pending = st?.Pending ?? 0;
             Item(pending > 0 ? Texts.F("deploy_n", pending) : Texts.Get("deploy"), () => { BringBack(); Deploy_Click(null, null); }, ready && pending > 0 && !running);
+
+            // the deploy target, official or a plugin's (HellForge), as the window's switch above the
+            // library offers them and only when it shows (a plugin offers one); switching is the
+            // window's own, which deploys nothing (the user, 2026-11-19)
+            if (st != null)
+            {
+                var offers = st.TargetOffers.Where(o => o.Found || o.Id == st.Target).ToList();
+                if (offers.Count > 0 || !st.OnOfficial)
+                {
+                    var all = new List<(string Id, string Title, string Tip)> { ("official", Texts.Get("target_official"), Texts.Get("target_official_tip")) };
+                    all.AddRange(offers.Select(o => (o.Id, o.Title, o.Found ? Texts.F("target_tip", o.Title) : o.Why)));
+                    if (!st.OnOfficial && all.All(a => a.Id != st.Target)) all.Add((st.Target, st.Target, Texts.F("target_no_plugin", st.Target)));
+                    var current = all.First(a => a.Id == st.Target || (st.OnOfficial && a.Id == "official"));
+                    // the window's own switch, in one row: one click changes the target, nothing to
+                    // open first (the user, 2026-11-19: a submenu was "太麻烦了")
+                    var row = new System.Windows.Controls.Primitives.UniformGrid { Rows = 1, Columns = all.Count };
+                    foreach (var (id, title, tip) in all)
+                    {
+                        var rb = new System.Windows.Controls.RadioButton
+                        {
+                            Content = new System.Windows.Controls.TextBlock { Text = title, TextTrimming = TextTrimming.CharacterEllipsis },
+                            Style = (Style)FindResource("Segment"), GroupName = "tray_target", IsChecked = id == current.Id, ToolTip = tip,
+                            HorizontalAlignment = HorizontalAlignment.Stretch, MinHeight = 34, IsEnabled = ready,
+                        };
+                        rb.Click += (s, e) =>
+                        {
+                            if (trayMenu != null) trayMenu.IsOpen = false;
+                            if (id != current.Id) SwitchTarget(id, title);
+                        };
+                        row.Children.Add(rb);
+                    }
+                    var frame = new System.Windows.Controls.Border
+                    {
+                        BorderBrush = B("Grid"), BorderThickness = new Thickness(1), Child = row, ToolTip = Texts.Get("target_switch_tip"),
+                    };
+                    menu.Items.Add(new System.Windows.Controls.MenuItem { Header = frame, Template = BareRow(), Focusable = false });
+                }
+            }
 
             // the profile in use, and the others to change to (profiles on, more than one)
             if (st != null && st.ProfilesOn && st.Profiles.Count > 1)
@@ -328,8 +369,56 @@ namespace QuickDeploy
                 var bottom = menu.PointToScreen(new Point(menu.ActualWidth, menu.ActualHeight));
                 File.WriteAllText(file + ".txt", string.Format(System.Globalization.CultureInfo.InvariantCulture,
                     "asked at {0:0},{1:0} px; menu {2:0}x{3:0} dip; on screen px {4:0},{5:0} to {6:0},{7:0}; dpi scale {8}",
-                    at.X, at.Y, menu.ActualWidth, menu.ActualHeight, top.X, top.Y, bottom.X, bottom.Y, dpi.DpiScaleX));
+                    at.X, at.Y, menu.ActualWidth, menu.ActualHeight, top.X, top.Y, bottom.X, bottom.Y, dpi.DpiScaleX)
+                    + "\r\n" + MenuRows(menu.Items, ""));
             }), DispatcherPriority.ContextIdle);
+        }
+
+        /// <summary>Each row of a menu and its submenus as text (pictures only: a submenu's rows are
+        /// not in the picture of the closed menu): enabled or not, checked or not.</summary>
+        static string MenuRows(System.Windows.Controls.ItemCollection items, string indent)
+        {
+            var sb = new System.Text.StringBuilder();
+            foreach (var o in items)
+            {
+                if (!(o is System.Windows.Controls.MenuItem mi)) { sb.Append(indent).Append("----\r\n"); continue; }
+                if (mi.Header is System.Windows.Controls.Border bd && bd.Child is System.Windows.Controls.Panel seg)
+                {
+                    sb.Append(indent).Append("switch: ").Append(string.Join(" | ", seg.Children.OfType<System.Windows.Controls.RadioButton>()
+                        .Select(r => (r.IsChecked == true ? "[" : "") + ((r.Content as System.Windows.Controls.TextBlock)?.Text ?? "") + (r.IsChecked == true ? "]" : "")
+                                     + (r.IsEnabled ? "" : " (off)")))).Append("\r\n");
+                    continue;
+                }
+                string words = mi.Header is string h ? h
+                    : string.Join(" ", ((mi.Header as System.Windows.Controls.Panel)?.Children.OfType<System.Windows.Controls.TextBlock>() ?? Enumerable.Empty<System.Windows.Controls.TextBlock>()).Select(t => t.Text));
+                sb.Append(indent).Append(mi.IsChecked ? "[x] " : "    ").Append(words).Append(mi.IsEnabled ? "" : "  (off)").Append("\r\n");
+                if (mi.Items.Count > 0) sb.Append(MenuRows(mi.Items, indent + "      "));
+            }
+            return sb.ToString();
+        }
+
+        /// <summary>A menu row that is only its content, at the rows' margins: no highlight of its
+        /// own, so the controls in it (the target switch) answer the pointer themselves.</summary>
+        static System.Windows.Controls.ControlTemplate BareRow()
+        {
+            var t = new System.Windows.Controls.ControlTemplate(typeof(System.Windows.Controls.MenuItem));
+            var f = new FrameworkElementFactory(typeof(System.Windows.Controls.ContentPresenter));
+            f.SetValue(System.Windows.Controls.ContentPresenter.ContentSourceProperty, "Header");
+            f.SetValue(FrameworkElement.MarginProperty, new Thickness(16, 6, 16, 6));
+            t.VisualTree = f;
+            return t;
+        }
+
+        /// <summary>Every element of type T under root, in the visual tree (tests only).</summary>
+        static IEnumerable<T> FindAll<T>(DependencyObject root) where T : DependencyObject
+        {
+            if (root == null) yield break;
+            for (int i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
+            {
+                var c = VisualTreeHelper.GetChild(root, i);
+                if (c is T t) yield return t;
+                foreach (var d in FindAll<T>(c)) yield return d;
+            }
         }
 
         /// <summary>The pointer on the screen, in pixels.</summary>
@@ -339,11 +428,13 @@ namespace QuickDeploy
             return new Point(pt.X, pt.Y);
         }
 
-        /// <summary>Launch from the icon's menu: straight away when nothing needs asking (official
-        /// game, everything deployed); otherwise with the window open, where the launch asks.</summary>
+        /// <summary>Launch from the icon's menu: straight away when nothing needs asking (all
+        /// deployed; the official game found, or the plugin target found and no session of it running);
+        /// otherwise with the window open, where the launch asks.</summary>
         void TrayLaunch()
         {
-            bool quiet = st != null && st.OnOfficial && st.GameDir != null && st.Pending == 0;
+            bool quiet = st != null && st.Pending == 0
+                && (st.OnOfficial ? st.GameDir != null : st.TargetOffered && st.TargetFound && !st.TargetRunning);
             if (!quiet) BringBack();
             Launch_Click(null, null);
         }
