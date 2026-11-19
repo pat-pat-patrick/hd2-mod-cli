@@ -220,6 +220,7 @@ namespace QuickDeploy
             if (SettingsPage.Visibility == Visibility.Visible) RenderSettings();
             if (PluginsPage.Visibility == Visibility.Visible) RenderPlugins();
             PinnedPlugins();                    // their names, in this language
+            if (trayIcon != null && trayIcon.Visible) ShowTrayIcon();   // the icon's menu too
             Refresh();                          // what the plugins say of each mod, in this language
             RefreshListSoon(true);              // the official list's translations for it
         }

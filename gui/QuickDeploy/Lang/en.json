@@ -1013,7 +1013,7 @@
   "set_group_tray": "Running in the background",
   "set_tray": "CLOSING THE WINDOW",
   "set_tray_on": "Keep running in the notification area",
-  "set_tray_note": "On: when the window is closed, the manager keeps running in the notification area at the right of the taskbar, and plugins keep working (for example, unlocking members' content when the game starts). Click the icon to open the window again; choose Exit in the icon's menu to quit. While the window is closed, the mod library is not read; it is read when the window opens.",
+  "set_tray_note": "On: the manager's icon stays in the notification area at the right of the taskbar, and closing the window leaves the manager running there, with plugins working (for example, unlocking members' content when the game starts). Click the icon to open the window; choose Exit in the icon's menu to quit. While the window is closed, the mod library is not read; it is read when the window opens.",
   "set_autostart": "START WITH WINDOWS",
   "set_autostart_on": "Start in the notification area when signing in to Windows",
   "set_autostart_note": "The window does not open; click the icon in the notification area to open it. Applies to the current Windows user only.",

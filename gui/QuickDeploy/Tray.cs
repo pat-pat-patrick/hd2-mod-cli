@@ -48,10 +48,14 @@ namespace QuickDeploy
             catch (Exception e) when (e is IOException || e is UnauthorizedAccessException || e is FormatException) { }
         }
 
-        internal static void KeepInTray(bool on)
+        /// <summary>The setting turned on or off: the icon comes or goes with it at once (it stays
+        /// while the window is put away, whatever the setting).</summary>
+        void KeepInTray(bool on)
         {
             CloseToTray = on;
             SetGuiFlag("close_to_tray", on);
+            if (on) ShowTrayIcon();
+            else if (!inTray && trayIcon != null) { trayIcon.Visible = false; Mark("icon hidden"); }
         }
 
         /// <summary>Made for a start in the notification area: shown cloaked (DWM draws nothing of
@@ -74,9 +78,11 @@ namespace QuickDeploy
             catch (Exception e) when (e is DllNotFoundException || e is EntryPointNotFoundException) { }
         }
 
-        /// <summary>After Start, on a start in the notification area.</summary>
+        /// <summary>After Start: the icon while the setting is on, and on a start in the
+        /// notification area the window put away.</summary>
         void TrayStarted()
         {
+            if (CloseToTray) ShowTrayIcon();
             if (!startInTray) return;
             startInTray = false;
             // Loaded comes inside Show, before the window has its handle: put away once Show is
@@ -126,7 +132,9 @@ namespace QuickDeploy
             {
                 inTray = false;
                 Mark("brought back");
-                if (trayIcon != null) trayIcon.Visible = false;
+                // the icon stays while the setting is on (the user, 2026-11-19: shown all the time,
+                // so the program is seen to be running and the X is known not to end it)
+                if (trayIcon != null && !CloseToTray) { trayIcon.Visible = false; Mark("icon hidden"); }
                 if (cloakedStart)
                 {
                     cloakedStart = false;
@@ -191,6 +199,7 @@ namespace QuickDeploy
             trayIcon.ContextMenuStrip = menu;
             old?.Dispose();
             trayIcon.Visible = true;
+            Mark("icon shown");
         }
 
         static System.Drawing.Icon TrayIconImage()
