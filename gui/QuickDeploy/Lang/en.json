@@ -1019,6 +1019,8 @@
   "set_autostart_note": "The window does not open; click the icon in the notification area to open it. Applies to the current Windows user only.",
   "tray_open": "Open window",
   "tray_exit": "Exit",
+  "tray_game_running": "The game is running",
+  "tray_profile": "Profile: {0}",
   "tray_told_title": "HD2 Mod Quick Deploy is still running",
   "tray_told": "Click this icon to open the window; choose Exit in its menu to quit. This can be changed in Settings.",
   "up_summary_source": "Mods without a recorded source can be given one in their details (Set source…).",

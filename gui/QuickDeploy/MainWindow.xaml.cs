@@ -220,7 +220,6 @@ namespace QuickDeploy
             if (SettingsPage.Visibility == Visibility.Visible) RenderSettings();
             if (PluginsPage.Visibility == Visibility.Visible) RenderPlugins();
             PinnedPlugins();                    // their names, in this language
-            if (trayIcon != null && trayIcon.Visible) ShowTrayIcon();   // the icon's menu too
             Refresh();                          // what the plugins say of each mod, in this language
             RefreshListSoon(true);              // the official list's translations for it
         }
@@ -296,6 +295,14 @@ namespace QuickDeploy
         void ClickTest()
         {
             var page = Environment.GetEnvironmentVariable("HD2QD_CLICK_TEST") ?? "";
+            if (page == "traymenu")
+            {
+                // pictures only: the icon's menu opened 6 s after the start, drawn into HD2QD_SHOT
+                var tm = new DispatcherTimer { Interval = TimeSpan.FromSeconds(6) };
+                tm.Tick += (s, e) => { tm.Stop(); TrayMenuShot(Environment.GetEnvironmentVariable("HD2QD_SHOT")); };
+                tm.Start();
+                return;
+            }
             if (page.StartsWith("filter:"))
             {
                 // "filter:conflict" (pictures only): the library's filter chosen 3 s after the start

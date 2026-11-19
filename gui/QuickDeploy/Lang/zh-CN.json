@@ -997,6 +997,8 @@
   "set_autostart_note": "启动时不打开窗口，单击通知区域中的图标即可打开。只对当前 Windows 用户生效。",
   "tray_open": "打开窗口",
   "tray_exit": "退出",
+  "tray_game_running": "游戏正在运行",
+  "tray_profile": "配置文件：{0}",
   "tray_told_title": "HD2 Mod Quick Deploy 仍在运行",
   "tray_told": "单击此图标打开窗口；在右键菜单中选择“退出”可完全退出。可在设置中更改。",
   "up_summary_source": "未记录来源的 mod 可在详情中通过“设置来源…”补充。",

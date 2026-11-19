@@ -4,6 +4,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
+using System.Windows.Media;
 using System.Windows.Threading;
 using Hd2Mod;
 using Microsoft.Win32;
@@ -183,24 +184,152 @@ namespace QuickDeploy
             if (trayIcon == null)
             {
                 trayIcon = new Forms.NotifyIcon { Icon = TrayIconImage(), Text = "HD2 Mod Quick Deploy" };
-                trayIcon.MouseClick += (s, e) => { if (e.Button == Forms.MouseButtons.Left) BringBack(); };
+                trayIcon.MouseClick += (s, e) =>
+                {
+                    if (e.Button == Forms.MouseButtons.Left) BringBack();
+                    else if (e.Button == Forms.MouseButtons.Right) OpenTrayMenu(null);
+                };
             }
-            // its words in the window's language as it is now
-            var old = trayIcon.ContextMenuStrip;
-            var menu = new Forms.ContextMenuStrip { ShowImageMargin = false };
-            var open = new Forms.ToolStripMenuItem(Texts.Get("tray_open"));
-            open.Font = new System.Drawing.Font(open.Font, System.Drawing.FontStyle.Bold);
-            open.Click += (s, e) => BringBack();
-            var exit = new Forms.ToolStripMenuItem(Texts.Get("tray_exit"));
-            exit.Click += (s, e) => ExitForGood();
-            menu.Items.Add(open);
-            menu.Items.Add(new Forms.ToolStripSeparator());
-            menu.Items.Add(exit);
-            trayIcon.ContextMenuStrip = menu;
-            old?.Dispose();
             trayIcon.Visible = true;
             Mark("icon shown");
         }
+
+        System.Windows.Controls.ContextMenu trayMenu;
+
+        /// <summary>The icon's menu, in the window's own menu style (the user, 2026-11-19: the
+        /// system's two-line menu was too bare): what the manager is doing now (the window's bottom
+        /// line), open, launch, deploy, the profile in use, settings, exit. Built anew on each
+        /// right-click, so it says what is true then. At the pointer, its bottom-left corner
+        /// there, as menus of the notification area open; at a point given (tests only). The
+        /// point is in screen PIXELS: with no placement target WPF reads the rectangle in device
+        /// units (measured 2026-11-19 at 2x: a point given in DIPs opened the menu halfway up).</summary>
+        void OpenTrayMenu(Point? atPixels)
+        {
+            if (trayMenu != null && trayMenu.IsOpen) { trayMenu.IsOpen = false; return; }
+            bool running = Hd2Mod.Deploy.GameRunning();
+            bool ready = st != null && !busy;
+            var menu = new System.Windows.Controls.ContextMenu { MinWidth = 260 };
+
+            // what is true now: the bottom line of the window, its colour on the dot
+            var head = new System.Windows.Controls.StackPanel { MaxWidth = 300 };
+            head.Children.Add(new System.Windows.Controls.TextBlock { Text = Texts.Get("title"), FontWeight = FontWeights.Bold, FontSize = 14, Foreground = B("Ink") });
+            var said = new System.Windows.Controls.DockPanel { Margin = new Thickness(0, 6, 0, 0) };
+            var dot = new System.Windows.Shapes.Ellipse { Width = 8, Height = 8, Fill = running ? B("Blue") : FootDot.Fill, Margin = new Thickness(0, 2.5, 8, 0), VerticalAlignment = VerticalAlignment.Top };   // centred on the first line's letters (measured 11-19: 5 px low at 2x)
+            System.Windows.Controls.DockPanel.SetDock(dot, System.Windows.Controls.Dock.Left);
+            said.Children.Add(dot);
+            said.Children.Add(new System.Windows.Controls.TextBlock
+            {
+                Text = running ? Texts.Get("tray_game_running") : FootText.Text, FontSize = 12, LineHeight = 16,
+                Foreground = B("Muted"), TextWrapping = TextWrapping.Wrap,
+            });
+            head.Children.Add(said);
+            menu.Items.Add(new System.Windows.Controls.MenuItem { Header = head, IsHitTestVisible = false, Focusable = false });
+            menu.Items.Add(new System.Windows.Controls.Separator());
+
+            System.Windows.Controls.MenuItem Item(string text, Action act, bool enabled = true, bool strong = false)
+            {
+                var it = new System.Windows.Controls.MenuItem { Header = text, IsEnabled = enabled };
+                if (strong) it.FontWeight = FontWeights.SemiBold;
+                it.Click += (s, e) => act();
+                menu.Items.Add(it);
+                return it;
+            }
+            Item(Texts.Get("tray_open"), BringBack, strong: true);
+            Item(Texts.Get("launch"), TrayLaunch, ready && !running);
+            int pending = st?.Pending ?? 0;
+            Item(pending > 0 ? Texts.F("deploy_n", pending) : Texts.Get("deploy"), () => { BringBack(); Deploy_Click(null, null); }, ready && pending > 0 && !running);
+
+            // the profile in use, and the others to change to (profiles on, more than one)
+            if (st != null && st.ProfilesOn && st.Profiles.Count > 1)
+            {
+                var profiles = new System.Windows.Controls.MenuItem
+                {
+                    Header = Texts.F("tray_profile", ProfileName(st.Profile)), IsEnabled = ready,
+                    Style = (Style)FindResource("SubMenuItem"),
+                };
+                foreach (var name in st.Profiles)
+                {
+                    var to = name;
+                    var it = new System.Windows.Controls.MenuItem { Header = ProfileName(name), IsChecked = name == st.Profile };
+                    it.Click += async (s, e) =>
+                    {
+                        if (to == st.Profile) return;
+                        viewLibrary = false;
+                        await Exec("profile-use", to);
+                        Refresh();
+                    };
+                    profiles.Items.Add(it);
+                }
+                menu.Items.Add(profiles);
+            }
+
+            menu.Items.Add(new System.Windows.Controls.Separator());
+            Item(Texts.Get("settings"), () => { BringBack(); if (SettingsPage.Visibility != Visibility.Visible) Settings_Click(null, null); });
+            Item(Texts.Get("tray_exit"), ExitForGood);
+
+            // placed above the point, left edges together; below it when there is no room above
+            var p = atPixels ?? Pointer();
+            menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Top;
+            menu.PlacementRectangle = new Rect(p, new Size(0, 0));
+            // the menu takes the foreground, so a click anywhere else closes it
+            menu.Opened += (s, e) =>
+            {
+                if (PresentationSource.FromVisual(menu) is HwndSource src) SetForegroundWindow(src.Handle);
+            };
+            menu.Closed += (s, e) => { if (trayMenu == menu) trayMenu = null; };
+            trayMenu = menu;
+            menu.IsOpen = true;
+        }
+
+        /// <summary>HD2QD_CLICK_TEST=traymenu (pictures only): the menu opened in the middle of the
+        /// window's screen and drawn into a PNG once laid out, with its size and the place it
+        /// opened at written beside it (file.txt).</summary>
+        void TrayMenuShot(string file)
+        {
+            if (string.IsNullOrEmpty(file)) return;
+            // the middle of the work area's bottom edge, where the taskbar meets it, in pixels
+            var area = SystemParameters.WorkArea;
+            var toPx = PresentationSource.FromVisual(this)?.CompositionTarget?.TransformToDevice ?? Matrix.Identity;
+            var at = toPx.Transform(new Point(area.Left + area.Width / 2, area.Bottom - 4));
+            OpenTrayMenu(at);
+            var menu = trayMenu;
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (menu == null) return;
+                var dpi = VisualTreeHelper.GetDpi(menu);
+                var bmp = new System.Windows.Media.Imaging.RenderTargetBitmap((int)Math.Ceiling(menu.ActualWidth * dpi.DpiScaleX),
+                    (int)Math.Ceiling(menu.ActualHeight * dpi.DpiScaleY), dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
+                bmp.Render(menu);
+                var enc = new System.Windows.Media.Imaging.PngBitmapEncoder();
+                enc.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bmp));
+                using (var f = File.Create(file)) enc.Save(f);
+                var top = menu.PointToScreen(new Point(0, 0));
+                var bottom = menu.PointToScreen(new Point(menu.ActualWidth, menu.ActualHeight));
+                File.WriteAllText(file + ".txt", string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                    "asked at {0:0},{1:0} px; menu {2:0}x{3:0} dip; on screen px {4:0},{5:0} to {6:0},{7:0}; dpi scale {8}",
+                    at.X, at.Y, menu.ActualWidth, menu.ActualHeight, top.X, top.Y, bottom.X, bottom.Y, dpi.DpiScaleX));
+            }), DispatcherPriority.ContextIdle);
+        }
+
+        /// <summary>The pointer on the screen, in pixels.</summary>
+        static Point Pointer()
+        {
+            GetCursorPos(out var pt);
+            return new Point(pt.X, pt.Y);
+        }
+
+        /// <summary>Launch from the icon's menu: straight away when nothing needs asking (official
+        /// game, everything deployed); otherwise with the window open, where the launch asks.</summary>
+        void TrayLaunch()
+        {
+            bool quiet = st != null && st.OnOfficial && st.GameDir != null && st.Pending == 0;
+            if (!quiet) BringBack();
+            Launch_Click(null, null);
+        }
+
+        [StructLayout(LayoutKind.Sequential)] struct POINT { public int X, Y; }
+        [DllImport("user32.dll")] static extern bool GetCursorPos(out POINT pt);
+        [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr hwnd);
 
         static System.Drawing.Icon TrayIconImage()
         {
@@ -221,7 +350,6 @@ namespace QuickDeploy
         {
             if (trayIcon == null) return;
             trayIcon.Visible = false;
-            trayIcon.ContextMenuStrip?.Dispose();
             trayIcon.Dispose();
             trayIcon = null;
         }
