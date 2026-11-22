@@ -37,6 +37,13 @@ namespace Hd2Mod
         {
             if (mod.Nexus != null) return FromNexus(mod.Nexus);
             if (mod.GitHub != null) return FromGitHub(mod.GitHub);
+            // AyakaMods, GameBanana, ModWorkshop: what the page says (a direct link says nothing of the mod)
+            if (mod.Page != null && Sites.Of(mod.Page).Site is string s && s != Sites.Direct && Sites.Read(mod.Page) is SiteOffer o)
+                return new SiteInfo
+                {
+                    Name = o.Name, Author = o.Author, Summary = Clean(o.Summary), Picture = o.Picture,
+                    Version = o.Version, Updated = o.Time,
+                };
             return null;
         }
 
@@ -134,7 +141,7 @@ namespace Hd2Mod
         {
             var info = Describe(mod);
             var said = new List<string>();
-            if (info == null) throw new ModError("this mod has no source to ask: set a Nexus Mods page or a GitHub repository", "no_source");
+            if (info == null) throw new ModError("this mod has no source to ask: set a Nexus Mods, AyakaMods, GameBanana or ModWorkshop page, or a GitHub repository", "no_source");
             // the page's title, unless the player gave the mod a name of their own: that one stays
             // (the user, 2026-10-25)
             if (mod.RealName == null && !string.IsNullOrWhiteSpace(info.Name) && info.Name.Trim() != mod.Name)
@@ -156,7 +163,7 @@ namespace Hd2Mod
             if (info.Author != null || info.Summary != null)
             {
                 mod.Site = info;
-                said.Add("from " + (mod.Nexus != null ? "Nexus Mods" : "GitHub") + ": " + (info.Author ?? "?"));
+                said.Add("from " + (Origins.Of(mod).Channel ?? "its page") + ": " + (info.Author ?? "?"));
             }
             return said;
         }

@@ -13,8 +13,11 @@ A mod manager for Helldivers 2. What sets it apart:
   against the game's Lua before the game starts.
 - **Groups, labels and profiles.** Mods sorted into folder-style groups, up to
   three levels deep. No file is moved for it.
-- **Update checks with no sign-in**, for mods from Nexus Mods and GitHub,
-  including archives downloaded by hand. Each update lists what changed.
+- **Update checks with no sign-in**, for mods from Nexus Mods, GitHub,
+  AyakaMods, GameBanana, ModWorkshop and direct links, including archives
+  downloaded by hand. Each update lists what changed.
+- **Add from a link.** Paste a GameBanana or ModWorkshop page, a GitHub
+  repository or a direct link to an archive: the file is downloaded and added.
 - **Plugins.** Asset check, Model repair, HD2 Mod Console and more, each added
   only when it is wanted.
 - **Problem reports.** One upload gives a report number to pass to the mods'
@@ -434,7 +437,16 @@ from. The window also checks by itself when it opens:
 |---|---|---|
 | GitHub | The repository's latest release. | **Update** downloads the release's zip, 7z or rar. |
 | Nexus Mods | Nexus Mods' public interface, with no sign-in and no API key. | Builds with the Nexus Mods part: **Update** (Premium) or **Open page** (free accounts). Developer builds: **Open page**. |
+| GameBanana | Its public interface (no key): the newest file of the same line as yours (the same label, such as one variant of several on one page). | **Update** downloads that file. |
+| ModWorkshop | Its public interface (no key): the version, and when the mod was last updated (not edited). | **Update** downloads it; **Open page** when its author turned mod managers off or the file is on another site. |
+| AyakaMods | The version and last update its page states (no interface; one request every two seconds; a Cloudflare challenge is reported, never answered). | **Open page**: downloads need a sign-in. Drop the downloaded archive on the list to replace the mod. |
+| A direct link to a zip, 7z or rar | The server's ETag, date and length. | **Update** downloads it again. |
 | Another site | Not checked. | **Open page**. |
+
+A page with several files whose installed one is not known says so and opens
+the page. The idea of reading AyakaMods' page data comes from
+[DemocracyDefenderModManager](https://github.com/katsyk/DemocracyDefenderModManager)
+by katsyk.
 
 **Nexus Mods checks in detail**
 
@@ -458,8 +470,11 @@ from. The window also checks by itself when it opens:
     where it was added from;
   - bytes found in several mods, or in another game, are not used;
   - a mod with another source is not asked about.
-- Otherwise, the mod's details offer **Set source…**: paste its Nexus Mods page
-  or GitHub repository.
+- A file added from a link on the download page (`hd2qd add-link`) records its
+  page, and which file of it, itself.
+- Otherwise, the mod's details offer **Set source…**: paste its Nexus Mods,
+  AyakaMods, GameBanana or ModWorkshop page, its GitHub repository, or a direct
+  link to its archive.
 
 **What you can do with an update**
 
@@ -947,10 +962,11 @@ name.
 
 | Command | What it does |
 |---|---|
-| `check-updates [--at-start on\|off]` | Check every mod on its source (Nexus Mods, GitHub), with what each version changed. Archives with no recorded source are looked up by MD5.<br>`--at-start`: the window's check when it opens, once a day (on by default). |
+| `check-updates [--at-start on\|off]` | Check every mod on its source (Nexus Mods, GitHub, AyakaMods, GameBanana, ModWorkshop, a direct link), with what each version changed. Archives with no recorded source are looked up by MD5.<br>`--at-start`: the window's check when it opens, once a day (on by default). |
 | `update MOD` | Download a mod's newer version and put it in its place: from GitHub, or from Nexus Mods (Premium, builds with the Nexus Mods part). |
 | `skip MOD [--clear]` | Stop offering a mod's newest version until a newer one comes.<br>`--clear`: offer it again. |
-| `source MOD URL` / `source MOD --clear` | Set where a mod comes from: a Nexus Mods page, a GitHub repository or another page. |
+| `source MOD URL` / `source MOD --clear` | Set where a mod comes from: a Nexus Mods, AyakaMods, GameBanana or ModWorkshop page, a GitHub repository, a direct link to its archive, or another page. |
+| `add-link URL [--file ID] [--name N] [--new]` | Add a mod from a link: a GameBanana or ModWorkshop page, a GitHub repository or release, or a direct link to a zip, 7z or rar. The file is downloaded and added as `add` adds a file, its page kept for update checks. A page with several files lists them; `--file` takes one. AyakaMods and Nexus Mods pages need their own sign-in: download there, then `add` the file. |
 | `match MOD [--all]` | Fill in a mod's name, version, author, description and picture from its source (Nexus Mods or GitHub). |
 | `nexus-info NUMBER\|URL` | A mod on Nexus Mods by its number (`16662`, `N站16662`) or page: name, author, version, page, and whether the library has it. No sign-in. |
 | `nexus-login` / `nexus-logout` / `nexus URL` | Builds with the Nexus Mods part only: sign in (in your browser), sign out, download an `nxm://` link into the library. |
@@ -1074,7 +1090,8 @@ Helldivers 2 的 mod 管理器。主要特点：
 - **按游戏物品显示冲突**：每件被多个 mod 修改的游戏物品（护甲、头盔等）一张卡片，列出涉及的所有 mod 和选项。点一下即可选定游戏使用哪个 mod 的版本。
 - **管理 Lua mod 的加载器**：Boot Mod Loader、Chef Shared Loader 和 MDL3 选一次即可，无需手动排序。启动游戏前，每个 Lua 脚本都会按游戏的 Lua 检查一遍。
 - **分组、标签和配置文件**：mod 可按文件夹的方式分组，最多三层，不移动任何文件。
-- **检查更新无需登录**：支持来自 Nexus Mods 和 GitHub 的 mod，包括手动下载的压缩包，并列出每个版本的改动。
+- **检查更新无需登录**：支持来自 Nexus Mods、GitHub、AyakaMods、GameBanana、ModWorkshop 和压缩包直链的 mod，包括手动下载的压缩包，并列出每个版本的改动。
+- **从链接添加**：粘贴 GameBanana 或 ModWorkshop 的页面、GitHub 仓库或压缩包直链，文件下载后即加入 mod 库。
 - **插件**：资源检查、模型修复、HD2 MOD 控制台等，需要时再添加。
 - **问题报告**：上传后得到一个报告编号，发给 mod 作者即可。
 - **授权 MOD**：有些 MOD 只向创作者的会员提供，公开包里只有一个外壳，功能代码按你的游戏账号授权。对于这类 MOD 中创作者开启了完整性检查的，Quick Deploy 会把该 MOD 文件的哈希、版本和本机的游戏账号标识发送给该 MOD 的创作者，用于发现被改动或被分享的授权内容。对其他任何 MOD 都不会这样做，不发送其他 MOD 的任何信息，也从不因此拦截部署。运行 `hd2qd integrity` 可以查看本机会上报什么。
@@ -1370,7 +1387,13 @@ Helldivers 2 的 mod 管理器。主要特点：
 |---|---|---|
 | GitHub | 仓库的最新发布版本（Release）。 | 点击 **更新** 下载该版本的 zip、7z 或 rar。 |
 | Nexus Mods | Nexus Mods 的公开接口，无需登录或 API 密钥。 | 包含 Nexus Mods 部分的版本：**更新**（高级会员）或 **打开页面**（普通会员）。开发版：**打开页面**。 |
+| GameBanana | 公开接口（无需密钥）：与已安装文件同一系列（标签相同，例如同一页面上的某个变体）的最新文件。 | 点击 **更新** 下载该文件。 |
+| ModWorkshop | 公开接口（无需密钥）：版本号，以及 mod 最近一次更新（不含编辑）的时间。 | 点击 **更新** 下载；作者关闭了 mod 管理器下载或文件位于其他网站时为 **打开页面**。 |
+| AyakaMods | 页面上写明的版本和最近更新时间（无接口；每两秒最多请求一次；遇到 Cloudflare 验证只报告，不处理）。 | **打开页面**：下载需要登录。下载后把压缩包拖到列表上即可替换。 |
+| zip、7z、rar 压缩包直链 | 服务器返回的 ETag、日期和大小。 | 点击 **更新** 重新下载。 |
 | 其他网站 | 不检查。 | **打开页面**。 |
+
+页面上有多个文件、且无法确定已安装的是哪一个时，会说明原因并打开页面。读取 AyakaMods 页面数据的思路来自 katsyk 的 [DemocracyDefenderModManager](https://github.com/katsyk/DemocracyDefenderModManager)。
 
 **Nexus Mods 检查的细节**
 
@@ -1387,7 +1410,8 @@ Helldivers 2 的 mod 管理器。主要特点：
   - 0.17.0 之前加入的 mod，只要原压缩包仍在加入时的位置，也会补记；
   - 同一内容出现在多个 mod 中或属于其他游戏时，不采用；
   - 已有其他来源的 mod 不查询。
-- 仍未记录来源时，可在详情中点击 **设置来源…**，填写该 mod 的 Nexus Mods 页面或 GitHub 仓库地址。
+- 在下载页“从链接添加”（命令行 `hd2qd add-link`）加入的文件，会自动记录页面及对应的文件。
+- 仍未记录来源时，可在详情中点击 **设置来源…**，填写该 mod 的 Nexus Mods、AyakaMods、GameBanana 或 ModWorkshop 页面、GitHub 仓库，或压缩包直链。
 
 **有更新之后**
 

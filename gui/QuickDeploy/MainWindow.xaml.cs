@@ -191,9 +191,8 @@ namespace QuickDeploy
             PageDownload.Content = Texts.Get("page_download");
             PageStorage.Content = Texts.Get("page_storage");
             PageTags.Content = Texts.Get("page_tags");
-            // a build without downloads keeps the page for what needs no sign-in (the user,
-            // 2026-11-04): a mod by its number, and the mods from Nexus Mods
-            if (!HasNexus) PageDownload.Content = Texts.Get("page_nexus");
+            // one name in every build: the page downloads from a link of any site (issue 26), and a
+            // build without Nexus Mods downloads keeps the look-up by number there (2026-11-04)
 #if HAS_NEXUS
             SearchHint.Text = Texts.Get("search_hint");
 #else
@@ -3455,7 +3454,10 @@ namespace QuickDeploy
             (tagFilter.Count == 0 || m.Tags.Any(t => tagFilter.Contains(t))) && !m.Tags.Any(t => tagExclude.Contains(t));
 
         /// <summary>Where the mod comes from: nexus, github, or none recorded.</summary>
-        static string FromOf(ModRow m) => m.Channel == "Nexus Mods" ? "nexus" : m.Channel == "GitHub" ? "github" : "none";
+        static string FromOf(ModRow m) => m.Channel == "Nexus Mods" ? "nexus" : m.Channel == "GitHub" ? "github" : m.Channel != null ? "site" : "none";
+
+        /// <summary>A source the site can be asked about (Site.Describe): a direct link or another page cannot.</summary>
+        static bool Matchable(ModRow x) => x.Channel == "Nexus Mods" || x.Channel == "GitHub" || x.Channel == Sites.Ayaka || x.Channel == Sites.Banana || x.Channel == Sites.Workshop;
 
         bool FromOne(ModRow m) => fromFilter.Count == 0 || fromFilter.Contains(FromOf(m));
 
@@ -3838,6 +3840,8 @@ namespace QuickDeploy
 #if !HAS_NEXUS
             // what this build leaves out is said whatever the hints setting
             Downloads.Children.Add(Small(Texts.Get("dl_intro_dev"), new Thickness(0, 0, 0, 20)));
+            Downloads.Children.Add(Card(AddFromLink()));
+            Downloads.Children.Add(new Border { Height = 20 });
             Downloads.Children.Add(Card(FindByNumber(false)));
             Downloads.Children.Add(new Border { Height = 20 });
 #else
@@ -3888,6 +3892,10 @@ namespace QuickDeploy
             Grid.SetColumn(c2, 2);
             top.Children.Add(c2);
             Downloads.Children.Add(top);
+
+            // a mod from a link of another site: GameBanana, ModWorkshop, GitHub, a direct link (issue 26)
+            Downloads.Children.Add(Card(AddFromLink()));
+            Downloads.Children.Add(new Border { Height = 20 });
 
             // a mod by its number, as players pass it around (the user, 2026-10-29: "N站16662")
             Downloads.Children.Add(Card(FindByNumber(ours)));
@@ -4096,6 +4104,124 @@ namespace QuickDeploy
                 panel.Children.Add(new TextBlock { Text = findSaid, Foreground = B("Yellow"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 12, 0, 0) });
             else if (found != null) panel.Children.Add(Found(found, ours));
             return panel;
+        }
+
+        string linkTyped, linkSaid, linkPage, linkSite, linkBusy;
+        List<SiteFile> linkFiles;
+
+        /// <summary>A mod added from a link (issue 26): a GameBanana or ModWorkshop page, a GitHub
+        /// repository or release, a direct link to an archive. The file is downloaded with its
+        /// origin written as a browser's download carries it, then added as a drop is, so the page
+        /// is kept for update checks; a page with several files lists them. AyakaMods and Nexus
+        /// Mods pages need their own sign-in: the page opens, and the file is dragged in.</summary>
+        UIElement AddFromLink()
+        {
+            var panel = new StackPanel();
+            panel.Children.Add(Heading(Texts.Get("dl_link")));
+            if (Texts.Hints) panel.Children.Add(Small(Texts.Get("dl_link_n"), new Thickness(0, 4, 0, 0)));
+            var row = new DockPanel { Margin = new Thickness(0, 12, 0, 0) };
+            var go = new Button { Content = Texts.Get("dl_link_do"), Style = (Style)FindResource("Primary"), MinHeight = 40, Margin = new Thickness(8, 0, 0, 0), IsEnabled = linkBusy == null && !busy };
+            DockPanel.SetDock(go, Dock.Right);
+            row.Children.Add(go);
+            var box = new TextBox { Style = (Style)FindResource("Input"), Tag = Texts.Get("dl_link_ph"), Text = linkTyped ?? "" };
+            row.Children.Add(box);
+            panel.Children.Add(row);
+
+            async void Look()
+            {
+                if (linkBusy != null || busy) return;
+                linkTyped = box.Text.Trim();
+                linkFiles = null; linkPage = null; linkSite = null;
+                if (!linkTyped.StartsWith("http", StringComparison.OrdinalIgnoreCase)) { linkSaid = Texts.Get("dl_link_empty"); RenderDownloads(); return; }
+                linkBusy = Texts.Get("dl_link_busy");
+                linkSaid = null;
+                RenderDownloads();
+                (string Page, string Site, List<SiteFile> Files, string Why) got = default;
+                var url = linkTyped;
+                var r = await Task.Run(() => Cli.Call(() => { got = Sites.Offered(url); return ""; }));
+                linkBusy = null;
+                if (!r.Ok) { linkSaid = r.Refused?.Kind != null && CheckWhy(r.Refused.Kind) != r.Refused.Kind ? CheckWhy(r.Refused.Kind) : Texts.F("failed", r.Message); RenderDownloads(); return; }
+                linkPage = got.Page;
+                linkSite = got.Site;
+                if (got.Files.Count == 0) linkSaid = Texts.Get("dl_link_" + (got.Why ?? "none")) is string t && !t.StartsWith("dl_link_") ? t : Texts.Get("dl_link_none");
+                else if (got.Files.Count == 1) { RenderDownloads(); Take(got.Page, got.Files[0]); return; }
+                else linkFiles = got.Files;
+                RenderDownloads();
+            }
+            go.Click += (s, e) => Look();
+            box.KeyDown += (s, e) => { if (e.Key == Key.Enter) { e.Handled = true; Look(); } };
+
+            if (linkBusy != null) panel.Children.Add(Small(linkBusy, new Thickness(0, 12, 0, 0)));
+            else if (linkSaid != null)
+            {
+                panel.Children.Add(new TextBlock { Text = linkSaid, Foreground = B("Yellow"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 12, 0, 0) });
+                if (linkPage != null)
+                {
+                    var open = new Button { Content = Texts.Get("dl_link_open"), Style = (Style)FindResource("Ghost"), MinHeight = 36, Margin = new Thickness(0, 10, 0, 0), HorizontalAlignment = HorizontalAlignment.Left, ToolTip = linkPage };
+                    var page = linkPage;
+                    open.Click += (s, e) => Process.Start(new ProcessStartInfo(page) { UseShellExecute = true });
+                    panel.Children.Add(open);
+                }
+            }
+            else if (linkFiles != null)
+            {
+                panel.Children.Add(Small(Texts.F("dl_link_files", linkSite ?? linkPage, linkFiles.Count), new Thickness(0, 12, 0, 4)));
+                foreach (var f in linkFiles)
+                {
+                    var line = new DockPanel { Margin = new Thickness(0, 6, 0, 0) };
+                    var add = new Button { Content = Texts.Get("dl_link_add"), Style = (Style)FindResource("Ghost"), MinHeight = 34, Margin = new Thickness(8, 0, 0, 0), IsEnabled = !busy };
+                    var file = f;
+                    add.Click += (s, e) => Take(linkPage, file);
+                    DockPanel.SetDock(add, Dock.Right);
+                    line.Children.Add(add);
+                    var words = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+                    words.Children.Add(Selectable.Text(f.Label ?? f.Name, 14));
+                    var more = new List<string>();
+                    if (f.Label != null) more.Add(f.Name);
+                    if (f.Version != null) more.Add(f.Version);
+                    if (f.Time > 0) more.Add(DateTimeOffset.FromUnixTimeSeconds(f.Time).LocalDateTime.ToString("yyyy-MM-dd"));
+                    if (f.Size > 0) more.Add(Texts.F("dl_link_size", (f.Size / 1048576.0).ToString("0.0")));
+                    if (more.Count > 0) words.Children.Add(Small(string.Join("  ·  ", more), new Thickness(0, 2, 0, 0)));
+                    line.Children.Add(words);
+                    panel.Children.Add(line);
+                }
+            }
+            return panel;
+        }
+
+        /// <summary>One file of a link downloaded and added as a dropped archive is; the archive
+        /// goes afterwards, and the mod's source is the page it came from.</summary>
+        async void Take(string page, SiteFile f)
+        {
+            if (linkBusy != null || busy) return;
+            linkBusy = Texts.F("dl_link_downloading", f.Label ?? f.Name);
+            RenderDownloads();
+            string file = null;
+            var r = await Task.Run(() => Cli.Call(() => { file = Sites.Fetch(page, f); return ""; }));
+            linkBusy = null;
+            if (!r.Ok)
+            {
+                linkSaid = r.Refused?.Kind != null && CheckWhy(r.Refused.Kind) != r.Refused.Kind ? CheckWhy(r.Refused.Kind) : Texts.F("failed", r.Message);
+                RenderDownloads();
+                return;
+            }
+            linkFiles = null;
+            linkSaid = null;
+            RenderDownloads();
+            try { await DropPaths(new List<string> { file }); }
+            finally
+            {
+                try
+                {
+                    var lib = Library.Load();
+                    bool changed = false;
+                    foreach (var m in lib.Mods.Where(m => string.Equals(m.Source, Paths.Abs(file), StringComparison.OrdinalIgnoreCase))) { m.Source = page; changed = true; }
+                    if (changed) lib.Save();
+                    System.IO.File.Delete(file);
+                }
+                catch (Exception e) when (e is IOException || e is UnauthorizedAccessException || e is ModError) { }
+            }
+            RenderDownloads();
         }
 
         /// <summary>What a mod's page says: its picture (none for adult content), name, author,
@@ -6798,7 +6924,7 @@ namespace QuickDeploy
                 }
                 menu.Items.Add(TagMenu(m));
                 menu.Items.Add(ModGroupMenu(many));
-                if (many.Any(x => x.Channel == "Nexus Mods" || x.Channel == "GitHub"))
+                if (many.Any(Matchable))
                 {
                     var match = new MenuItem { Header = Texts.F("many_match", many.Count) };
                     match.Click += (s, e) => MatchSource(m);
@@ -7176,8 +7302,11 @@ namespace QuickDeploy
                 case "no_check": text = Texts.F("up_no_check", u.Channel); break;
                 default: text = Texts.F("up_error", CheckWhy(u.Why)); colour = "Yellow"; break;
             }
-            // a GitHub release without an archive to download: its page only
-            if (apply && m.Channel == "GitHub" && string.IsNullOrEmpty(u.Download)) apply = false;
+            // a GitHub release without an archive, a page that needs its own sign-in or offers
+            // several files: its page only, and why
+            if (apply && m.Channel != "Nexus Mods" && string.IsNullOrEmpty(u.Download)) apply = false;
+            if (u != null && (u.Status == "update" || u.Status == "unknown") && u.Why != null && u.Why.StartsWith("page_only_", StringComparison.Ordinal))
+                text += (text.Length > 0 ? "\n" : "") + Texts.Get("up_" + u.Why);
             if (text.Length > 0)
             {
                 var said = Selectable.Text(text, 12, colour);
@@ -7389,6 +7518,14 @@ namespace QuickDeploy
             {
                 case "offline": return Texts.Get("up_why_offline");
                 case "missing": return Texts.Get("up_why_missing");
+                case "site_missing": return Texts.Get("up_why_site_missing");
+                case "site_refuses": return Texts.Get("up_why_site_refuses");
+                case "site_busy": return Texts.Get("up_why_busy");
+                case "site_error": return Texts.Get("up_why_site_error");
+                case "not_archive": return Texts.Get("up_why_not_archive");
+                case "download_cut": return Texts.Get("up_why_download_cut");
+                case "download_refused": return Texts.Get("up_why_download_refused");
+                case "bad_url": return Texts.Get("dl_link_empty");
                 case "busy": return Texts.Get("up_why_busy");
                 // Nexus Mods is checked in every build, through its public API (Updates)
                 case "nexus_offline": return Texts.Get("up_why_offline");
@@ -7410,6 +7547,14 @@ namespace QuickDeploy
             if (m.Channel == "GitHub")
             {
                 if (await Act(() => Cli.Call(() => Texts.F("up_done", Updates.ApplyGitHub(m.Id, u).Name, u.Latest)), true))
+                { updates.Remove(m.Id); updated.Add(m.Id); }
+                return;
+            }
+            // GameBanana, ModWorkshop, a direct link: at once; a page without a file for us: the page
+            if (m.Channel != null && m.Channel != "Nexus Mods")
+            {
+                if (string.IsNullOrEmpty(u.Download)) { Process.Start(new ProcessStartInfo(u.Page ?? m.Page) { UseShellExecute = true }); return; }
+                if (await Act(() => Cli.Call(() => Texts.F("up_done", Sites.Apply(m.Id, u).Name, u.Latest)), true))
                 { updates.Remove(m.Id); updated.Add(m.Id); }
                 return;
             }
@@ -7464,7 +7609,7 @@ namespace QuickDeploy
         async void MatchSource(ModRow m)
         {
             if (busy) return;
-            var many = Taken(m).Where(x => x.Channel == "Nexus Mods" || x.Channel == "GitHub").ToList();
+            var many = Taken(m).Where(Matchable).ToList();
             if (many.Count == 0) { Dialog.Tell(this, Texts.Get("match_no_source")); return; }
             var ids = many.Select(x => x.Id).ToList();
             var r = await Exec(() => Cli.Call(() =>
@@ -7497,6 +7642,7 @@ namespace QuickDeploy
             {
                 ("nexus", Texts.Get("filter_nexus"), mods.Count(m => FromOf(m) == "nexus")),
                 ("github", Texts.Get("filter_github"), mods.Count(m => FromOf(m) == "github")),
+                ("site", Texts.Get("filter_site"), mods.Count(m => FromOf(m) == "site")),
                 ("none", Texts.Get("filter_no_from"), mods.Count(m => FromOf(m) == "none")),
             });
             Group(menu, true, kindFilter, new List<(string, string, int)>

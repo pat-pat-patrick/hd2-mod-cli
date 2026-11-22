@@ -41,8 +41,11 @@ namespace Hd2Mod
         public NexusRef Nexus;
         /// <summary>The GitHub release it came from, else null.</summary>
         public GitHubRef GitHub;
-        /// <summary>Another site's page it came from (no update check there), else null.</summary>
+        /// <summary>Another site's page it came from, else null: AyakaMods, GameBanana, ModWorkshop
+        /// and a direct link to an archive are checked for updates (Sites); other pages are not.</summary>
         public string Page;
+        /// <summary>What that page offered when this copy was taken (Sites), else null.</summary>
+        public PageRef PageGot;
         /// <summary>What its site says about it, when it has been asked (Site.Fill).</summary>
         public SiteInfo Site;
         /// <summary>The player's own labels for this mod, in the order they were given.</summary>
@@ -81,6 +84,7 @@ namespace Hd2Mod
         public string Path, Name, Source, Page, Version;
         public NexusRef Nexus;
         public GitHubRef GitHub;
+        public PageRef PageGot;
         /// <summary>When it was replaced, in Unix seconds.</summary>
         public long Kept;
     }
@@ -176,6 +180,7 @@ namespace Hd2Mod
                 mod.Nexus = ReadNexus(Json.Obj(m, "nexus"));
                 mod.GitHub = ReadGitHub(Json.Obj(m, "github"));
                 mod.Page = Json.Str(m, "page");
+                mod.PageGot = ReadPageRef(Json.Obj(m, "page_got"));
                 mod.Skip = Json.Str(m, "skip");
                 mod.OffWith = Json.Str(m, "off_with");
                 mod.For = Json.Str(m, "for") is string f && f.Length > 0 ? f : null;
@@ -187,7 +192,7 @@ namespace Hd2Mod
                     {
                         Path = Json.Str(pv, "path"), Name = Json.Str(pv, "name"), Source = Json.Str(pv, "source"), Page = Json.Str(pv, "page"),
                         Version = Json.Str(pv, "version"), Nexus = ReadNexus(Json.Obj(pv, "nexus")), GitHub = ReadGitHub(Json.Obj(pv, "github")),
-                        Kept = Json.Long(pv, "kept"),
+                        PageGot = ReadPageRef(Json.Obj(pv, "page_got")), Kept = Json.Long(pv, "kept"),
                     };
                 foreach (var t in Json.List(m, "tags")) if (t is string tag && tag.Trim().Length > 0) mod.Tags.Add(tag.Trim());
                 mod.Group = Json.Str(m, "group");
@@ -235,6 +240,26 @@ namespace Hd2Mod
 
         static GitHubRef ReadGitHub(Dictionary<string, object> gh) => gh == null ? null :
             new GitHubRef { Owner = Json.Str(gh, "owner"), Repo = Json.Str(gh, "repo"), Tag = Json.Str(gh, "tag"), Asset = Json.Str(gh, "asset"), Uploaded = Json.Long(gh, "uploaded") };
+
+        static PageRef ReadPageRef(Dictionary<string, object> p) => p == null ? null :
+            new PageRef
+            {
+                Version = Json.Str(p, "version"), File = Json.Str(p, "file"), ETag = Json.Str(p, "etag"), Name = Json.Str(p, "name"), Label = Json.Str(p, "label"),
+                Time = Json.Long(p, "time"), Size = Json.Long(p, "size"),
+            };
+
+        static Dictionary<string, object> PageRefJson(PageRef p)
+        {
+            var d = new Dictionary<string, object>();
+            if (p.Version != null) d["version"] = p.Version;
+            if (p.File != null) d["file"] = p.File;
+            if (p.ETag != null) d["etag"] = p.ETag;
+            if (p.Name != null) d["name"] = p.Name;
+            if (p.Label != null) d["label"] = p.Label;
+            if (p.Time > 0) d["time"] = p.Time;
+            if (p.Size > 0) d["size"] = p.Size;
+            return d;
+        }
 
         static Dictionary<string, object> NexusJson(NexusRef n) => new Dictionary<string, object>
         {
@@ -290,6 +315,7 @@ namespace Hd2Mod
                     };
                     if (m.Previous.Nexus != null) pv["nexus"] = NexusJson(m.Previous.Nexus);
                     if (m.Previous.GitHub != null) pv["github"] = GitHubJson(m.Previous.GitHub);
+                    if (m.Previous.PageGot != null) pv["page_got"] = PageRefJson(m.Previous.PageGot);
                     entry["previous"] = pv;
                 }
                 if (m.RealName != null) entry["real_name"] = m.RealName;
@@ -316,6 +342,7 @@ namespace Hd2Mod
                     ["picture"] = m.Site.Picture, ["version"] = m.Site.Version, ["updated"] = m.Site.Updated,
                 };
                 if (m.Page != null) entry["page"] = m.Page;
+                if (m.Page != null && m.PageGot != null) entry["page_got"] = PageRefJson(m.PageGot);
                 mods.Add(entry);
             }
             var d = new Dictionary<string, object> { ["version"] = 1L, ["mods"] = mods };
