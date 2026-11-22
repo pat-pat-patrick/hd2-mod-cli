@@ -8,8 +8,9 @@ namespace Hd2Mod
 {
     /// <summary>Whether a mod being added is a new version of one in the library (the user,
     /// 2026-11-01: dropping any mod's new version in should update it, not only MDL3's):
-    /// - the same manifest Guid (Commands.Add) or the same download source, a Nexus Mods mod or
-    ///   a GitHub repository: the same mod, put in its place at once;
+    /// - the same manifest Guid (Commands.Add) or the same download source, a Nexus Mods mod, a
+    ///   GitHub repository or an AyakaMods, GameBanana or ModWorkshop page: the same mod, put in
+    ///   its place at once (a page with several files: only the same file's line, else asked);
     /// - only the name, without its version, date or the suffixes managers add: asked, since a
     ///   name alike is not proof.
     /// A mod whose manifest Guid differs from the new one's is another mod, whatever else matches.</summary>
@@ -30,11 +31,23 @@ namespace Hd2Mod
             var others = lib.Mods.Where(m => !SamePath(m.Path, folder) && (guid == null || Guid(m.Path) is var g && (g == null || g.Equals(guid, StringComparison.OrdinalIgnoreCase)))).ToList();
             var key = Key(name) ?? Key(file != null ? Path.GetFileNameWithoutExtension(file) : null);
 
-            // the download source: the same Nexus Mods mod or GitHub repository
+            // the download source: the same Nexus Mods mod, GitHub repository or site page
             if (file != null && File.Exists(file))
             {
                 var probe = new Mod();
                 Origins.FromFile(probe, file);
+                var page = SitePage(probe.Page);
+                if (page.Site != null)
+                {
+                    var onPage = others.Where(m => SitePage(m.Page) == page).ToList();
+                    // the same file's line: its label or its name without what changes (Sites.Skeleton)
+                    bool Line(Mod m) =>
+                        (probe.PageGot?.Label != null && m.PageGot?.Label != null && string.Equals(probe.PageGot.Label, m.PageGot.Label, StringComparison.OrdinalIgnoreCase))
+                        || (ArchiveOf(m) is string was && Sites.Skeleton(was) == Sites.Skeleton(probe.PageGot?.Name ?? Path.GetFileName(file)));
+                    var lined = onPage.Where(Line).ToList();
+                    if (lined.Count == 1) return new Found { Mod = lined[0], Sure = true };
+                    if (onPage.Count == 1) return new Found { Mod = onPage[0], Sure = false };
+                }
                 var nexus = probe.Nexus?.Mod ?? Origins.NexusModOf(Path.GetFileNameWithoutExtension(file));
                 var same = others.Where(m =>
                     (nexus > 0 && m.Nexus != null && m.Nexus.Mod == nexus && (probe.Nexus == null || SameGame(m.Nexus.Game, probe.Nexus.Game))) ||
@@ -59,6 +72,22 @@ namespace Hd2Mod
             if (key == null) return null;
             var alike = others.Where(m => Names(m).Contains(key)).ToList();
             return alike.Count == 1 ? new Found { Mod = alike[0], Sure = false } : null;
+        }
+
+        /// <summary>A page of AyakaMods, GameBanana or ModWorkshop as (site, id); a direct link or
+        /// another page is none (nulls).</summary>
+        static (string Site, string Id) SitePage(string page)
+        {
+            var p = Sites.Of(page);
+            return p.Site == null || p.Site == Sites.Direct ? (null, null) : p;
+        }
+
+        /// <summary>The archive a mod's files came from, by its name: recorded from its page, else its source file.</summary>
+        static string ArchiveOf(Mod m)
+        {
+            if (m.PageGot?.Name != null) return m.PageGot.Name;
+            if (string.IsNullOrEmpty(m.Source) || m.Source.StartsWith("http", StringComparison.OrdinalIgnoreCase)) return null;
+            try { return Path.GetFileName(m.Source); } catch (ArgumentException) { return null; }
         }
 
         static IEnumerable<string> Names(Mod m) =>

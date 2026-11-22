@@ -43,7 +43,7 @@ namespace Hd2Mod
             var older = mod.Previous;
             mod.Previous = new PreviousVersion
             {
-                Path = folder, Name = mod.Name, Source = mod.Source, Page = mod.Page, Nexus = mod.Nexus, GitHub = mod.GitHub,
+                Path = folder, Name = mod.Name, Source = mod.Source, Page = mod.Page, Nexus = mod.Nexus, GitHub = mod.GitHub, PageGot = mod.PageGot,
                 Version = Origins.VersionOf(mod).Version, Kept = Now(),
             };
             // the one kept before goes, unless it is the very version coming (a rollback, then the
@@ -101,13 +101,14 @@ namespace Hd2Mod
             if (!Directory.Exists(back.Path)) throw new ModError("the earlier version's folder is gone: " + back.Path, "gone", back.Path);
             var now = new PreviousVersion
             {
-                Path = mod.Path, Name = mod.Name, Source = mod.Source, Page = mod.Page, Nexus = mod.Nexus, GitHub = mod.GitHub,
+                Path = mod.Path, Name = mod.Name, Source = mod.Source, Page = mod.Page, Nexus = mod.Nexus, GitHub = mod.GitHub, PageGot = mod.PageGot,
                 Version = Origins.VersionOf(mod).Version, Kept = Now(),
             };
             mod.Path = back.Path;
             mod.Source = back.Source;
             mod.ArchiveMd5 = null;      // taken again from its archive, when that is still there
             mod.Page = back.Page;
+            mod.PageGot = back.PageGot;
             mod.Nexus = back.Nexus;
             mod.GitHub = back.GitHub;
             // a name the player gave the mod stays; the name it came with is the version's

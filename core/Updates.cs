@@ -22,6 +22,8 @@ namespace Hd2Mod
         public long LatestFile, LatestTime;
         /// <summary>GitHub: the release and the file of the newest (GitHubUpdates).</summary>
         public string LatestTag, LatestAsset;
+        /// <summary>A page's file: the site's label for the newest (GameBanana: "SA-8 NO HELM").</summary>
+        public string LatestLabel;
         /// <summary>Nexus Mods: what each version since the installed one changed, newest first, as
         /// its author wrote it on the page (the user, 2026-11-04); empty when the page says nothing.</summary>
         public List<Change> Changes = new List<Change>();
@@ -37,8 +39,9 @@ namespace Hd2Mod
     /// <summary>Update checks on each mod's own channel (the user, 2026-10-24: "从 GitHub 下下来的，
     /// 就从 GitHub 检查更新"): Nexus Mods through its public API (v2: the files, their groups and
     /// categories), with no key, in every build; GitHub through its releases (GitHubUpdates: the
-    /// mod's own file by its manifest Guid, the newest by the time GitHub received it).
-    /// Read only; nothing is downloaded unless the player asks.</summary>
+    /// mod's own file by its manifest Guid, the newest by the time GitHub received it); AyakaMods,
+    /// GameBanana, ModWorkshop and direct links through Sites. Read only; nothing is downloaded
+    /// unless the player asks.</summary>
     public static class Updates
     {
         public static string GitHubApi = Environment.GetEnvironmentVariable("HD2QD_GITHUB_API") ?? "https://api.github.com";
@@ -111,6 +114,7 @@ namespace Hd2Mod
         public static List<UpdateInfo> Check(Library lib, Action<int, int> progress = null, bool learn = true)
         {
             if (learn && Learn(lib, out _)) lib.Save();
+            Sites.BeginCheck();
             var out_ = new List<UpdateInfo>();
             int i = 0;
             bool busy = false;
@@ -156,6 +160,9 @@ namespace Hd2Mod
                 string now = null;
                 if (m.Nexus != null) nexus.TryGetValue(m.Nexus.Mod, out now);
                 else if (m.GitHub != null && by.TryGetValue(m.Id, out var u) && u.Channel == "GitHub" && u.Status != "error") now = u.Latest;
+                // a page of AyakaMods, GameBanana or ModWorkshop: the version it writes (not a time in its place)
+                else if (m.Page != null && Sites.Of(m.Page).Site is string site && site != Sites.Direct && by.TryGetValue(m.Id, out var su)
+                         && su.Status != "error" && su.Latest != null && !su.Latest.EndsWith(" UTC", StringComparison.Ordinal)) now = su.Latest;
                 if (string.IsNullOrWhiteSpace(now) || string.Equals(now.Trim(), m.Site.Version, StringComparison.Ordinal)) continue;
                 m.Site.Version = now.Trim();
                 changed = true;
@@ -228,7 +235,7 @@ namespace Hd2Mod
 
         /// <summary>What a result was checked for: the mod's folder, its recorded version and its
         /// page. A mod changed since (a new version, another source) is not shown the old result.</summary>
-        public static string As(Mod m) => m.Path + "\u001f" + (m.Nexus?.Version ?? m.GitHub?.Tag) + (m.GitHub?.Asset != null ? "/" + m.GitHub.Asset : "") + "\u001f" + Origins.Of(m).Page;
+        public static string As(Mod m) => m.Path + "\u001f" + (m.Nexus?.Version ?? m.GitHub?.Tag ?? m.PageGot?.Version) + (m.GitHub?.Asset != null ? "/" + m.GitHub.Asset : "") + "\u001f" + Origins.Of(m).Page;
 
         /// <summary>Results kept: a whole check's replace the last ones and set its time; one mod's
         /// replace only that mod's.</summary>
@@ -246,7 +253,7 @@ namespace Hd2Mod
                             ["as"] = As(m), ["name"] = u.Name, ["channel"] = u.Channel, ["page"] = u.Page, ["status"] = u.Status,
                             ["current"] = u.Current, ["latest"] = u.Latest, ["why"] = u.Why, ["download"] = u.Download,
                             ["latest_file"] = u.LatestFile, ["latest_time"] = u.LatestTime,
-                            ["latest_tag"] = u.LatestTag, ["latest_asset"] = u.LatestAsset,
+                            ["latest_tag"] = u.LatestTag, ["latest_asset"] = u.LatestAsset, ["latest_label"] = u.LatestLabel,
                             ["changes"] = u.Changes.Select(c => (object)new Dictionary<string, object> { ["version"] = c.Version, ["lines"] = c.Lines.Cast<object>().ToList() }).ToList(),
                         };
                 d["mods"] = kept;
@@ -271,7 +278,7 @@ namespace Hd2Mod
                     ModId = m.Id, Name = Json.Str(d, "name"), Channel = Json.Str(d, "channel"), Page = Json.Str(d, "page"), Status = Json.Str(d, "status"),
                     Current = Json.Str(d, "current"), Latest = Json.Str(d, "latest"), Why = Json.Str(d, "why"), Download = Json.Str(d, "download"),
                     LatestFile = Json.Long(d, "latest_file"), LatestTime = Json.Long(d, "latest_time"),
-                    LatestTag = Json.Str(d, "latest_tag"), LatestAsset = Json.Str(d, "latest_asset"),
+                    LatestTag = Json.Str(d, "latest_tag"), LatestAsset = Json.Str(d, "latest_asset"), LatestLabel = Json.Str(d, "latest_label"),
                     Changes = Json.List(d, "changes").OfType<Dictionary<string, object>>()
                         .Select(c => new Change { Version = Json.Str(c, "version"), Lines = Json.List(c, "lines").OfType<string>().Select(Words).Where(x => x.Length > 0).ToList() }).ToList(),
                 };
@@ -294,7 +301,8 @@ namespace Hd2Mod
                     if (save) SaveChecks();
                 }
                 else if (m.GitHub != null) GitHubUpdates.Check(m, u);
-                else u.Status = m.Page != null ? "no_check" : "no_source";
+                else if (m.Page != null) Sites.Check(m, u);       // AyakaMods, GameBanana, ModWorkshop, a direct link; else no_check
+                else u.Status = "no_source";
             }
             catch (ModError e) { u.Status = "error"; u.Why = e.Kind ?? e.Message; }
             return u;

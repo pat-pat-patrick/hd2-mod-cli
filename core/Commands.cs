@@ -116,15 +116,19 @@ namespace Hd2Mod
             Cmd("nexus-login", new Spec { Help = "sign in to Nexus Mods: your browser opens Nexus Mods' page, where you allow this program (OAuth with PKCE)",
                                           Run = NexusLoginCmd }),
             Cmd("nexus-logout", new Spec { Help = "sign out of Nexus Mods here (the access can also be taken back on Nexus Mods)", Run = NexusLogoutCmd }),
-            Cmd("check-updates", new Spec { Help = "check every mod for a newer version on its own channel (Nexus Mods, GitHub releases), with what each version changed; --at-start on|off: the window's check when it opens, once a day (on by default)", Values = new[] { "--at-start" }, Run = CheckUpdatesCmd }),
-            Cmd("update", new Spec { Help = "download a mod's newer version from GitHub (or Nexus Mods, premium accounts) and put it in the library", Positionals = new[] { "mod" }, Run = UpdateCmd }),
+            Cmd("check-updates", new Spec { Help = "check every mod for a newer version on its own channel (Nexus Mods, GitHub releases, AyakaMods, GameBanana, ModWorkshop, a direct link), with what each version changed; --at-start on|off: the window's check when it opens, once a day (on by default)", Values = new[] { "--at-start" }, Run = CheckUpdatesCmd }),
+            Cmd("update", new Spec { Help = "download a mod's newer version from GitHub, GameBanana, ModWorkshop or its direct link (or Nexus Mods, premium accounts) and put it in the library", Positionals = new[] { "mod" }, Run = UpdateCmd }),
 #else
-            Cmd("check-updates", new Spec { Help = "check every mod for a newer version on its own channel (Nexus Mods, GitHub releases), with what each version changed; --at-start on|off: the window's check when it opens, once a day (on by default)", Values = new[] { "--at-start" }, Run = CheckUpdatesCmd }),
-            Cmd("update", new Spec { Help = "download a mod's newer release from GitHub and put it in the library", Positionals = new[] { "mod" }, Run = UpdateCmd }),
+            Cmd("check-updates", new Spec { Help = "check every mod for a newer version on its own channel (Nexus Mods, GitHub releases, AyakaMods, GameBanana, ModWorkshop, a direct link), with what each version changed; --at-start on|off: the window's check when it opens, once a day (on by default)", Values = new[] { "--at-start" }, Run = CheckUpdatesCmd }),
+            Cmd("update", new Spec { Help = "download a mod's newer version from GitHub, GameBanana, ModWorkshop or its direct link and put it in the library", Positionals = new[] { "mod" }, Run = UpdateCmd }),
 #endif
+            Cmd("add-link", new Spec { Help = "add a mod from a link: a GameBanana or ModWorkshop page, a GitHub repository or release, or a direct link to a zip, 7z or rar " +
+                                               "(downloaded, then added as hd2qd add adds a file, its page kept for update checks). A page with several files lists them: " +
+                                               "--file ID takes one. AyakaMods and Nexus Mods pages need their own sign-in: download there, then add the file",
+                                       Positionals = new[] { "url" }, Values = new[] { "--file", "--name", "--for" }, Flags = new[] { "--new", "--replace" }, Run = AddLinkCmd }),
             Cmd("nexus-info", new Spec { Help = "a mod on Nexus Mods by its number (16662, N站16662) or its page: its name, author, version, page, and whether the library has it (read only; no sign-in needed)",
                                          Positionals = new[] { "number" }, Run = NexusInfoCmd }),
-            Cmd("source", new Spec { Help = "set where a mod comes from: a Nexus Mods page, a GitHub repository, or another page (--clear: none)",
+            Cmd("source", new Spec { Help = "set where a mod comes from: a Nexus Mods, AyakaMods, GameBanana or ModWorkshop page, a GitHub repository, a direct link to its archive, or another page (--clear: none)",
                                      Positionals = new[] { "mod" }, Many = true, Flags = new[] { "--clear" }, Run = SourceCmd }),
             Cmd("delete", new Spec { Help = "delete mods from the disk for good: out of the library and the game (one deploy), their folders deleted",
                                      Positionals = new[] { "mods" }, Many = true, Flags = new[] { "--yes" }, Run = DeleteCmd }),
@@ -711,7 +715,7 @@ namespace Hd2Mod
             mod.ArchiveMd5 = Fingerprints.OfArchive(a.Pos["path"]);
             var fresh = new Mod();
             if (File.Exists(a.Pos["path"])) Origins.FromFile(fresh, a.Pos["path"]);
-            if (fresh.Nexus != null || fresh.GitHub != null || fresh.Page != null) { mod.Nexus = fresh.Nexus; mod.GitHub = fresh.GitHub; mod.Page = fresh.Page; }
+            if (fresh.Nexus != null || fresh.GitHub != null || fresh.Page != null) { mod.Nexus = fresh.Nexus; mod.GitHub = fresh.GitHub; mod.Page = fresh.Page; mod.PageGot = fresh.PageGot; }
             else
             {
                 // files that do not say where they came from: the page stays, the old download's file
@@ -720,6 +724,7 @@ namespace Hd2Mod
                 // learns the file from the archive's MD5 (Fingerprints), or the version from the name
                 if (mod.Nexus != null) mod.Nexus = new NexusRef { Game = mod.Nexus.Game, Mod = mod.Nexus.Mod };
                 if (mod.GitHub != null) mod.GitHub = new GitHubRef { Owner = mod.GitHub.Owner, Repo = mod.GitHub.Repo };
+                mod.PageGot = null;
             }
             if (!string.IsNullOrEmpty(a.Value("--name"))) mod.Name = a.Value("--name");
             else if (!string.IsNullOrEmpty(manifest?.Name))
@@ -1392,6 +1397,12 @@ namespace Hd2Mod
             var u = Updates.One(mod);
             if (u.Status != "update") throw new ModError(mod.Name + ": no newer version found (" + u.Status + (u.Why != null ? ", " + u.Why : "") + ")", "no_update");
             if (mod.GitHub != null) { o.WriteLine("updated: " + Updates.ApplyGitHub(mod.Id, u).Name + " " + u.Latest); return; }
+            if (mod.Nexus == null && mod.Page != null)
+            {
+                if (string.IsNullOrEmpty(u.Download)) throw new ModError(mod.Name + ": " + u.Latest + " is out, on a page that is downloaded in a browser: " + u.Page, "page_only", u.Page);
+                o.WriteLine("updated: " + Sites.Apply(mod.Id, u).Name + " " + u.Latest);
+                return;
+            }
 #if HAS_NEXUS
             var link = new NxmLink { Game = mod.Nexus.Game, Mod = mod.Nexus.Mod, File = u.LatestFile };
             var (m, _) = Nexus.Install(link, Nexus.Credential());
@@ -1401,12 +1412,51 @@ namespace Hd2Mod
 #endif
         }
 
+        /// <summary>A mod added from a link (Sites.Offered): the file downloaded with its origin
+        /// written as a browser's download carries it, then added as hd2qd add adds a file (a new
+        /// version of a mod in the library takes its place), then deleted.</summary>
+        static void AddLinkCmd(Args a, TextWriter o)
+        {
+            var (page, site, files, why) = Sites.Offered(a.Pos["url"]);
+            if (files.Count == 0)
+                throw new ModError(why == "sign_in" || why == "page_only_sign_in" ? (site ?? "this site") + " needs its own sign-in to download: download it at " + page + ", then hd2qd add the file"
+                                   : why == "author_off" ? "the author asks mod managers not to download this mod: download it at " + page + ", then hd2qd add the file"
+                                   : why == "elsewhere" ? "the mod is downloaded from another site its page links to: " + page
+                                   : why == "unknown_page" ? "not a page this program can download from (GameBanana, ModWorkshop, GitHub, a direct link to an archive): " + page
+                                   : "the page offers no zip, 7z or rar: " + page, why, page);
+            var id = a.Value("--file");
+            var f = id != null ? files.FirstOrDefault(x => x.Id == id) ?? throw new ModError("the page has no file " + id, "no_file", id)
+                  : files.Count == 1 ? files[0] : null;
+            if (f == null)
+            {
+                o.WriteLine(page + " offers " + files.Count + " files: --file ID takes one");
+                foreach (var x in files)
+                    o.WriteLine("  " + x.Id.PadRight(10) + " " + x.Name + (x.Label != null ? "  (" + x.Label + ")" : "") + (x.Version != null ? "  " + x.Version : ""));
+                throw new ModError("choose a file with --file", "choose_file");
+            }
+            o.WriteLine("downloading " + f.Name + " from " + (site ?? page));
+            var file = Sites.Fetch(page, f);
+            try
+            {
+                a.Pos["path"] = file;
+                Add(a, o);
+                // the archive goes: the mod's source is the page it came from
+                var lib = Library.Load();
+                foreach (var m in lib.Mods.Where(m => string.Equals(m.Source, Paths.Abs(file), StringComparison.OrdinalIgnoreCase))) m.Source = page;
+                lib.Save();
+            }
+            finally
+            {
+                try { File.Delete(file); } catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { }
+            }
+        }
+
         static void SourceCmd(Args a, TextWriter o)
         {
             var lib = Library.Load();
             var mod = Ops.Pick(lib, a.Rest[0]);
             if (a.Flag("--clear")) { mod.Nexus = null; mod.GitHub = null; mod.Page = null; }
-            else if (a.Rest.Count < 2 || !Origins.FromUrl(mod, a.Rest[1])) throw new ModError("give an address: a Nexus Mods page or a GitHub repository", "bad_url");
+            else if (a.Rest.Count < 2 || !Origins.FromUrl(mod, a.Rest[1])) throw new ModError("give an address: a Nexus Mods, AyakaMods, GameBanana or ModWorkshop page, a GitHub repository, or a direct link", "bad_url");
             lib.Save();
             var (channel, page) = Origins.Of(mod);
             o.WriteLine(mod.Name + ": " + (channel == null ? "no source" : channel + "  " + page));

@@ -220,6 +220,21 @@ namespace Hd2Mod
             }
         }
 
+        /// <summary>A file's named stream written (path:name), as a browser writes Zone.Identifier
+        /// on a download; false when the file system has no streams (FAT32, a network share).</summary>
+        public static bool WriteStream(string path, string name, string text)
+        {
+            // GENERIC_WRITE, no sharing, CREATE_ALWAYS
+            using (var h = CreateFile(path + ":" + name, 0x40000000, 0, IntPtr.Zero, 2, 0, IntPtr.Zero))
+            {
+                if (h.IsInvalid) return false;
+                using (var fs = new FileStream(h, FileAccess.Write))
+                using (var w = new StreamWriter(fs, new UTF8Encoding(false)))
+                    w.Write(text);
+                return true;
+            }
+        }
+
         /// <summary>A hard link at newName to existing; false when the system refuses
         /// (another drive, a file system without links).</summary>
         public static bool Link(string existing, string newName) => CreateHardLink(newName, existing, IntPtr.Zero);

@@ -9,7 +9,7 @@ namespace Hd2Mod
 {
     /// <summary>Where a mod came from, for update checks on its own channel (the user, 2026-10-24:
     /// "从 GitHub 下下来的，就从 GitHub 检查更新"): Nexus Mods, a GitHub release, or another
-    /// site's page (no check there).</summary>
+    /// site's page (AyakaMods, GameBanana, ModWorkshop and direct links are checked: Sites).</summary>
     public static class Origins
     {
         static readonly Regex GitHubRelease = new Regex(@"github\.com/([\w.-]+)/([\w.-]+)/releases/(?:download|tag)/([^/?#]+)(?:/([^/?#]+))?", RegexOptions.IgnoreCase);
@@ -51,7 +51,17 @@ namespace Hd2Mod
                 }
                 if (r.Mod > 0) { mod.Nexus = r; return; }
             }
-            if (!string.IsNullOrEmpty(referrer) && referrer.StartsWith("http", StringComparison.OrdinalIgnoreCase)) mod.Page = referrer;
+            if (!string.IsNullOrEmpty(referrer) && referrer.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+            {
+                mod.Page = referrer;
+                // what the page offered: written by our own download (Sites.Zone); for a browser's
+                // download of a page we check, when it was downloaded (the file's time), which the
+                // page's next upload is compared with
+                mod.PageGot = Sites.FromZone(zone);
+                if (mod.PageGot == null && Sites.Of(referrer).Site != null)
+                    try { mod.PageGot = new PageRef { Time = new DateTimeOffset(File.GetLastWriteTimeUtc(file)).ToUnixTimeSeconds() }; }
+                    catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { }
+            }
         }
 
         /// <summary>The file's own name in a Nexus Mods download name ("Super Holo HUD" in "Super Holo
@@ -96,6 +106,7 @@ namespace Hd2Mod
                 mod.Nexus = new NexusRef { Game = n.Groups[1].Value.ToLowerInvariant(), Mod = long.Parse(n.Groups[2].Value) };
                 mod.GitHub = null;
                 mod.Page = null;
+                mod.PageGot = null;
                 return true;
             }
             var g = GitHubRelease.Match(url);
@@ -106,8 +117,11 @@ namespace Hd2Mod
                                        : new GitHubRef { Owner = repo.Groups[1].Value, Repo = repo.Groups[2].Value };
                 mod.Nexus = null;
                 mod.Page = null;
+                mod.PageGot = null;
                 return true;
             }
+            // what the page offered when this copy was taken is not known for another page
+            if (!string.Equals(mod.Page, url, StringComparison.OrdinalIgnoreCase)) mod.PageGot = null;
             mod.Page = url;
             mod.Nexus = null;
             mod.GitHub = null;
@@ -189,7 +203,7 @@ namespace Hd2Mod
         {
             if (m.Nexus != null) return ("Nexus Mods", Nexus.Page(m.Nexus));
             if (m.GitHub != null) return ("GitHub", "https://github.com/" + m.GitHub.Owner + "/" + m.GitHub.Repo + "/releases");
-            if (m.Page != null) return (Uri.TryCreate(m.Page, UriKind.Absolute, out var u) ? u.Host : m.Page, m.Page);
+            if (m.Page != null) return (Sites.Channel(m.Page) ?? (Uri.TryCreate(m.Page, UriKind.Absolute, out var u) ? u.Host : m.Page), m.Page);
             return (null, null);
         }
     }
