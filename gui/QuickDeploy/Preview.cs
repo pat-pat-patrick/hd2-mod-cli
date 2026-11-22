@@ -34,6 +34,8 @@ namespace QuickDeploy
         const string OpensPreview = "opensPreview";
         ScrollViewer previewScroll;
         string previewOf;
+        // how many times the preview was drawn whole (PreviewOptsTest)
+        int previewFills;
         // the options' cards drawn large, with their pictures at full size (Card)
         bool bigCards;
         readonly Dictionary<string, ImageSource> fullImages = new Dictionary<string, ImageSource>(StringComparer.OrdinalIgnoreCase);
@@ -155,12 +157,37 @@ namespace QuickDeploy
             preview.Show();
         }
 
+        /// <summary>Everything the preview of a mod shows, as one string: the same, and it is not
+        /// drawn again (PreviewSig).</summary>
+        string previewSig;
+
+        string PreviewSig(ModRow m)
+        {
+            if (m == null) return Texts.Lang;
+            var sb = new System.Text.StringBuilder();
+            void Add(object x) => sb.Append(x).Append('\u001f');
+            Add(Texts.Lang); Add(m.Id); Add(m.Name); Add(m.Icon); Add(m.Enabled); Add(m.InProfile); Add(st.ProfilesOn); Add(m.ShownVersion); Add(m.SiteAuthor); Add(m.Description);
+            Add(m.Chosen); Add(m.Choices); Add(m.Files.Count); Add(m.DeployBytes);
+            foreach (var o in m.Options)
+            {
+                Add(o.Name); Add(o.Enabled); Add(o.Icon); Add(o.Files); Add(o.Bytes); Add(o.Description); Add(string.Join("|", o.Clashes));
+                foreach (var s in o.Subs) { Add(s.Name); Add(s.Enabled); Add(s.Icon); Add(s.Files); Add(s.Bytes); Add(s.Description); Add(string.Join("|", s.Clashes)); }
+            }
+            return sb.ToString();
+        }
+
         /// <summary>The preview drawn again for the mod chosen now (a click in it, a state read, an
-        /// arrow key); its scroll kept while it is the same mod.</summary>
+        /// arrow key); its scroll kept while it is the same mod. Not drawn again when nothing it
+        /// shows has changed: the state read after each click drew it whole, and for one frame it
+        /// stood at the top before its place came back (the user, 2026-11-20: "位置跑哪儿去了").</summary>
         void FillPreview()
         {
             if (preview == null) return;
             var m = st?.Mods.FirstOrDefault(x => x.Id == selectedId);
+            var sig = PreviewSig(m);
+            if (m?.Id == previewOf && sig == previewSig && preview.Content != null) return;
+            previewSig = sig;
+            previewFills++;
             double keep = m != null && m.Id == previewOf && previewScroll != null ? previewScroll.VerticalOffset : 0;
             previewOf = m?.Id;
             var root = new DockPanel();
@@ -224,7 +251,14 @@ namespace QuickDeploy
             previewScroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Focusable = false, Content = body };
             root.Children.Add(previewScroll);
             preview.Content = WithClose(root);
-            if (keep > 0) Dispatcher.BeginInvoke(new Action(() => previewScroll?.ScrollToVerticalOffset(keep)), System.Windows.Threading.DispatcherPriority.Loaded);
+            // the place kept before the first frame is drawn: put back later, the new page showed
+            // its top for a frame and then jumped
+            if (keep > 0)
+            {
+                preview.UpdateLayout();
+                previewScroll.ScrollToVerticalOffset(keep);
+                previewScroll.UpdateLayout();
+            }
         }
 
         /// <summary>The preview's content with a close button in its top right corner, the main
@@ -250,19 +284,40 @@ namespace QuickDeploy
 
         const string PreviewClose = "previewClose";
 
-        /// <summary>A picture at full size, for the preview (the list's are 256 px copies); null
-        /// when there is none or it cannot be read.</summary>
+        /// <summary>The width the preview's pictures are decoded to. The cover and the cards are
+        /// 220 wide, 512 px is sharp up to 230 % scaling; at 1024 a mod's 600 px pictures were
+        /// enlarged to 5 MB each, 41 of them for one mod (the user, 2026-11-20).</summary>
+        const int FullWidth = 512;
+        readonly Dictionary<string, System.Threading.Tasks.Task<ImageSource>> fullReading = new Dictionary<string, System.Threading.Tasks.Task<ImageSource>>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>A picture large, for the preview; null when there is none or it cannot be read.
+        /// Not read yet: the list's 256 px copy shows at once and the large one comes in when it has
+        /// been read off the window's thread (all of a mod's pictures read at once held the
+        /// preview's opening, 0.6 s for 41).</summary>
         FrameworkElement Full(string file)
         {
             if (string.IsNullOrEmpty(file)) return null;
-            if (!fullImages.TryGetValue(file, out var img))
-            {
-                try { img = System.IO.File.Exists(file) ? Open(file, 1024) : null; }
-                catch (Exception e) when (e is System.IO.IOException || e is NotSupportedException || e is UriFormatException || e is ArgumentException
-                                          || e is UnauthorizedAccessException || e is InvalidOperationException) { img = null; }
-                fullImages[file] = img;
-            }
-            return img == null ? null : new Image { Source = img, Stretch = Stretch.Uniform };
+            if (fullImages.TryGetValue(file, out var img)) return img == null ? null : new Image { Source = img, Stretch = Stretch.Uniform };
+            var small = LoadImage(file);
+            if (small == null) return null;
+            var shown = new Image { Source = small, Stretch = Stretch.Uniform };
+            FullLater(shown, file);
+            return shown;
+        }
+
+        async void FullLater(Image shown, string file)
+        {
+            if (!fullReading.TryGetValue(file, out var reading))
+                fullReading[file] = reading = System.Threading.Tasks.Task.Run(() =>
+                {
+                    try { return (ImageSource)Open(file, FullWidth); }
+                    catch (Exception e) when (e is System.IO.IOException || e is NotSupportedException || e is UriFormatException || e is ArgumentException
+                                              || e is UnauthorizedAccessException || e is InvalidOperationException || e is FormatException) { return null; }
+                });
+            var img = await reading;
+            fullReading.Remove(file);
+            fullImages[file] = img;
+            if (img != null) shown.Source = img;
         }
 
         /// <summary>HD2QD_CLICK_TEST=preview (pictures only): the preview of the mod chosen at the
@@ -407,6 +462,7 @@ namespace QuickDeploy
                 tc.Start();
                 return;
             }
+            if (which == "previewopts") { PreviewOptsTest(); return; }
             if (which != "preview" && which != "previewclose") return;
             var t = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(4) };
             t.Tick += (s, e) =>
@@ -432,6 +488,127 @@ namespace QuickDeploy
                     t3.Start();
                 };
                 t2.Start();
+            };
+            t.Start();
+        }
+
+        /// <summary>HD2QD_CLICK_TEST=previewopts: the preview of the mod whose name holds HD2QD_SELECT,
+        /// opened twice and timed; then in the middle of its options a group unfolded, one of its
+        /// cards chosen and its switch turned, as the player does (the user, 2026-11-20: unfolding
+        /// waited two or three seconds, and the place in the list ran off). After each, on every
+        /// frame for a while, the scroll offset, where the group's heading stands and how often the
+        /// preview was drawn whole. Text to HD2QD_WHEEL_OUT.</summary>
+        void PreviewOptsTest()
+        {
+            var t = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+            t.Tick += async (s0, e0) =>
+            {
+                t.Stop();
+                var path = Environment.GetEnvironmentVariable("HD2QD_WHEEL_OUT");
+                var lines = new List<string>();
+                try
+                {
+                    for (int w = 0; w < 60 && st == null; w++) await System.Threading.Tasks.Task.Delay(500);
+                    lines.Add("state " + (st != null));
+                    var want = Environment.GetEnvironmentVariable("HD2QD_SELECT") ?? "";
+                    var m = st.Mods.First(x => x.Name.IndexOf(want, StringComparison.OrdinalIgnoreCase) >= 0 && x.Options.Count > 0);
+                    lines.Add("mod\t" + m.Name + "\toptions " + m.Options.Count + ", cards " + m.Options.Sum(o => Math.Max(1, o.Subs.Count)));
+                    selectedId = m.Id; picked.Clear(); RenderList(); RenderDetail();
+                    await System.Threading.Tasks.Task.Delay(800);
+
+                    System.Threading.Tasks.Task<long> NextFrame(System.Diagnostics.Stopwatch c)
+                    {
+                        var done = new System.Threading.Tasks.TaskCompletionSource<long>();
+                        EventHandler f = null;
+                        f = (s, e) => { CompositionTarget.Rendering -= f; done.TrySetResult(c.ElapsedMilliseconds); };
+                        CompositionTarget.Rendering += f;
+                        return done.Task;
+                    }
+                    FrameworkElement Content() => preview?.Content as FrameworkElement;
+                    Button Toggle(string key) => Content() == null ? null
+                        : Motion.Under<Button>(Content()).FirstOrDefault(b => System.Windows.Automation.AutomationProperties.GetAutomationId(b) == "fold:" + key);
+                    async System.Threading.Tasks.Task Watch(string key, int ms)
+                    {
+                        var c = System.Diagnostics.Stopwatch.StartNew();
+                        int fills = previewFills;
+                        string last = null;
+                        long prev = 0, worst = 0, worstAt = 0;
+                        var done = new System.Threading.Tasks.TaskCompletionSource<bool>();
+                        EventHandler f = null;
+                        f = (s, e) =>
+                        {
+                            long nowMs = c.ElapsedMilliseconds;
+                            if (nowMs - prev > worst) { worst = nowMs - prev; worstAt = prev; }
+                            prev = nowMs;
+                            if (preview == null || c.ElapsedMilliseconds > ms)
+                            {
+                                CompositionTarget.Rendering -= f;
+                                lines.Add(string.Format("   longest wait between frames {0} ms, from {1} ms", worst, worstAt));
+                                done.TrySetResult(true);
+                                return;
+                            }
+                            var tog = Toggle(key);
+                            string y = tog == null || !tog.IsVisible ? "-" : tog.TranslatePoint(new Point(0, 0), Content()).Y.ToString("0");
+                            var now = string.Format("offset {0:0}  extent {1:0}  heading at y {2}  drawn whole {3}", previewScroll?.VerticalOffset, previewScroll?.ExtentHeight, y, previewFills - fills);
+                            if (now != last) { lines.Add(string.Format("   {0,5} ms  {1}", c.ElapsedMilliseconds, now)); last = now; }
+                        };
+                        CompositionTarget.Rendering += f;
+                        await done.Task;
+                    }
+
+                    foreach (var round in new[] { "open (first)", "open (again)" })
+                    {
+                        if (preview != null) { preview.Close(); await System.Threading.Tasks.Task.Delay(500); }
+                        var c = System.Diagnostics.Stopwatch.StartNew();
+                        OpenPreview();
+                        long built = c.ElapsedMilliseconds;
+                        long frame = await NextFrame(c);
+                        lines.Add(string.Format("{0}\tbuilt {1} ms\tfirst frame {2} ms", round, built, frame));
+                        await System.Threading.Tasks.Task.Delay(1000);
+                        lines.Add("   still open after 1 s: " + (preview != null));
+                    }
+
+                    // a group in the middle, folded, scrolled to the middle of the window
+                    var groups = m.Options.Select((o, k) => (o, k)).Where(x => x.o.Subs.Count > 1).ToList();
+                    var (go, gi) = groups[groups.Count / 2];
+                    lines.Add("group\t" + go.Name + "\ton " + go.Enabled);
+                    var toggle = Toggle(go.Name);
+                    var head = (FrameworkElement)VisualTreeHelper.GetParent(toggle);
+                    while (!(head is DockPanel)) head = (FrameworkElement)VisualTreeHelper.GetParent(head);
+                    bool folded = ((RotateTransform)((System.Windows.Shapes.Path)toggle.Content).RenderTransform).Angle == 0;
+                    if (!folded) { toggle.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent)); await System.Threading.Tasks.Task.Delay(300); }
+                    preview.UpdateLayout();
+                    var at = toggle.TranslatePoint(new Point(0, 0), (UIElement)previewScroll.Content).Y;
+                    previewScroll.ScrollToVerticalOffset(Math.Max(0, at - previewScroll.ViewportHeight / 2));
+                    await System.Threading.Tasks.Task.Delay(500);
+
+                    var c2 = System.Diagnostics.Stopwatch.StartNew();
+                    toggle.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+                    long took = c2.ElapsedMilliseconds;
+                    lines.Add(string.Format("unfold\tclick {0} ms\tframe {1} ms", took, await NextFrame(c2)));
+                    await Watch(go.Name, 1500);
+
+                    // one of its cards not chosen, clicked
+                    var box = (Panel)VisualTreeHelper.GetParent(head);
+                    var cards = box.Children.Cast<UIElement>().SkipWhile(x => x != head).OfType<WrapPanel>().First();
+                    int j = go.Subs.FindIndex(x => !x.Enabled);
+                    var card = (Button)cards.Children[j];
+                    var c3 = System.Diagnostics.Stopwatch.StartNew();
+                    card.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+                    lines.Add(string.Format("card {0}\tclick {1} ms\tframe {2} ms", go.Subs[j].Name, c3.ElapsedMilliseconds, await NextFrame(c3)));
+                    await Watch(go.Name, 4000);
+
+                    // the group's own switch, turned
+                    var sw = Motion.Under<CheckBox>(Toggle(go.Name) is Button tg ? (DependencyObject)VisualTreeHelper.GetParent(tg) : Content()).First();
+                    var c4 = System.Diagnostics.Stopwatch.StartNew();
+                    sw.IsChecked = sw.IsChecked != true;
+                    sw.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+                    lines.Add(string.Format("switch {0}\tclick {1} ms\tframe {2} ms", sw.IsChecked == true ? "on" : "off", c4.ElapsedMilliseconds, await NextFrame(c4)));
+                    await Watch(go.Name, 4000);
+                }
+                catch (Exception x) { lines.Add(x.GetType().Name + " " + x.Message + " " + x.StackTrace); }
+                if (path != null) System.IO.File.WriteAllText(path, string.Join("\r\n", lines) + "\r\n");
+                Environment.Exit(0);
             };
             t.Start();
         }

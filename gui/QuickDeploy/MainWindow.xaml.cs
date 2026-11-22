@@ -6234,6 +6234,23 @@ namespace QuickDeploy
             if (IsFolded(mod, key, fallback) == fold) return;
             if (!(optionFolds.TryGetValue(mod, out var v) && v is Dictionary<string, object> mf)) optionFolds[mod] = mf = new Dictionary<string, object>();
             mf[key] = fold;
+            // written once the clicks stop, not inside each one: the file was read and written on
+            // the window's thread in every click, which a busy disk holds up (the user, 2026-11-20:
+            // a fold sometimes took two or three seconds)
+            if (foldsSave == null)
+            {
+                foldsSave = new DispatcherTimer(DispatcherPriority.ContextIdle) { Interval = TimeSpan.FromMilliseconds(800) };
+                foldsSave.Tick += (s, e) => { foldsSave.Stop(); SaveFolds(); };
+                Closing += (s, e) => { if (foldsSave.IsEnabled) { foldsSave.Stop(); SaveFolds(); } };
+            }
+            foldsSave.Stop();
+            foldsSave.Start();
+        }
+
+        DispatcherTimer foldsSave;
+
+        void SaveFolds()
+        {
             try
             {
                 var d = Store.Load("gui.json");
