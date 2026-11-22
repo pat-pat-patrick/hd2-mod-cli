@@ -39,6 +39,21 @@ namespace Hd2Mod
             public void Dispose() { if (mine) passed = null; }
         }
 
+        /// <summary>An answer this read already has (false outside a read).</summary>
+        internal static bool Peek(object of, string what, out object had)
+        {
+            had = null;
+            var p = passed;
+            return p != null && of != null && p.TryGetValue((of, what), out had);
+        }
+
+        /// <summary>An answer kept for the rest of this read (nothing outside a read).</summary>
+        internal static void Put(object of, string what, object answer)
+        {
+            var p = passed;
+            if (p != null && of != null) p[(of, what)] = answer;
+        }
+
         static T Kept<T>(object of, string what, Func<T> make)
         {
             var p = passed;

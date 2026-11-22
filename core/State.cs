@@ -7,7 +7,7 @@ namespace Hd2Mod
 {
     public static class StateDoc
     {
-        public const string Version = "0.22.0";
+        public const string Version = "0.23.0";
         /// <summary>How many of a conflict's resources the state names; the count says how many there are.</summary>
         const int Shown = 30;
 
@@ -341,7 +341,8 @@ namespace Hd2Mod
             catch (ModError) { return null; }
             if (man == null) return null;
             var dir = Paths.Norm(Path.GetDirectoryName(archive));
-            bool Holds(List<string> include) => include.Any(inc => string.Equals(Paths.Norm(Paths.Join(mod.Path, inc)), dir, StringComparison.OrdinalIgnoreCase));
+            var root = Deploy.BaseOf(mod) ?? mod.Path;          // a protected mod's archives are in its stage folder
+            bool Holds(List<string> include) => include.Any(inc => string.Equals(Paths.Norm(Paths.Join(root, inc)), dir, StringComparison.OrdinalIgnoreCase));
             for (int i = 0; i < man.Options.Count; i++)
             {
                 for (int j = 0; j < man.Options[i].SubOptions.Count; j++)
@@ -587,7 +588,9 @@ namespace Hd2Mod
             {
                 var hit = new List<object>();
                 if (given.Count == 0) return hit;
-                foreach (var folder in includes.Select(x => Paths.Join(self.Path, x)).Where(Directory.Exists))
+                var root = Deploy.BaseOf(self);
+                if (root == null) return hit;
+                foreach (var folder in includes.Select(x => Paths.Join(root, x)).Where(Directory.Exists))
                     foreach (var f in Deploy.List(folder).Where(x => Deploy.Patch.IsMatch(x)))
                     {
                         var src = Paths.Join(folder, f);
@@ -617,16 +620,17 @@ namespace Hd2Mod
                 if (manifest != null)
                 {
                     var chosen = Manifest.Merged(manifest, m.Options);
+                    var root = (exists ? Deploy.BaseOf(m) : null) ?? m.Path;     // a protected mod's files: its stage folder
                     for (int i = 0; i < manifest.Options.Count; i++)
                     {
                         var o = manifest.Options[i];
                         var c = chosen[i];
-                        var (n, b) = FolderStats(o.Include.Select(x => Paths.Join(m.Path, x)));
+                        var (n, b) = FolderStats(o.Include.Select(x => Paths.Join(root, x)));
                         var subs = new List<object>();
                         for (int j = 0; j < o.SubOptions.Count && j < c.Subs.Count; j++)
                         {
                             var s = o.SubOptions[j];
-                            var (sn, sb) = FolderStats(s.Include.Select(y => Paths.Join(m.Path, y)));
+                            var (sn, sb) = FolderStats(s.Include.Select(y => Paths.Join(root, y)));
                             subs.Add(new Dictionary<string, object>
                             {
                                 ["name"] = c.Subs[j].Name, ["description"] = s.Description, ["enabled"] = c.Subs[j].Enabled,
@@ -667,7 +671,11 @@ namespace Hd2Mod
                     // what it holds, as the added plugins name it (C, DLL, STATS for HellForge's kinds)
                     ["plugin_tags"] = (exists ? PluginFiles.Tags(m.Path, pluginHost) : new List<Dictionary<string, object>>()).Cast<object>().ToList(),
                     // what the added plugins say of it, and the official plugins it needs that are not added
-                    ["notes"] = AlteredNotes(check, m.Name).Concat(exists ? PluginFiles.Notes(m.Path, pluginHost) : new List<Dictionary<string, object>>()).Cast<object>().ToList(),
+                    // a protected mod left out of the game, and why (Protected.Note)
+                    ["notes"] = AlteredNotes(check, m.Name).Concat(exists && Protected.Note(lib, m) is Dictionary<string, object> pn ? new[] { pn } : new Dictionary<string, object>[0])
+                        .Concat(exists ? PluginFiles.Notes(m.Path, pluginHost) : new List<Dictionary<string, object>>()).Cast<object>().ToList(),
+                    // large asset protection: "deploy" or "session" for a protected mod, else null
+                    ["protected"] = exists ? Protected.ModeOf(m.Path) : null,
                     // the version kept for a rollback (Versions), and the newest one skipped
                     ["previous"] = m.Previous == null ? null : new Dictionary<string, object>
                     {
@@ -732,6 +740,9 @@ namespace Hd2Mod
                 ["loader_helpers"] = Loaders.Helpers(lib).Select(m => (object)m.Id).ToList(),
                 ["profiles"] = lib.Profiles.Select(p => (object)p.Name).ToList(),
                 ["deploying"] = Deploying(),
+                // a session for the session-mode protected mods is open (Session), and whether its
+                // files are still in the game
+                ["session"] = Session.IsOpen(), ["session_files"] = Session.FilesDeployed(),
                 ["check"] = CheckBlock(check),
                 // where the library deploys (Targets): the one in use, the ones plugins offer, and
                 // for a plugin's target what its plugin says (pending: changes a deploy would make)

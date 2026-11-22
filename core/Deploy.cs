@@ -13,6 +13,8 @@ namespace Hd2Mod
         public string Name, Src, Mod;
         /// <summary>The mod's library id (a deploy target of a plugin keeps each mod apart).</summary>
         public string ModId;
+        /// <summary>A session-mode protected mod's file: in the game only during a session (Session).</summary>
+        public bool Session;
     }
 
     /// <summary>What a deploy would do.</summary>
@@ -32,6 +34,8 @@ namespace Hd2Mod
         public long CopiedBytes, SavedBytes;
         /// <summary>What was done about MDL3's native part (Mdl3Native.Ensure), else null.</summary>
         public string Mdl3;
+        /// <summary>The enabled protected mods left out, not ready (Protected.Withheld), by name.</summary>
+        public List<string> Withheld = new List<string>();
     }
 
     public class RelinkResult
@@ -63,7 +67,10 @@ namespace Hd2Mod
         /// enabled option's folders, then its enabled sub-options' folders.</summary>
         public static List<string> IncludedFolders(Mod mod)
         {
-            var folder = mod.Path;
+            // a protected mod's files are in its stage folder, laid out as the mod is; one that is
+            // not ready deploys nothing (Protected)
+            var folder = BaseOf(mod);
+            if (folder == null) return new List<string>();
             var manifest = Manifest.Of(mod);
             var options = manifest?.Options ?? new List<ManifestOption>();
             if (options.Count == 0)
@@ -89,6 +96,16 @@ namespace Hd2Mod
             return out_;
         }
 
+        /// <summary>The folder a mod's includes are read from: its own; for a protected mod, the stage
+        /// folder its plugin decrypted it into (null while not ready). The mod's manifest and
+        /// pictures stay in its own folder.</summary>
+        public static string BaseOf(Mod mod)
+        {
+            var src = Protected.Of(mod);
+            if (src == null) return mod.Path;
+            return src.Ready ? src.Folder : null;
+        }
+
         /// <summary>os.walk with its folders sorted: a folder, then each subfolder in name order.</summary>
         internal static void Walk(string folder, List<string> found)
         {
@@ -101,9 +118,13 @@ namespace Hd2Mod
         /// <summary>The files the load order needs, every archive numbered from 0. With
         /// errors, a mod that cannot be read is noted there by name and left out; without,
         /// it stops the command.</summary>
-        public static List<Wanted> Plan(Library lib, Dictionary<string, string> errors = null) =>
-            // the loader in effect last, the other loaders not at all (Loaders)
-            Planned(Loaders.DeployOrder(lib), errors);
+        public static List<Wanted> Plan(Library lib, Dictionary<string, string> errors = null)
+        {
+            // one read: each protected mod's plugin asked once (Protected.Of)
+            using (Loaders.Pass())
+                // the loader in effect last, the other loaders not at all (Loaders)
+                return Planned(Loaders.DeployOrder(lib), errors);
+        }
 
         /// <summary>Every mod's files, on or off, numbered as a deploy of them all would number
         /// them: the conflicts view shows every mod in a conflict, with its switch (the user,
@@ -136,12 +157,14 @@ namespace Hd2Mod
         {
             var options = Manifest.Of(mod)?.Options ?? new List<ManifestOption>();
             if (options.Count == 0) return IncludedFolders(mod);
+            var root = BaseOf(mod);
             var out_ = new List<string>();
+            if (root == null) return out_;
             foreach (var o in options)
             {
-                foreach (var inc in o.Include) out_.Add(Paths.Norm(Paths.Join(mod.Path, inc)));
+                foreach (var inc in o.Include) out_.Add(Paths.Norm(Paths.Join(root, inc)));
                 foreach (var s in o.SubOptions)
-                    foreach (var inc in s.Include) out_.Add(Paths.Norm(Paths.Join(mod.Path, inc)));
+                    foreach (var inc in s.Include) out_.Add(Paths.Norm(Paths.Join(root, inc)));
             }
             return out_.Distinct(StringComparer.OrdinalIgnoreCase).Where(Directory.Exists).ToList();
         }
@@ -154,6 +177,11 @@ namespace Hd2Mod
             {
                 string problem = null;
                 List<string> folders = null;
+                // a protected mod not ready (no plugin, not unlocked, a session mod outside a
+                // session) is withheld: left out, its row says why, the rest deploys
+                var source = Directory.Exists(mod.Path) ? Protected.Of(mod) : null;
+                if (source != null && !source.Ready) continue;
+                bool session = source != null && source.Session;
                 if (!Directory.Exists(mod.Path)) problem = "its folder is gone: " + mod.Path;
                 else
                 {
@@ -190,11 +218,11 @@ namespace Hd2Mod
                         counters.TryGetValue(archive, out var n);
                         counters[archive] = n + 1;
                         var target = archive + ".patch_" + n;
-                        out_.Add(new Wanted { Name = target, Src = Paths.Join(folder, f), Mod = mod.Name, ModId = mod.Id });
+                        out_.Add(new Wanted { Name = target, Src = Paths.Join(folder, f), Mod = mod.Name, ModId = mod.Id, Session = session });
                         foreach (var ext in Companions)
                         {
                             var src = Paths.Join(folder, f + ext);
-                            if (File.Exists(src)) out_.Add(new Wanted { Name = target + ext, Src = src, Mod = mod.Name, ModId = mod.Id });
+                            if (File.Exists(src)) out_.Add(new Wanted { Name = target + ext, Src = src, Mod = mod.Name, ModId = mod.Id, Session = session });
                         }
                     }
                 }
@@ -354,6 +382,11 @@ namespace Hd2Mod
 
         public static Diff Compute(Library lib, string game, bool verify = false, Dictionary<string, string> errors = null)
         {
+            using (Loaders.Pass()) return ComputeNow(lib, game, verify, errors);
+        }
+
+        static Diff ComputeNow(Library lib, string game, bool verify, Dictionary<string, string> errors)
+        {
             var data = Data(game);
             var d = new Diff { All = Plan(lib, errors) };
             var record = Json.Obj(Store.Load("deployed.json"), "files") ?? new Dictionary<string, object>();
@@ -416,13 +449,21 @@ namespace Hd2Mod
             return d;
         }
 
-        static Dictionary<string, object> RecordOf(Wanted w, string disk) => new Dictionary<string, object>
+        static Dictionary<string, object> RecordOf(Wanted w, string disk)
         {
-            ["src"] = w.Src, ["mod"] = w.Mod, ["disk"] = Stamp(disk), ["source"] = Stamp(w.Src),
-        };
+            var r = new Dictionary<string, object> { ["src"] = w.Src, ["mod"] = w.Mod, ["disk"] = Stamp(disk), ["source"] = Stamp(w.Src) };
+            if (w.Session) r["session"] = true;         // found again if the session is never ended (Session.Leftover)
+            return r;
+        }
 
         public static DeployResult Run(Library lib, string game, bool dryRun = false, bool copy = false, bool verify = false,
                                        Action<string> log = null)
+        {
+            // one read of the library: each protected mod's plugin asked once (Protected.Of)
+            using (Loaders.Pass()) return RunNow(lib, game, dryRun, copy, verify, log);
+        }
+
+        static DeployResult RunNow(Library lib, string game, bool dryRun, bool copy, bool verify, Action<string> log)
         {
             var data = Data(game);
             Diff d;
@@ -430,6 +471,7 @@ namespace Hd2Mod
             try { d = Compute(lib, game, verify); }
             finally { Loaders.ReadAll = false; }
             var r = new DeployResult { Kept = d.Kept, Moved = d.Moves.Count, Written = d.Writes.Count, Deleted = d.Deleted, Files = d.All.Count };
+            r.Withheld = Protected.Withheld(lib).Select(x => x.Mod.Name).ToList();
             // MDL3's boot needs its native part: installed or updated with it (the user, 2026-10-31)
             r.Mdl3 = Mdl3Native.Ensure(lib, game, dryRun);
             if (dryRun)

@@ -18,8 +18,8 @@ namespace Hd2Qd.Sample
         /// <summary>Its words, one table per language tag; anything else is English.</summary>
         static readonly Dictionary<string, Dictionary<string, string>> Words = new Dictionary<string, Dictionary<string, string>>
         {
-            ["en"] = new Dictionary<string, string> { ["title"] = "Sample plugin", ["summary"] = "A plugin for the tests.", ["note"] = "Sampled", ["tag"] = "SAMPLE", ["tag_tip"] = "Holds a sample." },
-            ["zh-CN"] = new Dictionary<string, string> { ["title"] = "示例插件", ["summary"] = "测试用插件。", ["note"] = "已采样", ["tag"] = "示例", ["tag_tip"] = "含有示例。" },
+            ["en"] = new Dictionary<string, string> { ["title"] = "Sample plugin", ["summary"] = "A plugin for the tests.", ["note"] = "Sampled", ["tag"] = "SAMPLE", ["tag_tip"] = "Holds a sample.", ["locked"] = "Sample: not unlocked" },
+            ["zh-CN"] = new Dictionary<string, string> { ["title"] = "示例插件", ["summary"] = "测试用插件。", ["note"] = "已采样", ["tag"] = "示例", ["tag_tip"] = "含有示例。", ["locked"] = "示例：未解锁" },
         };
 
         static string Say(string lang, string key) =>
@@ -124,6 +124,70 @@ namespace Hd2Qd.Sample
         {
             var f = Path.Combine((string)host["home"], "sample_icon.ico");
             return File.Exists(f) ? File.ReadAllBytes(f) : null;
+        }
+
+        // ---------------------------------------------------------------- protected mods (large asset protection)
+
+        /// <summary>A mod folder with sample_protected.txt ("deploy" or "session" in it) is the
+        /// sample's protected mod; its plain\ folder stands for what decrypting gives. Each call is
+        /// a line in the settings folder's sample_modsource.txt; with sample_reenter.txt there, it
+        /// first asks the host for the mods (as a plugin may), which plans again.</summary>
+        public static Dictionary<string, object> ModSource(string modFolder, Dictionary<string, object> host)
+        {
+            var mark = Path.Combine(modFolder, "sample_protected.txt");
+            if (!File.Exists(mark)) return null;
+            var home = (string)host["home"];
+            File.AppendAllText(Path.Combine(home, "sample_modsource.txt"), Path.GetFileName(modFolder) + "\n");
+            if (File.Exists(Path.Combine(home, "sample_reenter.txt"))) ((Func<List<Dictionary<string, object>>>)host["mods"])();
+            var mode = File.ReadAllText(mark).Trim();
+            var folder = StageOf(modFolder, host);
+            if (folder != null && File.Exists(Path.Combine(folder, ".ready")))
+                return new Dictionary<string, object> { ["folder"] = folder, ["mode"] = mode };
+            return new Dictionary<string, object> { ["folder"] = "", ["mode"] = mode, ["why"] = Say(host["lang"] as string, "locked") };
+        }
+
+        static string StageOf(string modFolder, Dictionary<string, object> host) =>
+            host["stage"] is string stage ? Path.Combine(stage, Path.GetFileName(modFolder)) : null;
+
+        /// <summary>Each protected mod's plain\ copied into its stage folder, unless it is there
+        /// already (never written again); a session mod only for a session. Each call is a line in
+        /// sample_prepared.txt; with sample_locked.txt in the settings folder nothing is unlocked.</summary>
+        public static bool PrepareDeploy(Dictionary<string, object> host)
+        {
+            var home = (string)host["home"];
+            bool session = host.TryGetValue("for_session", out var fs) && fs is bool b && b;
+            File.AppendAllText(Path.Combine(home, "sample_prepared.txt"), (session ? "session" : "deploy") + "\n");
+            if (File.Exists(Path.Combine(home, "sample_locked.txt"))) return false;
+            foreach (var path in Protected(host))
+            {
+                var mark = Path.Combine(path, "sample_protected.txt");
+                if (File.ReadAllText(mark).Trim() == "session" && !session) continue;
+                var to = StageOf(path, host);
+                if (to == null || File.Exists(Path.Combine(to, ".ready"))) continue;
+                Copy(Path.Combine(path, "plain"), to);
+                File.WriteAllText(Path.Combine(to, ".ready"), "1");
+            }
+            return true;
+        }
+
+        /// <summary>The session mods' stage folders deleted; a line in sample_ended.txt.</summary>
+        public static void EndSession(Dictionary<string, object> host)
+        {
+            File.AppendAllText(Path.Combine((string)host["home"], "sample_ended.txt"), "1\n");
+            foreach (var path in Protected(host))
+                if (File.ReadAllText(Path.Combine(path, "sample_protected.txt")).Trim() == "session" && StageOf(path, host) is string to && Directory.Exists(to))
+                    Directory.Delete(to, true);
+        }
+
+        static IEnumerable<string> Protected(Dictionary<string, object> host) =>
+            ((Func<List<Dictionary<string, object>>>)host["library"])().Select(m => (string)m["path"])
+                .Where(p => File.Exists(Path.Combine(p, "sample_protected.txt"))).ToList();
+
+        static void Copy(string from, string to)
+        {
+            Directory.CreateDirectory(to);
+            foreach (var f in Directory.GetFiles(from)) File.Copy(f, Path.Combine(to, Path.GetFileName(f)), true);
+            foreach (var d in Directory.GetDirectories(from)) Copy(d, Path.Combine(to, Path.GetFileName(d)));
         }
 
         /// <summary>Leaves a file in the settings folder, and says it changed something.</summary>

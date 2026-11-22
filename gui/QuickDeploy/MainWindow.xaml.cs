@@ -261,6 +261,7 @@ namespace QuickDeploy
             SelfUpdateAtStart();
             ModUpdatesAtStart();
             PluginsAtStart();
+            SessionAtStart();
 #if HAS_NEXUS
             if (App.StartLink != null) Dispatcher.BeginInvoke(new Action(() => Arrived(App.StartLink)), DispatcherPriority.ApplicationIdle);
 #endif
@@ -2888,28 +2889,85 @@ namespace QuickDeploy
         // 5 s while the window watches, which is only after a launch
         DispatcherTimer gameWatch;
 
-        void WatchGame()
+        /// <summary>session: a game for the session-mode protected mods (Session) is on, and ends
+        /// when it closes: after two ticks in a row without the game (a launcher that restarts
+        /// itself is no exit), or when no game came within a quarter of an hour (Steam and the
+        /// anti-cheat can take minutes; three were too few for a session). seen: the game is
+        /// already running (a session found at the window's start).</summary>
+        void WatchGame(bool session = false, bool seen = false)
         {
             gameWatch?.Stop();
-            bool seen = false;
+            int gone = 0;
+            bool ending = false;
             var started = DateTime.UtcNow;
-            gameWatch = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
-            gameWatch.Tick += (s, e) =>
+            var timer = gameWatch = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+            void Stop()
             {
+                timer.Stop();
+                if (gameWatch == timer) gameWatch = null;
+            }
+            timer.Tick += async (s, e) =>
+            {
+                if (ending) return;
                 bool running = Hd2Mod.Deploy.GameRunning();
-                if (running && !seen)
+                if (running)
                 {
-                    seen = true;
-                    Foot(Texts.Get("game_running"), "Blue");
+                    gone = 0;
+                    if (!seen) { seen = true; Foot(Texts.Get("game_running"), "Blue"); }
+                    return;
                 }
-                else if (!running && (seen || DateTime.UtcNow - started > TimeSpan.FromMinutes(3)))
+                gone++;
+                if (!session)
                 {
-                    gameWatch.Stop();
-                    gameWatch = null;
-                    FootState();
+                    if (seen || DateTime.UtcNow - started > TimeSpan.FromMinutes(3)) { Stop(); FootState(); }
+                    return;
                 }
+                if (seen ? gone < 2 : DateTime.UtcNow - started < TimeSpan.FromMinutes(15)) return;
+                if (busy) return;                                   // a command of the window's first: the next tick
+                ending = true;
+                var r = await EndSessionNow();
+                ending = false;
+                if (r == "done" || r == "failed") Stop();
+                else { seen = Hd2Mod.Deploy.GameRunning(); gone = 0; }    // the game again: its exit ends it
             };
-            gameWatch.Start();
+            timer.Start();
+        }
+
+        /// <summary>The session's mods out of the game (Session.End), the window held meanwhile:
+        /// "done"; "waits" when the game runs again or another program deploys (still watched);
+        /// "failed" when the deploy kept failing (said; the next start tries again).</summary>
+        async Task<string> EndSessionNow()
+        {
+            var game = Store.GameDir(null, false);
+            Foot(Texts.Get("session_ending"), "Blue");
+            (bool Done, DeployResult Deployed, string Why) end = (false, null, null);
+            var r = await Exec(() => Cli.Call(() =>
+            {
+                end = Session.End(Library.Load(), game);
+                return end.Done ? "session ended" : "session end: " + end.Why;
+            }));
+            if (end.Done)
+            {
+                lastDone = Texts.Get("session_ended");
+                Refresh();
+                return "done";
+            }
+            if (r.Ok && (end.Why == "game_running" || end.Why == "deploying")) return "waits";
+            Foot(Texts.F("session_end_failed", end.Why ?? r.Err), "Yellow");
+            return "failed";
+        }
+
+        /// <summary>At the window's start: a session left open, or its files still in the game (the
+        /// manager was closed during a game, or the computer went off): with the game running,
+        /// watched and ended when it closes; else ended now.</summary>
+        void SessionAtStart()
+        {
+            bool left;
+            try { left = Session.Leftover(); }
+            catch (Exception e) when (e is IOException || e is UnauthorizedAccessException || e is FormatException) { return; }
+            if (!left) return;
+            if (Hd2Mod.Deploy.GameRunning()) WatchGame(true, true);
+            else _ = EndSessionNow();
         }
 
         void Foot(string text, string colour)
@@ -9207,12 +9265,20 @@ namespace QuickDeploy
 
         Task<bool> DeployNow() => st != null && !st.OnOfficial ? DeployToTarget() : Act(() => Cli.Call(() =>
         {
-            var r = Hd2Mod.Deploy.Run(Library.Load(), Store.GameDir());
+            var lib = Library.Load();
+            // protected mods decrypted into their stage first (Protected); a session's only while one is open
+            Protected.Prepare(lib, Session.IsOpen());
+            return DeploySaid(Hd2Mod.Deploy.Run(lib, Store.GameDir()));
+        }), true);
+
+        string DeploySaid(DeployResult r)
+        {
             var said = Texts.F("deployed", Texts.N(r.Kept), Texts.N(r.Moved), Texts.N(r.Written), Texts.N(r.Linked), Texts.N(r.Copied),
                                Texts.N(r.Deleted), Texts.N(r.Files));
+            if (r.Withheld.Count > 0) said += " · " + Texts.F("deploy_withheld", Texts.N(r.Withheld.Count));
             var m3 = Mdl3Native.Last?.Kind == "failed" ? null : Mdl3Said(out _);
             return m3 != null ? said + " · " + m3 : said;
-        }), true);
+        }
 
         /// <summary>The game through Steam; changes not deployed yet are deployed first,
         /// when the player says so.</summary>
@@ -9221,20 +9287,58 @@ namespace QuickDeploy
             if (busy) return;
             if (st != null && !st.OnOfficial) { await LaunchTarget(); return; }
             if (Hd2Mod.Deploy.GameRunning()) { Dialog.Tell(this, Texts.Get("game_already")); return; }
-            if (st != null && st.GameDir != null && st.Pending > 0)
+            var game = st?.GameDir;
+            bool session = false, prot = false;
+            if (game != null)
+                try { var lib = Library.Load(); session = Protected.Any(lib, true); prot = Protected.Any(lib); }
+                catch (Exception x) when (x is IOException || x is FormatException || x is ModError) { }
+            if (session)
             {
-                if (!Dialog.Ask(this, Texts.F("launch_ask", st.Pending), Texts.Get("deploy_launch"))) return;
-                if (!await DeployNow()) return;
+                // the session mods are in the game for this game only: the session opened, every
+                // protected mod made ready, and always a deploy (the session's own files are no
+                // change the state counts); other changes waiting are asked about as before
+                if (st.Pending > 0 && !Dialog.Ask(this, Texts.F("launch_ask", st.Pending), Texts.Get("deploy_launch"))) return;
+                Session.Begin(game);
+                bool deployed = await Act(() => Cli.Call(() =>
+                {
+                    var lib = Library.Load();
+                    Protected.Prepare(lib, true);
+                    return DeploySaid(Hd2Mod.Deploy.Run(lib, game));
+                }), true);
+                if (!deployed) { await EndSessionNow(); return; }
+            }
+            else
+            {
+                int pending = st?.Pending ?? 0;
+                if (prot)
+                {
+                    // made ready first: a protected mod unlocked since the last read is a change to deploy
+                    var r = await Exec(() => Cli.Call(() =>
+                    {
+                        var lib = Library.Load();
+                        Protected.Prepare(lib, false);
+                        var d = Hd2Mod.Deploy.Compute(lib, game, false, new Dictionary<string, string>());
+                        pending = d.Writes.Count + d.Moves.Count + d.Deleted;
+                        return "protected mods prepared: " + pending + " changes to deploy";
+                    }));
+                    if (Refused(r)) return;
+                }
+                if (game != null && pending > 0)
+                {
+                    if (!Dialog.Ask(this, Texts.F("launch_ask", pending), Texts.Get("deploy_launch"))) return;
+                    if (!await DeployNow()) return;
+                }
             }
             try
             {
                 Process.Start(new ProcessStartInfo("steam://rungameid/553850") { UseShellExecute = true });
                 Foot(Texts.Get("launching"), "Blue");
-                WatchGame();
+                WatchGame(session);
             }
             catch (Exception x) when (x is System.ComponentModel.Win32Exception || x is InvalidOperationException)
             {
                 Dialog.Tell(this, Texts.Get("no_steam"));
+                if (session) await EndSessionNow();
             }
         }
 

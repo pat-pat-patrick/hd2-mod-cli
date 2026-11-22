@@ -474,6 +474,9 @@ namespace Hd2Mod
                 // members' plugin: a manager that runs on in the notification area). Absent before.
                 ["version"] = StateDoc.Version,
                 ["data"] = game != null ? Paths.Join(game, "data") : null,
+                // (0.23.0) where a protected mod's plaintext is staged: the game's own drive, so a
+                // deploy hard-links it (Protected); null without a game folder
+                ["stage"] = game != null ? Paths.Join(game, "hd2qd_stage") : null,
                 ["mods"] = (Func<List<Dictionary<string, object>>>)(() => Mods(Library.Load())),
                 ["target"] = (Func<string>)(() => Targets.Current(Library.Load())),
                 ["library"] = (Func<List<Dictionary<string, object>>>)(() => LibraryMods(Library.Load())),
@@ -492,6 +495,9 @@ namespace Hd2Mod
             foreach (var m in Loaders.DeployOrder(lib))
             {
                 if (m.Id == null || byId.ContainsKey(m.Id)) continue;
+                // a protected mod's plaintext goes to the official game only, never to another
+                // plugin (a deploy target, or any plugin reading the list)
+                if (Protected.ModeOf(m.Path) != null) continue;
                 var entry = new Dictionary<string, object>
                 {
                     ["name"] = m.Name, ["archives"] = new List<object>(), ["id"] = m.Id, ["path"] = m.Path, ["files"] = new List<object>(),

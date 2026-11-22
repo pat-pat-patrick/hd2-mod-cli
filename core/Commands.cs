@@ -1628,8 +1628,11 @@ namespace Hd2Mod
             if (!Targets.IsOfficial(lib)) { TargetDeploy(lib, a, o); return; }
             var g = Store.GameDir();
             bool dry = a.Flag("--dry-run");
+            // protected mods decrypted into their stage first (Protected); a session's are only while one is open
+            if (!dry && !Protected.Prepare(lib, Session.IsOpen())) o.WriteLine("a plugin could not make every protected mod ready (see the log)");
             var s = Deploy.Run(lib, g, dry, a.Flag("--copy"), a.Flag("--verify"), o.WriteLine);
             if (s.Mdl3 != null) o.WriteLine(s.Mdl3);
+            if (s.Withheld.Count > 0) o.WriteLine("left out, not ready (protected): " + string.Join(", ", s.Withheld));
             if (dry)
                 o.WriteLine("would keep " + s.Kept + ", move " + s.Moved + ", write " + s.Written + ", delete " + s.Deleted + " of " + s.Files + " files");
             else
