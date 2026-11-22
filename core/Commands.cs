@@ -608,6 +608,12 @@ namespace Hd2Mod
                 if (forTarget == null && declared && matches.Count > 0 && !a.Flag("--replace"))
                 {
                     var same = matches.FirstOrDefault(m => m.For == declaredFor);
+                    // its only entry an earlier version from before its manifest declared targets
+                    // (for both games, in no pair, the player chose none): this is its new version
+                    // (the user, 2026-11-20: Boot Mod Loader 0.14.1 went beside 0.13.4 as its
+                    // official build, switched off, and 0.13.4 kept running)
+                    if (same == null && matches.Count == 1 && matches[0].For == null && matches[0].Pair == null && !Targets.DeclaredFor(matches[0], out _))
+                        same = matches[0];
                     if (same != null) { a.Pos["mod"] = same.Id; Replace(a, o); return; }
                     if (declaredFor != null && (declaredFor == Targets.Official || offered.Contains(declaredFor))) forTarget = declaredFor;
                 }

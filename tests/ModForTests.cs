@@ -147,6 +147,47 @@ namespace Hd2Mod.Tests
             Assert.Equal("same_guid", Refused("add", Build("Holo again", "which one?")));
         }
 
+        /// <summary>A mod's first build that declares its targets, added over an earlier version
+        /// that declared none (the user, 2026-11-20: Boot Mod Loader 0.14.1 went beside 0.13.4
+        /// as its official build, switched off, and 0.13.4 kept running). That entry, for both
+        /// games, in no pair and with no target chosen, is replaced like any new version.</summary>
+        [Theory]
+        [InlineData(false, @"[""Official""]")]
+        [InlineData(true, @"[""Official""]")]
+        [InlineData(true, @"[""Sample""]")]
+        [InlineData(true, @"[""Official"", ""Sample""]")]
+        public void AFirstDeclaredBuildReplacesTheUndeclaredVersion(bool plugin, string targets)
+        {
+            if (plugin) PluginFiles.Install(Sample);
+            Cli("add", Declared("Loader v1", null, Guid1, "old build"));
+            var v2 = Declared("Loader v2", targets, Guid1, "new build");
+            Assert.Contains("replaced", Cli("add", v2));
+            var lib = Library.Load();
+            var mod = lib.Mods.Single();
+            Assert.Equal(Path.GetFullPath(v2).TrimEnd('\\'), Path.GetFullPath(mod.Path).TrimEnd('\\'));
+            Assert.Null(mod.Pair);
+            Assert.True(mod.ForDeclared);
+            Assert.Equal(mod.For == null || mod.For == "official", mod.Enabled);   // on wherever the game in use is its target
+        }
+
+        /// <summary>Must live: an undeclared entry the player put on another target, or one already
+        /// in a pair, is not the new build's earlier version; a declared build goes beside it.</summary>
+        [Fact]
+        public void ADeclaredBuildStillGoesBesideAnotherTargetsEntry()
+        {
+            PluginFiles.Install(Sample);
+            Cli("add", Declared("Holo v1", null, Guid1, "old build"));
+            Cli("for", "Holo v1", "sample");
+            Assert.DoesNotContain("replaced", Cli("add", Declared("Holo v2", @"[""Official""]", Guid1, "new build")));
+            var lib = Library.Load();
+            Assert.Equal(2, lib.Mods.Count);
+            var off = lib.Mods.Single(m => m.For == "official");
+            var port = lib.Mods.Single(m => m.For == "sample");
+            Assert.Equal(port.Id, off.Pair);
+            Assert.True(off.Enabled);
+            Assert.False(port.Enabled);
+        }
+
         [Fact]
         public void APairTurnsItsOtherBuildOff()
         {
