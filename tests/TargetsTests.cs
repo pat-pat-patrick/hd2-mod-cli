@@ -223,5 +223,30 @@ namespace Hd2Mod.Tests
             Cli("target", "sample");
             Assert.False(Library.Load().ProfilesOn);
         }
+
+        /// <summary>A plugin puts a mod its target holds into the library (host "add_to_library"):
+        /// copied into the mod folder, the target's own build, on or off as asked; the target's copy
+        /// is left as it was. One the library already has by name is refused as add refuses it.</summary>
+        [Fact]
+        public void APluginsModGoesIntoTheLibraryAsACopy()
+        {
+            PluginFiles.Install(Sample);
+            Cli("target", "sample");
+            var held = Mod("Held", Files((A + ".patch_0", "held")));
+            var add = (System.Func<string, string, bool, string>)PluginHost.Make()["add_to_library"];
+
+            var id = add(held, "sample", false);
+            var mod = Library.Load().Mods.Single(m => m.Id == id);
+            Assert.Equal("sample", mod.For);
+            Assert.False(mod.Enabled);                                                   // off, as the target had it
+            Assert.StartsWith(Path.Combine(Root, "library"), mod.Path);                  // a copy in the mod folder
+            Assert.True(File.Exists(Path.Combine(mod.Path, A + ".patch_0")));
+            Assert.True(File.Exists(Path.Combine(held, A + ".patch_0")));                // the target's copy stays
+
+            var other = Mod("Other", Files((B + ".patch_0", "other")));
+            var otherId = add(other, "sample", true);
+            Assert.True(Library.Load().Mods.Single(m => m.Id == otherId).Enabled);
+            Assert.Throws<ModError>(() => add(held, "sample", true));                    // its folder is in the library already
+        }
     }
 }
