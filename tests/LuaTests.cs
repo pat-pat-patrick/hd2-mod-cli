@@ -137,6 +137,12 @@ namespace Hd2Mod.Tests
             Assert.Equal(new[] { "mom_actioncam", "mbm_actioncam" },
                          Names("ModOptionsMenu.register_option({ mod_id = 'ActionCam', key = 'a' })", "mods/author/Action_Cam"));
             Assert.Empty(Names("x = 1", "mods/author/Action_Cam"));                                       // no menus: no list
+            // mod_id given by a variable, in a module with no header (IntegratedHUD-MDL 0.9.4's hud_options)
+            Assert.Equal(new[] { "mom_mods_integrated_hud_mdl_gamesession_main", "mbm_mods_integrated_hud_mdl_gamesession_main" },
+                         Names("local OWNER='mods/integrated_hud/mdl_gamesession/main'\n" +
+                               "local public={type='toggle',mod=group_source,mod_id=OWNER}\n" +
+                               "local ok=api and call(api.register_option,id,public)==true"));
+            Assert.Empty(Names("local OWNER=pick()\nlocal p={mod_id=OWNER}\napi.register_option(id,p)"));     // made at run time: none
             // kept with the script's other facts
             Assert.Equal(new[] { "ammo_lamp" }, LuaMods.Look(1, Encoding.UTF8.GetBytes("x = 'ammo_lamp_options.json'")).Settings);
         }

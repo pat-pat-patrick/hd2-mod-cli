@@ -156,7 +156,7 @@ namespace Hd2Mod
 
         // what was found in each archive, kept between runs in lua_scan.json by the archive's
         // size and time; a new version of the checks reads every archive again
-        const int ScanVersion = 10;     // 5: UsesChefApi reads scopes (HUDdle, 2026-10-27); 6: HD2FM1 data rows, guarded jit.off(); 7: MDL3, libraries in functions that take them; 8: Mdl3Api; 9: Marks; 10: Settings
+        const int ScanVersion = 11;     // 5: UsesChefApi reads scopes (HUDdle, 2026-10-27); 6: HD2FM1 data rows, guarded jit.off(); 7: MDL3, libraries in functions that take them; 8: Mdl3Api; 9: Marks; 10: Settings; 11: Settings, mod_id given by a variable
 
         /// <summary>Chef Shared Loader 1.2.1 reads no Lua resource whose row size is over this
         /// (`MAX_LUA = 4 * 1024 * 1024`, `if size > MAX_LUA` in its core; its log: "Lua resource(s)
@@ -584,7 +584,7 @@ namespace Hd2Mod
         /// (BFV Kill Feedback: M.SW_NAME = "KillFeedback", name = M.SW_NAME); and for a script
         /// that registers with the old menus (register_option,
         /// register_binding), the lists Boot Mod Loader writes for it: mom_ and mbm_ with its
-        /// mod_id, else the last part of its name, lower case, other characters as _ (BML's
+        /// mod_id (a string, or a variable set to one), else the last part of its name, lower case, other characters as _ (BML's
         /// MOM.group and MOM.sweep). A name only made at run time is not found.</summary>
         public static List<string> SettingsNames(List<LuaSyntax.Token> t, string header)
         {
@@ -627,7 +627,8 @@ namespace Hd2Mod
                     Add(k.Text.Substring(0, k.Text.Length - Suffix.Length));
                 if (k.Kind != LuaSyntax.T.Name) continue;
                 if (k.Text == "register_option" || k.Text == "register_binding") menus = true;
-                if (k.Text == "mod_id" && modId == null && i + 2 < t.Count && t[i + 1].Kind == '=' && t[i + 2].Kind == LuaSyntax.T.String) modId = t[i + 2].Text;
+                // a string, or a variable set to one string (IntegratedHUD-MDL 0.9.4: mod_id = OWNER, 2026-11-20)
+                if (k.Text == "mod_id" && modId == null && i + 2 < t.Count && t[i + 1].Kind == '=') modId = ValueAt(i + 2);
                 // ModSettings.new{ ... }, ModSettings.new({ ... }), pcall(ModSettings.new, { ... })
                 if (k.Text != "ModSettings" || i + 2 >= t.Count || t[i + 1].Kind != '.' || t[i + 2].Kind != LuaSyntax.T.Name || t[i + 2].Text != "new") continue;
                 int j = i + 3;
