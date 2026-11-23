@@ -633,32 +633,43 @@ namespace Hd2Mod
         /// in the order, on/off and options kept), as ApplyGitHub does for a release.</summary>
         public static Mod Apply(string modId, UpdateInfo u, Action<long, long> progress = null)
         {
+            var (file, page) = FetchUpdate(modId, u, progress);
+            try { return PutUpdate(modId, page, file, Ops.SourceFolder(file, Store.Config())); }
+            finally { TryDelete(file); }
+        }
+
+        /// <summary>The first of Apply's three steps: the newer version's file downloaded into the
+        /// mod folder with what the page said of it, with its progress; the file and the mod's page.
+        /// The window takes the steps apart so the download and the unpacking run with the window
+        /// free and only the last waits its turn among the changes.</summary>
+        public static (string File, string Page) FetchUpdate(string modId, UpdateInfo u, Action<long, long> progress = null)
+        {
             if (string.IsNullOrEmpty(u.Download)) throw new ModError("the page offers no file to download here: it opens in a browser", "page_only");
             var said = new PageRef { Version = u.Latest, File = u.LatestTag, Time = u.LatestTime, Name = u.LatestAsset, Label = u.LatestLabel };
-            var lib0 = Library.Load();
-            var page = lib0.Mods.FirstOrDefault(m => m.Id == modId)?.Page ?? u.Page;
+            var page = Library.Load().Mods.FirstOrDefault(m => m.Id == modId)?.Page ?? u.Page;
             if (Of(page).Site == Direct) said = new PageRef();       // the server's own, from the download
-            var file = Download(u.Download, page, said, Store.ModsDir(), progress);
-            try
-            {
-                var lib = Library.Load();
-                var mod = lib.Mods.FirstOrDefault(m => m.Id == modId) ?? throw new ModError("not in the library any more", "gone");
-                var unpacked = Ops.SourceFolder(file, Store.Config());
-                var manifest = Manifest.Read(unpacked);
-                var md5 = Fingerprints.OfArchive(file);
-                var fresh = new Mod();
-                Origins.FromFile(fresh, file);
-                Versions.Keep(lib, Store.Config(), mod, unpacked);
-                mod.Options = Manifest.Merged(manifest, mod.Options);
-                mod.Path = unpacked;
-                mod.Source = page;
-                mod.ArchiveMd5 = md5;
-                mod.PageGot = fresh.PageGot;
-                if (mod.RealName == null && !string.IsNullOrEmpty(manifest?.Name)) mod.Name = manifest.Name;
-                lib.Save();
-                return mod;
-            }
-            finally { TryDelete(file); }
+            return (Download(u.Download, page, said, Store.ModsDir(), progress), page);
+        }
+
+        /// <summary>The last of Apply's steps: the downloaded file, unpacked (Ops.SourceFolder), put in
+        /// the library as the mod's new version. The file is left to the caller.</summary>
+        public static Mod PutUpdate(string modId, string page, string file, string unpacked)
+        {
+            var lib = Library.Load();
+            var mod = lib.Mods.FirstOrDefault(m => m.Id == modId) ?? throw new ModError("not in the library any more", "gone");
+            var manifest = Manifest.Read(unpacked);
+            var md5 = Fingerprints.OfArchive(file);
+            var fresh = new Mod();
+            Origins.FromFile(fresh, file);
+            Versions.Keep(lib, Store.Config(), mod, unpacked);
+            mod.Options = Manifest.Merged(manifest, mod.Options);
+            mod.Path = unpacked;
+            mod.Source = page;
+            mod.ArchiveMd5 = md5;
+            mod.PageGot = fresh.PageGot;
+            if (mod.RealName == null && !string.IsNullOrEmpty(manifest?.Name)) mod.Name = manifest.Name;
+            lib.Save();
+            return mod;
         }
 
         /// <summary>The files a link offers to add: a page of one of these sites, a GitHub repository

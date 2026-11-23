@@ -1835,6 +1835,39 @@ namespace QuickDeploy
                 g.Start();
                 return;
             }
+            if (Environment.GetEnvironmentVariable("HD2QD_CLICK_TEST") == "jobshot")
+            {
+                // "jobshot" (pictures only, nothing downloaded): a download's stages as the window
+                // shows them, each pictured whole into the folder HD2QD_WHEEL_OUT names: an update
+                // at 40 %, the same unpacking, one from Find a mod at 70 %
+                var dir = Environment.GetEnvironmentVariable("HD2QD_WHEEL_OUT");
+                void Picture(string name)
+                {
+                    UpdateLayout();
+                    var dpi = VisualTreeHelper.GetDpi(this);
+                    var bmp = new RenderTargetBitmap((int)(ActualWidth * dpi.DpiScaleX), (int)(ActualHeight * dpi.DpiScaleY), dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
+                    bmp.Render((Visual)Content);
+                    var enc = new PngBitmapEncoder();
+                    enc.Frames.Add(BitmapFrame.Create(bmp));
+                    using (var f = System.IO.File.Create(System.IO.Path.Combine(dir, name + ".png"))) enc.Save(f);
+                }
+                var steps = new List<Action>
+                {
+                    async () => { ShowPage("download"); await BeginJob("Super Laser Sights Plus", "GitHub"); job.Done = 4L << 20; job.Total = 10L << 20; ShowJob(); },
+                    () => Picture("job_download"),
+                    () => JobStage("unpack"),
+                    () => Picture("job_unpack"),
+                    () => { EndJob(); },
+                    async () => { await BeginJob("SA-8 NO HELM", "GameBanana", true); job.Done = 14L << 20; job.Total = 20L << 20; ShowJob(); },
+                    () => Picture("job_find"),
+                    () => { EndJob(); Application.Current.Shutdown(); },
+                };
+                int at = 0;
+                var g = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+                g.Tick += (s, e) => { g.Interval = TimeSpan.FromMilliseconds(700); if (at < steps.Count) steps[at++](); else g.Stop(); };
+                g.Start();
+                return;
+            }
             if (Environment.GetEnvironmentVariable("HD2QD_CLICK_TEST") == "findshot")
             {
                 // "findshot" (pictures only): the download page opened, HD2QD_FIND looked up, and once
@@ -3898,11 +3931,6 @@ namespace QuickDeploy
 
         static string Exe => System.Diagnostics.Process.GetCurrentProcess().MainModule.FileName;
 
-#if HAS_NEXUS
-        // the download now going: what it is and how far (shown on the download page)
-        string downloading;
-        TextBlock progressText;
-#endif
 
         /// <summary>A row of a list on a faint band every other row, so a name on the left and its
         /// number on the right pair up at a glance (the user, 2026-10-25). In a card the band runs
@@ -3927,12 +3955,14 @@ namespace QuickDeploy
         void RenderDownloads()
         {
             Downloads.Children.Clear();
+            jobShown.Clear();
             Downloads.Children.Add(new TextBlock { Text = Texts.Get(HasNexus ? "dl_title" : "dl_title_dev"), FontSize = 28, FontWeight = FontWeights.Bold, Margin = new Thickness(0, 0, 0, 4) });
 #if !HAS_NEXUS
             // what this build leaves out is said whatever the hints setting
             Downloads.Children.Add(Small(Texts.Get("dl_intro_dev"), new Thickness(0, 0, 0, 20)));
             Downloads.Children.Add(Card(FindMod(false)));
             Downloads.Children.Add(new Border { Height = 20 });
+            JobOnPage();
 #else
             Downloads.Children.Add(Texts.Hints ? Small(Texts.Get("dl_intro"), new Thickness(0, 0, 0, 20)) : new Border { Height = 12 });
 
@@ -4001,16 +4031,7 @@ namespace QuickDeploy
             Downloads.Children.Add(Card(where));
             Downloads.Children.Add(new Border { Height = 20 });
 
-            // the download going now
-            if (downloading != null)
-            {
-                var now = new StackPanel();
-                now.Children.Add(Heading(Texts.F("dl_now", downloading)));
-                progressText = new TextBlock { FontFamily = Mono, FontSize = 13, Foreground = B("Blue"), Margin = new Thickness(0, 8, 0, 0) };
-                now.Children.Add(progressText);
-                Downloads.Children.Add(Card(now));
-                Downloads.Children.Add(new Border { Height = 20 });
-            }
+            JobOnPage();
 
             // the downloads so far
             // every one kept, in a list about ten rows high that scrolls: all of them in the page
@@ -4131,6 +4152,20 @@ namespace QuickDeploy
             }
         }
 
+        /// <summary>The download going now, with its bar, on the download page (one from Find a mod
+        /// shows in that card instead).</summary>
+        void JobOnPage()
+        {
+            if (job == null || job.FromFind) return;
+            var now = new StackPanel();
+            now.Children.Add(Heading(Texts.F("dl_now", job.Title)));
+            var bar = JobCard(6);
+            ((FrameworkElement)bar).Margin = new Thickness(0, 8, 0, 0);
+            now.Children.Add(bar);
+            Downloads.Children.Add(Card(now));
+            Downloads.Children.Add(new Border { Height = 20 });
+        }
+
         // the look-up: what the box held, what was found (a Nexus Mods mod, or another site's page)
         // or why nothing was, and a download going, while the page is drawn anew
         string findTyped, findSaid, findPage, findBusy;
@@ -4153,7 +4188,7 @@ namespace QuickDeploy
             // user, 2026-11-23: "很多人看着以为只有 Nexus")
             panel.Children.Add(Small(Texts.Get("dl_find_n"), new Thickness(0, 4, 0, 0)));
             var row = new DockPanel { Margin = new Thickness(0, 12, 0, 0) };
-            var go = new Button { Content = Texts.Get("dl_find_do"), Style = (Style)FindResource("Primary"), MinHeight = 40, Margin = new Thickness(8, 0, 0, 0), IsEnabled = findBusy == null && !busy };
+            var go = new Button { Content = Texts.Get("dl_find_do"), Style = (Style)FindResource("Primary"), MinHeight = 40, Margin = new Thickness(8, 0, 0, 0), IsEnabled = findBusy == null && !busy && job?.FromFind != true };
             DockPanel.SetDock(go, Dock.Right);
             row.Children.Add(go);
             var box = new TextBox { Style = (Style)FindResource("Input"), Tag = Texts.Get("dl_find_ph"), Text = findTyped ?? "" };
@@ -4162,7 +4197,7 @@ namespace QuickDeploy
 
             async void Find()
             {
-                if (findBusy != null || busy) return;
+                if (findBusy != null || busy || job?.FromFind == true) return;
                 findTyped = box.Text.Trim();
                 found = null; foundSite = null; findPage = null; findSaid = null;
                 long? n;
@@ -4205,6 +4240,12 @@ namespace QuickDeploy
                 Dispatcher.BeginInvoke(new Action(Find), DispatcherPriority.Loaded);
             }
 
+            if (job?.FromFind == true)
+            {
+                panel.Children.Add(new TextBlock { Text = Texts.F("dl_now", job.Title), FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 16, 0, 6) });
+                panel.Children.Add(JobCard(6));
+                return panel;
+            }
             if (findBusy != null) panel.Children.Add(Small(findBusy, new Thickness(0, 12, 0, 0)));
             else if (findSaid != null)
             {
@@ -4222,39 +4263,41 @@ namespace QuickDeploy
             return panel;
         }
 
-        /// <summary>One file of a link downloaded and added as a dropped archive is; the archive
-        /// goes afterwards, and the mod's source is the page it came from.</summary>
+        /// <summary>One file of a link downloaded, with its bar, and added as a dropped archive is;
+        /// the archive goes afterwards, and the mod's source is the page it came from.</summary>
         async void Take(string page, SiteFile f)
         {
-            if (findBusy != null || busy) return;
-            findBusy = Texts.F("dl_link_downloading", f.Label ?? f.Name);
-            RenderDownloads();
+            if (job?.FromFind == true || busy) return;
+            await BeginJob(f.Label ?? f.Name, foundSite?.Shown ?? new Uri(page).Host, true);
             string file = null;
-            var r = await Task.Run(() => Cli.Call(() => { file = Sites.Fetch(page, f); return ""; }));
-            findBusy = null;
-            if (!r.Ok)
+            try
             {
-                findSaid = r.Refused?.Kind != null && CheckWhy(r.Refused.Kind) != r.Refused.Kind ? CheckWhy(r.Refused.Kind) : Texts.F("failed", r.Message);
-                RenderDownloads();
-                return;
+                var progress = JobProgress();
+                var r = await Task.Run(() => Cli.Call(() => { file = Sites.Fetch(page, f, progress); return ""; }));
+                if (!r.Ok)
+                {
+                    findSaid = r.Refused?.Kind != null && CheckWhy(r.Refused.Kind) != r.Refused.Kind ? CheckWhy(r.Refused.Kind) : Texts.F("failed", r.Message);
+                    return;
+                }
+                foundSite = null;
+                findSaid = null;
+                JobStage("add");
+                await DropPaths(new List<string> { file });
             }
-            foundSite = null;
-            findSaid = null;
-            RenderDownloads();
-            try { await DropPaths(new List<string> { file }); }
             finally
             {
-                try
-                {
-                    var lib = Library.Load();
-                    bool changed = false;
-                    foreach (var m in lib.Mods.Where(m => string.Equals(m.Source, Paths.Abs(file), StringComparison.OrdinalIgnoreCase))) { m.Source = page; changed = true; }
-                    if (changed) lib.Save();
-                    System.IO.File.Delete(file);
-                }
-                catch (Exception e) when (e is IOException || e is UnauthorizedAccessException || e is ModError) { }
+                if (file != null)
+                    try
+                    {
+                        var lib = Library.Load();
+                        bool changed = false;
+                        foreach (var m in lib.Mods.Where(m => string.Equals(m.Source, Paths.Abs(file), StringComparison.OrdinalIgnoreCase))) { m.Source = page; changed = true; }
+                        if (changed) lib.Save();
+                        System.IO.File.Delete(file);
+                    }
+                    catch (Exception e) when (e is IOException || e is UnauthorizedAccessException || e is ModError) { }
+                EndJob();
             }
-            RenderDownloads();
         }
 
         /// <summary>Whether a library row came from the page a look-up found: the same mod of the
@@ -5616,12 +5659,9 @@ namespace QuickDeploy
                         continue;
                     }
                     if (Nexus.Credential() == null && !await AskKey()) continue;
-                    downloading = Texts.F("dl_unnamed", link.Mod, link.File);
                     ShowPage("download");
                     var clock = System.Diagnostics.Stopwatch.StartNew();
-                    var (r, mod, replaced) = await NexusInstall(link, text => { if (progressText != null) progressText.Text = text; });
-                    downloading = null;
-                    progressText = null;
+                    var (r, mod, replaced) = await NexusInstall(link, Texts.F("dl_unnamed", link.Mod, link.File));
                     if (!Refused(r) && r.Ok)
                         lastDone = Texts.F("took", Texts.F(replaced ? "nx_replaced" : "nx_added", mod.Name), Seconds(clock.Elapsed.TotalSeconds));
                     Refresh();
@@ -5631,61 +5671,30 @@ namespace QuickDeploy
             finally { linking = false; }
         }
 
-        // one download at a time, apart from the queue of changes
-        readonly System.Threading.SemaphoreSlim fetchGate = new System.Threading.SemaphoreSlim(1, 1);
-
         /// <summary>A Nexus file downloaded and unpacked in the background with the window free,
         /// then put in the library in the queue's turn. A big file stood at 100% for over a
         /// minute while it unpacked, the list held all the while, with no word whether it had
-        /// failed (the user, 2026-10-30): each stage is said now, in the bottom line and to show.</summary>
-        async Task<(CliResult R, Mod Mod, bool Replaced)> NexusInstall(NxmLink link, Action<string> show)
+        /// failed (the user, 2026-10-30): each stage is said, with its bar (Job).</summary>
+        async Task<(CliResult R, Mod Mod, bool Replaced)> NexusInstall(NxmLink link, string title)
         {
-            await fetchGate.WaitAsync();
-            var unpacking = new System.Diagnostics.Stopwatch();
-            var ticker = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
-            void Say(string text)
-            {
-                fetchLine = text;
-                Foot(text, "Blue");
-                show(text);
-            }
-            ticker.Tick += (s, e) => Say(Texts.F("nx_unpacking", (int)unpacking.Elapsed.TotalSeconds));
+            await BeginJob(title, "Nexus Mods");
             try
             {
-                long shown = 0;
                 Nexus.Fetched f = null;
+                var progress = JobProgress();
                 var r = await Task.Run(() => Cli.Call(() =>
                 {
-                    f = Nexus.Fetch(link, Nexus.Credential(), (done, total) =>
-                    {
-                        // at most every 128 KB
-                        if (done - shown < 128 * 1024 && done != total) return;
-                        shown = done;
-                        var text = total > 0 ? Texts.F("nx_progress", Texts.Size(done), Texts.Size(total), done * 100 / total)
-                                             : Texts.F("nx_progress_n", Texts.Size(done));
-                        Dispatcher.BeginInvoke(new Action(() => Say(text)));
-                    }, () => Dispatcher.BeginInvoke(new Action(() =>
-                    {
-                        unpacking.Start();
-                        Say(Texts.F("nx_unpacking", 0));
-                        ticker.Start();
-                    })));
+                    f = Nexus.Fetch(link, Nexus.Credential(), progress, () => Dispatcher.BeginInvoke(new Action(() => JobStage("unpack"))));
                     return "";
                 }));
-                ticker.Stop();
                 if (!r.Ok) return (r, null, false);
-                Say(Texts.Get("nx_adding"));
+                JobStage("add");
                 Mod mod = null;
                 bool replaced = false;
                 r = await Queued(() => Cli.Call(() => { (mod, replaced) = Nexus.Put(f); return ""; }));
                 return (r, mod, replaced);
             }
-            finally
-            {
-                ticker.Stop();
-                fetchLine = null;
-                fetchGate.Release();
-            }
+            finally { EndJob(); }
         }
 #endif
 
@@ -7701,25 +7710,22 @@ namespace QuickDeploy
         async void ApplyUpdate(ModRow m, UpdateInfo u)
         {
             if (busy) return;
-            if (m.Channel == "GitHub")
-            {
-                if (await Act(() => Cli.Call(() => Texts.F("up_done", Updates.ApplyGitHub(m.Id, u).Name, u.Latest)), true))
-                { updates.Remove(m.Id); updated.Add(m.Id); }
-                return;
-            }
-            // GameBanana, ModWorkshop, a direct link: at once; a page without a file for us: the page
+            // GitHub, GameBanana, ModWorkshop, a direct link: downloaded with the window free, its
+            // bar in the footer (FetchUpdate); a page without a file for us: the page
             if (m.Channel != null && m.Channel != "Nexus Mods")
             {
-                if (string.IsNullOrEmpty(u.Download)) { Process.Start(new ProcessStartInfo(u.Page ?? m.Page) { UseShellExecute = true }); return; }
-                if (await Act(() => Cli.Call(() => Texts.F("up_done", Sites.Apply(m.Id, u).Name, u.Latest)), true))
-                { updates.Remove(m.Id); updated.Add(m.Id); }
+                if (m.Channel != "GitHub" && string.IsNullOrEmpty(u.Download)) { Process.Start(new ProcessStartInfo(u.Page ?? m.Page) { UseShellExecute = true }); return; }
+                FetchUpdate(m, u);
                 return;
             }
 #if HAS_NEXUS
             if (Nexus.Credential() == null && !await AskKey()) return;
             var clock = System.Diagnostics.Stopwatch.StartNew();
             var link = new NxmLink { Game = Nexus.Game, Mod = m.NexusMod, File = u.LatestFile };
-            var (r, mod, _) = await NexusInstall(link, text => { });
+            if (!fetching.Add(m.Id)) return;
+            CliResult r; Mod mod;
+            try { (r, mod, _) = await NexusInstall(link, m.Name); }
+            finally { fetching.Remove(m.Id); }
             if (!r.Ok && r.Refused?.Kind == "nexus_refused")
             {
                 Process.Start(new ProcessStartInfo(u.Page ?? m.Page) { UseShellExecute = true });

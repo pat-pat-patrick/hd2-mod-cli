@@ -1310,6 +1310,28 @@ namespace Hd2Mod.Tests
             Assert.Equal("current", Updates.Check(Library.Load()).First(x => x.ModId == updated.Id).Status);
         }
 
+        /// <summary>The window's way to a GitHub update: downloaded with its progress, unpacked, then
+        /// put in the library, as three steps (the user, 2026-11-23: a bar for every download).</summary>
+        [Fact]
+        public void AGitHubUpdateIsTakenInThreeStepsWithItsProgress()
+        {
+            var gh = Path.Combine(Root, "gh");
+            File.WriteAllBytes(gh + ".zip", zips["f1"]);
+            Cli("add", gh + ".zip", "--name", "From GitHub");
+            Cli("source", "From GitHub", "https://github.com/someone/cape/releases/tag/v1.0");
+            var u = Updates.Check(Library.Load()).Single();
+            long done = 0, total = -1;
+            var file = Updates.FetchGitHub(u, (d, t) => { done = d; total = t; });
+            Assert.True(File.Exists(file));
+            Assert.Equal(new FileInfo(file).Length, done);                    // every byte said
+            Assert.True(total == 0 || total == done);
+            var mod = Updates.PutGitHub(u.ModId, u, file, Ops.SourceFolder(file, Store.Config()));
+            File.Delete(file);
+            Assert.Equal("v2.0", mod.GitHub.Tag);
+            Assert.Equal("cape v2", File.ReadAllText(Path.Combine(Library.Load().Mods.Single().Path, A + ".patch_0")));
+            Assert.Equal("current", Updates.Check(Library.Load()).Single().Status);
+        }
+
         /// <summary>A repository laid out as MDL3-preview was (2026-11-12): tags that are names, a
         /// release holding another mod's zip first, the mod's file renamed from release to release,
         /// two releases on one commit. The mod's file is found by its manifest Guid, read from each

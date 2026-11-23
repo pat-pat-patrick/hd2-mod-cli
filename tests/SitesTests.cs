@@ -333,6 +333,25 @@ namespace Hd2Mod.Tests
             Assert.All(Seen, s => Assert.Contains("HD2ModQuickDeploy/", s));
         }
 
+        /// <summary>The window's way to an update: downloaded with its progress, unpacked, then put in
+        /// the library, as three steps; the same mod as the one-step update gives.</summary>
+        [Fact]
+        public void An_update_is_taken_in_three_steps_with_its_progress()
+        {
+            Cli("add-link", "https://gamebanana.com/mods/1", "--file", "11");
+            files = File21 + "," + File12;
+            var u = Updates.Check(Library.Load()).Single();
+            Assert.Equal("update", u.Status);
+            long done = 0, total = 0;
+            var (file, page) = Sites.FetchUpdate(u.ModId, u, (d, t) => { done = d; total = t; });
+            Assert.Equal(("https://gamebanana.com/mods/1", (long)zips["21"].Length, (long)zips["21"].Length), (page, done, total));
+            var mod = Sites.PutUpdate(u.ModId, page, file, Ops.SourceFolder(file, Store.Config()));
+            File.Delete(file);
+            Assert.Equal(("21", "1.1"), (mod.PageGot.File, mod.PageGot.Version));
+            Assert.Contains("two", File.ReadAllText(Directory.GetFiles(Library.Load().Mods.Single().Path, "*.patch_0", SearchOption.AllDirectories).Single()));
+            Assert.StartsWith("current", Cli("check-updates").Trim());
+        }
+
         [Fact]
         public void A_page_s_other_file_dropped_in_is_asked_about_not_put_in_place()
         {

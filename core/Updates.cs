@@ -542,25 +542,65 @@ namespace Hd2Mod
 
         /// <summary>A GitHub release's archive downloaded into the mod folder and put in the library as
         /// the mod's new version (its place, on/off and options kept); the archive is not kept.</summary>
-        public static Mod ApplyGitHub(string modId, UpdateInfo u)
+        public static Mod ApplyGitHub(string modId, UpdateInfo u, Action<long, long> progress = null)
+        {
+            var file = FetchGitHub(u, progress);
+            try { return PutGitHub(modId, u, file, Ops.SourceFolder(file, Store.Config())); }
+            finally { try { File.Delete(file); } catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { } }
+        }
+
+        /// <summary>A GitHub release's archive downloaded into the mod folder, whole or not at all,
+        /// with its progress (bytes so far, bytes in all or 0): the first of ApplyGitHub's three
+        /// steps, which the window takes apart so the download and the unpacking run with the
+        /// window free and only the last step waits its turn among the changes.</summary>
+        public static string FetchGitHub(UpdateInfo u, Action<long, long> progress = null)
         {
             if (string.IsNullOrEmpty(u.Download)) throw new ModError("the release has no zip, 7z or rar to download", "no_asset");
             var folder = Store.ModsDir();
             Directory.CreateDirectory(folder);
-            var name = Path.GetFileName(new Uri(u.Download).AbsolutePath);
-            var file = Paths.Join(folder, Uri.UnescapeDataString(name));
+            var name = Uri.UnescapeDataString(Path.GetFileName(new Uri(u.Download).AbsolutePath));
+            var file = Paths.Join(folder, name);
+            var tmp = file + ".part";
             HttpResponseMessage r;
-            try { r = http.GetAsync(u.Download).GetAwaiter().GetResult(); }
+            try { r = http.SendAsync(new HttpRequestMessage(HttpMethod.Get, u.Download), HttpCompletionOption.ResponseHeadersRead).GetAwaiter().GetResult(); }
             catch (HttpRequestException e) { throw new ModError("the download did not start: " + e.Message, "offline"); }
             using (r)
             {
                 if (!r.IsSuccessStatusCode) throw new ModError("the download was refused: " + (int)r.StatusCode, "error");
-                using (var dst = new FileStream(file, FileMode.Create, FileAccess.Write)) r.Content.CopyToAsync(dst).GetAwaiter().GetResult();
+                long total = r.Content.Headers.ContentLength ?? 0, done = 0;
+                try
+                {
+                    using (var src = r.Content.ReadAsStreamAsync().GetAwaiter().GetResult())
+                    using (var dst = new FileStream(tmp, FileMode.Create, FileAccess.Write))
+                    {
+                        var buf = new byte[1 << 16];
+                        int n;
+                        while ((n = src.Read(buf, 0, buf.Length)) > 0) { dst.Write(buf, 0, n); done += n; progress?.Invoke(done, total); }
+                    }
+                }
+                catch (Exception e) when (e is IOException || e is HttpRequestException || e is System.Net.WebException)
+                {
+                    try { File.Delete(tmp); } catch (Exception x) when (x is IOException || x is UnauthorizedAccessException) { }
+                    throw new ModError("the download broke off at " + done + " of " + total + " bytes: " + e.Message, "download_cut");
+                }
+                if (total > 0 && done != total)
+                {
+                    try { File.Delete(tmp); } catch (Exception x) when (x is IOException || x is UnauthorizedAccessException) { }
+                    throw new ModError("the download broke off at " + done + " of " + total + " bytes", "download_cut");
+                }
             }
+            if (File.Exists(file)) File.Delete(file);
+            File.Move(tmp, file);
+            return file;
+        }
+
+        /// <summary>The last of ApplyGitHub's steps: the release unpacked (Ops.SourceFolder of the
+        /// downloaded archive) put in the library as the mod's new version. The archive is left to
+        /// the caller.</summary>
+        public static Mod PutGitHub(string modId, UpdateInfo u, string file, string unpacked)
+        {
             var lib = Library.Load();
             var mod = lib.Mods.FirstOrDefault(m => m.Id == modId) ?? throw new ModError("not in the library any more", "gone");
-            var unpacked = Ops.SourceFolder(file, Store.Config());
-            try { File.Delete(file); } catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { }
             var manifest = Manifest.Read(unpacked);
             Versions.Keep(lib, Store.Config(), mod, unpacked);
             mod.Options = Manifest.Merged(manifest, mod.Options);
@@ -570,7 +610,7 @@ namespace Hd2Mod
             mod.GitHub = new GitHubRef
             {
                 Owner = mod.GitHub?.Owner, Repo = mod.GitHub?.Repo, Tag = u.LatestTag ?? u.Latest,
-                Asset = u.LatestAsset ?? Uri.UnescapeDataString(name), Uploaded = u.LatestTime,
+                Asset = u.LatestAsset ?? Path.GetFileName(file), Uploaded = u.LatestTime,
             };
             if (!string.IsNullOrEmpty(manifest?.Name)) mod.Name = manifest.Name;
             lib.Save();
