@@ -514,7 +514,7 @@ no sign-in and no API key, for what a mod's page shows to anyone:
 
 - **Update checks**, the changes of each version, and an archive's source found
   by its MD5 (see *Update checks*).
-- **By number**: type a mod's number (`16662`, also `N站16662`) or its page's
+- **By number**: type a mod's number (`16662`) or its page's
   address in *Find a mod*, on the Download page. The same box takes a
   GameBanana, ModWorkshop, AyakaMods or GitHub page, or a direct link to an
   archive, shown the same way with a button that adds its file. It shows:
@@ -970,7 +970,7 @@ name.
 | `source MOD URL` / `source MOD --clear` | Set where a mod comes from: a Nexus Mods, AyakaMods, GameBanana or ModWorkshop page, a GitHub repository, a direct link to its archive, or another page. |
 | `add-link URL [--file ID] [--name N] [--new]` | Add a mod from a link: a GameBanana or ModWorkshop page, a GitHub repository or release, or a direct link to a zip, 7z or rar. The file is downloaded and added as `add` adds a file, its page kept for update checks. A page with several files lists them; `--file` takes one. AyakaMods and Nexus Mods pages need their own sign-in: download there, then `add` the file. |
 | `match MOD [--all]` | Fill in a mod's name, version, author, description and picture from its source (Nexus Mods or GitHub). |
-| `nexus-info NUMBER\|URL` | A mod on Nexus Mods by its number (`16662`, `N站16662`) or page: name, author, version, page, and whether the library has it. No sign-in. |
+| `nexus-info NUMBER\|URL` | A mod on Nexus Mods by its number (`16662`) or page: name, author, version, page, and whether the library has it. No sign-in. |
 | `nexus-login` / `nexus-logout` / `nexus URL` | Builds with the Nexus Mods part only: sign in (in your browser), sign out, download an `nxm://` link into the library. |
 | `keep-previous-on` / `keep-previous-off` | Whether a mod with Lua scripts keeps the version it had when a new one comes. Off keeps no more; the ones kept stay. |
 | `previous [MODS] [--delete] [--all]` | The previous versions kept.<br>`--delete` with mods, or `--delete --all`: delete them (the mods keep their current versions). |
