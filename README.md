@@ -17,7 +17,8 @@ A mod manager for Helldivers 2. What sets it apart:
   AyakaMods, GameBanana, ModWorkshop and direct links, including archives
   downloaded by hand. Each update lists what changed.
 - **Add from a link.** Paste a GameBanana or ModWorkshop page, a GitHub
-  repository or a direct link to an archive: the file is downloaded and added.
+  repository or a direct link to an archive in *Find a mod*: the mod's page is
+  shown, and its file is downloaded and added.
 - **Plugins.** Asset check, Model repair, HD2 Mod Console and more, each added
   only when it is wanted.
 - **Problem reports.** One upload gives a report number to pass to the mods'
@@ -123,8 +124,8 @@ What it adds up to:
 
 **Title bar**
 
-- The pages: **Deploy**, **Lua loaders**, **Download** (called **Nexus** in the
-  developer build), **Storage** and **Labels**.
+- The pages: **Deploy**, **Lua loaders**, **Download**, **Storage** and
+  **Labels**.
 - On the right: the buttons of plugins shown in the title bar, the **jigsaw**
   (the Plugins page) and the **gear** (the settings).
 - A red dot on the gear: a newer version of this program is out. On the jigsaw:
@@ -247,8 +248,8 @@ What it adds up to:
 - **Conflicts view**: one card for each game item several mods change. See
   *Conflicts*.
 - **Lua loaders**: everything about the loaders. See *The Lua loaders page*.
-- **Download** (*Nexus* in the developer build): a Nexus Mods mod looked up by
-  its number, and the library's mods from Nexus Mods. See *Nexus Mods*.
+- **Download**: *Find a mod*, by its Nexus Mods number or a link to its page,
+  and the library's mods from Nexus Mods. See *Nexus Mods*.
 - **Storage**: the mod folders, the game folder, the hard-linked files, the
   writes saved, the previous versions kept. See *Mod folders*.
 - **Labels**: your labels, with how many mods carry each. Make, rename and
@@ -470,7 +471,7 @@ by katsyk.
     where it was added from;
   - bytes found in several mods, or in another game, are not used;
   - a mod with another source is not asked about.
-- A file added from a link on the download page (`hd2qd add-link`) records its
+- A file added from a link in *Find a mod* (`hd2qd add-link`) records its
   page, and which file of it, itself.
 - Otherwise, the mod's details offer **Set source…**: paste its Nexus Mods,
   AyakaMods, GameBanana or ModWorkshop page, its GitHub repository, or a direct
@@ -514,8 +515,9 @@ no sign-in and no API key, for what a mod's page shows to anyone:
 - **Update checks**, the changes of each version, and an archive's source found
   by its MD5 (see *Update checks*).
 - **By number**: type a mod's number (`16662`, also `N站16662`) or its page's
-  address in *Find by Nexus number*, on the Download page (*Nexus* in the
-  developer build). It shows:
+  address in *Find a mod*, on the Download page. The same box takes a
+  GameBanana, ModWorkshop, AyakaMods or GitHub page, or a direct link to an
+  archive, shown the same way with a button that adds its file. It shows:
   - the name, author, version, numbers and description from its page;
   - whether the library has it already;
   - a button to its Files tab.
@@ -1091,7 +1093,7 @@ Helldivers 2 的 mod 管理器。主要特点：
 - **管理 Lua mod 的加载器**：Boot Mod Loader、Chef Shared Loader 和 MDL3 选一次即可，无需手动排序。启动游戏前，每个 Lua 脚本都会按游戏的 Lua 检查一遍。
 - **分组、标签和配置文件**：mod 可按文件夹的方式分组，最多三层，不移动任何文件。
 - **检查更新无需登录**：支持来自 Nexus Mods、GitHub、AyakaMods、GameBanana、ModWorkshop 和压缩包直链的 mod，包括手动下载的压缩包，并列出每个版本的改动。
-- **从链接添加**：粘贴 GameBanana 或 ModWorkshop 的页面、GitHub 仓库或压缩包直链，文件下载后即加入 mod 库。
+- **从链接添加**：在“查找 MOD”中粘贴 GameBanana 或 ModWorkshop 的页面、GitHub 仓库或压缩包直链，显示 mod 页面的信息，文件下载后即加入 mod 库。
 - **插件**：资源检查、模型修复、HD2 MOD 控制台等，需要时再添加。
 - **问题报告**：上传后得到一个报告编号，发给 mod 作者即可。
 - **授权 MOD**：有些 MOD 只向创作者的会员提供，公开包里只有一个外壳，功能代码按你的游戏账号授权。对于这类 MOD 中创作者开启了完整性检查的，Quick Deploy 会把该 MOD 文件的哈希、版本和本机的游戏账号标识发送给该 MOD 的创作者，用于发现被改动或被分享的授权内容。对其他任何 MOD 都不会这样做，不发送其他 MOD 的任何信息，也从不因此拦截部署。运行 `hd2qd integrity` 可以查看本机会上报什么。
@@ -1166,7 +1168,7 @@ Helldivers 2 的 mod 管理器。主要特点：
 
 **标题栏**
 
-- 页面：**部署**、**LUA 加载器**、**下载**（开发版中为 **Nexus**）、**存储**、**标签**。
+- 页面：**部署**、**LUA 加载器**、**下载**、**存储**、**标签**。
 - 右侧：显示在标题栏的插件按钮、**拼图**按钮（插件页）、**齿轮**按钮（设置）。
 - 齿轮上的红点：本程序有新版本。拼图上的红点：已添加的插件有新版本。
 
@@ -1259,7 +1261,7 @@ Helldivers 2 的 mod 管理器。主要特点：
 
 - **冲突视图**：每件被多个 mod 修改的游戏物品一张卡片，见“冲突”。
 - **LUA 加载器**：加载器的全部信息，见“LUA 加载器页”。
-- **下载**（开发版为 **Nexus**）：按编号查找 Nexus Mods 上的 mod，并列出库中来自 Nexus Mods 的 mod，见“Nexus Mods”。
+- **下载**：“查找 MOD”，按 Nexus Mods 编号或页面链接查找，并列出库中来自 Nexus Mods 的 mod，见“Nexus Mods”。
 - **存储**：mod 库文件夹、游戏目录、硬链接文件、累计节省写盘、保留的上一版本，见“MOD 库文件夹”。
 - **标签**：自己的标签及每个标签上的 mod 数；可新建、重命名、删除，并勾选属于该标签的 mod。
 
@@ -1410,7 +1412,7 @@ Helldivers 2 的 mod 管理器。主要特点：
   - 0.17.0 之前加入的 mod，只要原压缩包仍在加入时的位置，也会补记；
   - 同一内容出现在多个 mod 中或属于其他游戏时，不采用；
   - 已有其他来源的 mod 不查询。
-- 在下载页“从链接添加”（命令行 `hd2qd add-link`）加入的文件，会自动记录页面及对应的文件。
+- 在下载页“查找 MOD”中从链接（命令行 `hd2qd add-link`）加入的文件，会自动记录页面及对应的文件。
 - 仍未记录来源时，可在详情中点击 **设置来源…**，填写该 mod 的 Nexus Mods、AyakaMods、GameBanana 或 ModWorkshop 页面、GitHub 仓库，或压缩包直链。
 
 **有更新之后**
@@ -1438,7 +1440,7 @@ Helldivers 2 的 mod 管理器。主要特点：
 **所有版本**（包括开发版）都使用 Nexus Mods 的公开接口，无需登录或 API 密钥，读取 mod 页面上人人可见的信息：
 
 - **检查更新**、各版本的改动，以及按压缩包的 MD5 认出来源（见“检查更新”）。
-- **按编号查找**：在“下载”页面（开发版中为“Nexus”页面）的“按 Nexus 编号查找”中输入 mod 编号（如 `16662`、`N站16662`）或页面地址，可以看到：
+- **按编号查找**：在“下载”页面的“查找 MOD”中输入 mod 编号（如 `16662`、`N站16662`）或页面地址，可以看到下列内容。同一个输入框也接受 GameBanana、ModWorkshop、AyakaMods、GitHub 的页面和压缩包直链，以相同方式显示，并提供添加文件的按钮。
   - 页面上的名称、作者、版本、下载与点赞数、简介；
   - 是否已在 mod 库中；
   - 前往其 Files 页面的按钮。

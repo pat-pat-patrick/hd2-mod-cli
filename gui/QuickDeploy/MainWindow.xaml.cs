@@ -1835,6 +1835,39 @@ namespace QuickDeploy
                 g.Start();
                 return;
             }
+            if (Environment.GetEnvironmentVariable("HD2QD_CLICK_TEST") == "findshot")
+            {
+                // "findshot" (pictures only): the download page opened, HD2QD_FIND looked up, and once
+                // the answer and its picture are in, the whole page drawn into HD2QD_SHOT
+                var g = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+                int waited = 0;
+                g.Tick += (s, e) =>
+                {
+                    if (waited == 0) { ShowPage("download"); g.Interval = TimeSpan.FromMilliseconds(500); }
+                    waited++;
+                    bool done = findBusy == null && (found != null || foundSite != null || findSaid != null);
+                    if (!done && waited < 60) return;
+                    if (done && waited < 8) return;     // the picture comes in after the words
+                    g.Stop();
+                    UpdateLayout();
+                    var dpi = VisualTreeHelper.GetDpi(this);
+                    int w = (int)Math.Ceiling(Downloads.ActualWidth + 48), h = (int)Math.Ceiling(Downloads.ActualHeight + 48);
+                    var dv = new DrawingVisual();
+                    using (var dc = dv.RenderOpen())
+                    {
+                        dc.DrawRectangle(Background ?? B("Ground900"), null, new Rect(0, 0, w, h));
+                        dc.DrawRectangle(new VisualBrush(Downloads), null, new Rect(24, 24, Downloads.ActualWidth, Downloads.ActualHeight));
+                    }
+                    var bmp = new RenderTargetBitmap((int)(w * dpi.DpiScaleX), (int)(h * dpi.DpiScaleY), dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
+                    bmp.Render(dv);
+                    var enc = new PngBitmapEncoder();
+                    enc.Frames.Add(BitmapFrame.Create(bmp));
+                    using (var f = System.IO.File.Create(Environment.GetEnvironmentVariable("HD2QD_SHOT"))) enc.Save(f);
+                    Application.Current.Shutdown();
+                };
+                g.Start();
+                return;
+            }
             if (Environment.GetEnvironmentVariable("HD2QD_CLICK_TEST") == "dltime")
             {
                 // "dltime": how long the download page takes to draw, written down
@@ -3888,9 +3921,9 @@ namespace QuickDeploy
         TextBlock Heading(string text) => new TextBlock { Text = text, FontWeight = FontWeights.SemiBold, FontSize = 16, TextWrapping = TextWrapping.Wrap };
 
         /// <summary>The download page: the site's Mod Manager Download button (who gets it, take
-        /// it or give it back), the Nexus Mods account, the look-up by number, the download going
-        /// now, the downloads so far, and the mods in the library that came from Nexus Mods. A
-        /// build without downloads has the look-up and the mods only, and says so.</summary>
+        /// it or give it back), the Nexus Mods account, the look-up (a Nexus number or a link), the
+        /// download going now, the downloads so far, and the mods in the library that came from Nexus
+        /// Mods. A build without downloads has the look-up and the mods only, and says so.</summary>
         void RenderDownloads()
         {
             Downloads.Children.Clear();
@@ -3898,9 +3931,7 @@ namespace QuickDeploy
 #if !HAS_NEXUS
             // what this build leaves out is said whatever the hints setting
             Downloads.Children.Add(Small(Texts.Get("dl_intro_dev"), new Thickness(0, 0, 0, 20)));
-            Downloads.Children.Add(Card(AddFromLink()));
-            Downloads.Children.Add(new Border { Height = 20 });
-            Downloads.Children.Add(Card(FindByNumber(false)));
+            Downloads.Children.Add(Card(FindMod(false)));
             Downloads.Children.Add(new Border { Height = 20 });
 #else
             Downloads.Children.Add(Texts.Hints ? Small(Texts.Get("dl_intro"), new Thickness(0, 0, 0, 20)) : new Border { Height = 12 });
@@ -3951,12 +3982,9 @@ namespace QuickDeploy
             top.Children.Add(c2);
             Downloads.Children.Add(top);
 
-            // a mod from a link of another site: GameBanana, ModWorkshop, GitHub, a direct link (issue 26)
-            Downloads.Children.Add(Card(AddFromLink()));
-            Downloads.Children.Add(new Border { Height = 20 });
-
-            // a mod by its number, as players pass it around (the user, 2026-10-29: "N站16662")
-            Downloads.Children.Add(Card(FindByNumber(ours)));
+            // a mod by its Nexus number, as players pass it around (the user, 2026-10-29: "N站16662"),
+            // or by a link of any site (issue 26), in one box (the user, 2026-11-23)
+            Downloads.Children.Add(Card(FindMod(ours)));
             Downloads.Children.Add(new Border { Height = 20 });
 
             // where downloads go: the default mod folder, chosen on the storage page
@@ -4103,22 +4131,27 @@ namespace QuickDeploy
             }
         }
 
-        // the look-up by number: what the box held, what was found or why nothing was, while
-        // the page is drawn anew
-        string findTyped, findSaid;
+        // the look-up: what the box held, what was found (a Nexus Mods mod, or another site's page)
+        // or why nothing was, and a download going, while the page is drawn anew
+        string findTyped, findSaid, findPage, findBusy;
         NexusModInfo found;
-        bool finding;
+        SiteOffer foundSite;
         bool findTested;
 
-        /// <summary>The download page's look-up: a Nexus Mods number or page typed or pasted, what
-        /// the mod's page says, and the way to its Files tab, where Mod Manager Download is.</summary>
-        UIElement FindByNumber(bool ours)
+        /// <summary>The download page's look-up, one box for every source (the user, 2026-11-23:
+        /// "从链接添加" and "按 Nexus 编号查找" in one, a link's mod shown as a number's is): a Nexus
+        /// Mods number or page shows what its page says and the way to its Files tab (Found); a
+        /// GameBanana, ModWorkshop, AyakaMods or GitHub page or a direct link to an archive shows
+        /// the same card with its files to add (SiteFound). A file taken is downloaded with its
+        /// origin written as a browser's download carries it, then added as a drop is, so the page
+        /// is kept for update checks (issue 26).</summary>
+        UIElement FindMod(bool ours)
         {
             var panel = new StackPanel();
             panel.Children.Add(Heading(Texts.Get("dl_find")));
             if (Texts.Hints) panel.Children.Add(Small(Texts.Get("dl_find_n"), new Thickness(0, 4, 0, 0)));
             var row = new DockPanel { Margin = new Thickness(0, 12, 0, 0) };
-            var go = new Button { Content = Texts.Get("dl_find_do"), Style = (Style)FindResource("Primary"), MinHeight = 40, Margin = new Thickness(8, 0, 0, 0), IsEnabled = !finding };
+            var go = new Button { Content = Texts.Get("dl_find_do"), Style = (Style)FindResource("Primary"), MinHeight = 40, Margin = new Thickness(8, 0, 0, 0), IsEnabled = findBusy == null && !busy };
             DockPanel.SetDock(go, Dock.Right);
             row.Children.Add(go);
             var box = new TextBox { Style = (Style)FindResource("Input"), Tag = Texts.Get("dl_find_ph"), Text = findTyped ?? "" };
@@ -4127,28 +4160,41 @@ namespace QuickDeploy
 
             async void Find()
             {
-                if (finding) return;
-                findTyped = box.Text;
-                found = null;
+                if (findBusy != null || busy) return;
+                findTyped = box.Text.Trim();
+                found = null; foundSite = null; findPage = null; findSaid = null;
                 long? n;
-                try { n = Nexus.ModNumber(box.Text); }
+                try { n = Nexus.ModNumber(findTyped); }
                 catch (ModError e) { findSaid = Texts.F("dl_find_other", e.Arg); RenderDownloads(); return; }
-                if (n == null) { findSaid = Texts.Get("dl_find_none"); RenderDownloads(); return; }
-                finding = true;
-                findSaid = null;
+                if (n == null && !findTyped.StartsWith("http", StringComparison.OrdinalIgnoreCase)) { findSaid = Texts.Get("dl_find_none"); RenderDownloads(); return; }
+                findBusy = Texts.Get(n != null ? "dl_find_busy" : "dl_link_busy");
                 RenderDownloads();
-                NexusModInfo got = null;
-                var r = await Task.Run(() => Cli.Call(() => { got = Nexus.LookUp(n.Value); return ""; }));
-                finding = false;
-                var kind = r.Refused?.Kind;
-                if (r.Ok) found = got;
-                else if (kind == "nexus_missing") findSaid = Texts.F("dl_find_missing", n.Value);
-                else findSaid = kind != null && Why(kind) != kind ? Why(kind) : Texts.F("failed", r.Message);
+                if (n != null)
+                {
+                    NexusModInfo got = null;
+                    var r = await Task.Run(() => Cli.Call(() => { got = Nexus.LookUp(n.Value); return ""; }));
+                    findBusy = null;
+                    var kind = r.Refused?.Kind;
+                    if (r.Ok) found = got;
+                    else if (kind == "nexus_missing") findSaid = Texts.F("dl_find_missing", n.Value);
+                    else findSaid = kind != null && Why(kind) != kind ? Why(kind) : Texts.F("failed", r.Message);
+                }
+                else
+                {
+                    SiteOffer got = null;
+                    var url = findTyped;
+                    var r = await Task.Run(() => Cli.Call(() => { got = Sites.Look(url); return ""; }));
+                    findBusy = null;
+                    if (!r.Ok) findSaid = r.Refused?.Kind != null && CheckWhy(r.Refused.Kind) != r.Refused.Kind ? CheckWhy(r.Refused.Kind) : Texts.F("failed", r.Message);
+                    // a page of no site this program knows: said, with the way to it
+                    else if (got.NoFiles == "unknown_page") { findSaid = Texts.Get("dl_link_unknown_page"); findPage = got.Page; }
+                    else foundSite = got;
+                }
                 RenderDownloads();
             }
             go.Click += (s, e) => Find();
             box.KeyDown += (s, e) => { if (e.Key == Key.Enter) { e.Handled = true; Find(); } };
-            // HD2QD_FIND (pictures only): that number typed in and looked up once the page is first drawn
+            // HD2QD_FIND (pictures only): that number or link typed in and looked up once the page is first drawn
             var typed = Environment.GetEnvironmentVariable("HD2QD_FIND");
             if (typed != null && !findTested)
             {
@@ -4157,93 +4203,20 @@ namespace QuickDeploy
                 Dispatcher.BeginInvoke(new Action(Find), DispatcherPriority.Loaded);
             }
 
-            if (finding) panel.Children.Add(Small(Texts.Get("dl_find_busy"), new Thickness(0, 12, 0, 0)));
+            if (findBusy != null) panel.Children.Add(Small(findBusy, new Thickness(0, 12, 0, 0)));
             else if (findSaid != null)
+            {
                 panel.Children.Add(new TextBlock { Text = findSaid, Foreground = B("Yellow"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 12, 0, 0) });
-            else if (found != null) panel.Children.Add(Found(found, ours));
-            return panel;
-        }
-
-        string linkTyped, linkSaid, linkPage, linkSite, linkBusy;
-        List<SiteFile> linkFiles;
-
-        /// <summary>A mod added from a link (issue 26): a GameBanana or ModWorkshop page, a GitHub
-        /// repository or release, a direct link to an archive. The file is downloaded with its
-        /// origin written as a browser's download carries it, then added as a drop is, so the page
-        /// is kept for update checks; a page with several files lists them. AyakaMods and Nexus
-        /// Mods pages need their own sign-in: the page opens, and the file is dragged in.</summary>
-        UIElement AddFromLink()
-        {
-            var panel = new StackPanel();
-            panel.Children.Add(Heading(Texts.Get("dl_link")));
-            if (Texts.Hints) panel.Children.Add(Small(Texts.Get("dl_link_n"), new Thickness(0, 4, 0, 0)));
-            var row = new DockPanel { Margin = new Thickness(0, 12, 0, 0) };
-            var go = new Button { Content = Texts.Get("dl_link_do"), Style = (Style)FindResource("Primary"), MinHeight = 40, Margin = new Thickness(8, 0, 0, 0), IsEnabled = linkBusy == null && !busy };
-            DockPanel.SetDock(go, Dock.Right);
-            row.Children.Add(go);
-            var box = new TextBox { Style = (Style)FindResource("Input"), Tag = Texts.Get("dl_link_ph"), Text = linkTyped ?? "" };
-            row.Children.Add(box);
-            panel.Children.Add(row);
-
-            async void Look()
-            {
-                if (linkBusy != null || busy) return;
-                linkTyped = box.Text.Trim();
-                linkFiles = null; linkPage = null; linkSite = null;
-                if (!linkTyped.StartsWith("http", StringComparison.OrdinalIgnoreCase)) { linkSaid = Texts.Get("dl_link_empty"); RenderDownloads(); return; }
-                linkBusy = Texts.Get("dl_link_busy");
-                linkSaid = null;
-                RenderDownloads();
-                (string Page, string Site, List<SiteFile> Files, string Why) got = default;
-                var url = linkTyped;
-                var r = await Task.Run(() => Cli.Call(() => { got = Sites.Offered(url); return ""; }));
-                linkBusy = null;
-                if (!r.Ok) { linkSaid = r.Refused?.Kind != null && CheckWhy(r.Refused.Kind) != r.Refused.Kind ? CheckWhy(r.Refused.Kind) : Texts.F("failed", r.Message); RenderDownloads(); return; }
-                linkPage = got.Page;
-                linkSite = got.Site;
-                if (got.Files.Count == 0) linkSaid = Texts.Get("dl_link_" + (got.Why ?? "none")) is string t && !t.StartsWith("dl_link_") ? t : Texts.Get("dl_link_none");
-                else if (got.Files.Count == 1) { RenderDownloads(); Take(got.Page, got.Files[0]); return; }
-                else linkFiles = got.Files;
-                RenderDownloads();
-            }
-            go.Click += (s, e) => Look();
-            box.KeyDown += (s, e) => { if (e.Key == Key.Enter) { e.Handled = true; Look(); } };
-
-            if (linkBusy != null) panel.Children.Add(Small(linkBusy, new Thickness(0, 12, 0, 0)));
-            else if (linkSaid != null)
-            {
-                panel.Children.Add(new TextBlock { Text = linkSaid, Foreground = B("Yellow"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 12, 0, 0) });
-                if (linkPage != null)
+                if (findPage != null)
                 {
-                    var open = new Button { Content = Texts.Get("dl_link_open"), Style = (Style)FindResource("Ghost"), MinHeight = 36, Margin = new Thickness(0, 10, 0, 0), HorizontalAlignment = HorizontalAlignment.Left, ToolTip = linkPage };
-                    var page = linkPage;
+                    var open = new Button { Content = Texts.Get("dl_find_page"), Style = (Style)FindResource("Ghost"), MinHeight = 36, Margin = new Thickness(0, 10, 0, 0), HorizontalAlignment = HorizontalAlignment.Left, ToolTip = findPage };
+                    var page = findPage;
                     open.Click += (s, e) => Process.Start(new ProcessStartInfo(page) { UseShellExecute = true });
                     panel.Children.Add(open);
                 }
             }
-            else if (linkFiles != null)
-            {
-                panel.Children.Add(Small(Texts.F("dl_link_files", linkSite ?? linkPage, linkFiles.Count), new Thickness(0, 12, 0, 4)));
-                foreach (var f in linkFiles)
-                {
-                    var line = new DockPanel { Margin = new Thickness(0, 6, 0, 0) };
-                    var add = new Button { Content = Texts.Get("dl_link_add"), Style = (Style)FindResource("Ghost"), MinHeight = 34, Margin = new Thickness(8, 0, 0, 0), IsEnabled = !busy };
-                    var file = f;
-                    add.Click += (s, e) => Take(linkPage, file);
-                    DockPanel.SetDock(add, Dock.Right);
-                    line.Children.Add(add);
-                    var words = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-                    words.Children.Add(Selectable.Text(f.Label ?? f.Name, 14));
-                    var more = new List<string>();
-                    if (f.Label != null) more.Add(f.Name);
-                    if (f.Version != null) more.Add(f.Version);
-                    if (f.Time > 0) more.Add(DateTimeOffset.FromUnixTimeSeconds(f.Time).LocalDateTime.ToString("yyyy-MM-dd"));
-                    if (f.Size > 0) more.Add(Texts.F("dl_link_size", (f.Size / 1048576.0).ToString("0.0")));
-                    if (more.Count > 0) words.Children.Add(Small(string.Join("  ·  ", more), new Thickness(0, 2, 0, 0)));
-                    line.Children.Add(words);
-                    panel.Children.Add(line);
-                }
-            }
+            if (findBusy == null && found != null) panel.Children.Add(Found(found, ours));
+            else if (findBusy == null && foundSite != null) panel.Children.Add(SiteFound(foundSite));
             return panel;
         }
 
@@ -4251,20 +4224,20 @@ namespace QuickDeploy
         /// goes afterwards, and the mod's source is the page it came from.</summary>
         async void Take(string page, SiteFile f)
         {
-            if (linkBusy != null || busy) return;
-            linkBusy = Texts.F("dl_link_downloading", f.Label ?? f.Name);
+            if (findBusy != null || busy) return;
+            findBusy = Texts.F("dl_link_downloading", f.Label ?? f.Name);
             RenderDownloads();
             string file = null;
             var r = await Task.Run(() => Cli.Call(() => { file = Sites.Fetch(page, f); return ""; }));
-            linkBusy = null;
+            findBusy = null;
             if (!r.Ok)
             {
-                linkSaid = r.Refused?.Kind != null && CheckWhy(r.Refused.Kind) != r.Refused.Kind ? CheckWhy(r.Refused.Kind) : Texts.F("failed", r.Message);
+                findSaid = r.Refused?.Kind != null && CheckWhy(r.Refused.Kind) != r.Refused.Kind ? CheckWhy(r.Refused.Kind) : Texts.F("failed", r.Message);
                 RenderDownloads();
                 return;
             }
-            linkFiles = null;
-            linkSaid = null;
+            foundSite = null;
+            findSaid = null;
             RenderDownloads();
             try { await DropPaths(new List<string> { file }); }
             finally
@@ -4280,6 +4253,113 @@ namespace QuickDeploy
                 catch (Exception e) when (e is IOException || e is UnauthorizedAccessException || e is ModError) { }
             }
             RenderDownloads();
+        }
+
+        /// <summary>Whether a library row came from the page a look-up found: the same mod of the
+        /// same site, the same GitHub repository, the same direct link.</summary>
+        static bool FromPage(ModRow m, SiteOffer o)
+        {
+            if (m.Page == null || o.Page == null) return false;
+            if (o.Site == "github")
+                return string.Equals(m.Channel, "GitHub", StringComparison.OrdinalIgnoreCase)
+                    && m.Page.StartsWith("https://github.com/" + o.Author + "/" + o.Name + "/", StringComparison.OrdinalIgnoreCase);
+            var (s1, id1) = Sites.Of(m.Page);
+            var (s2, id2) = Sites.Of(o.Page);
+            return s1 != null && s1 == s2 && string.Equals(id1, id2, StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>What another site's page says, drawn as a Nexus Mods mod is (Found): its picture,
+        /// name, author, version, words, address, whether the library has it, then its files: one
+        /// taken with a click, several each with its own button, none with the way to its page and
+        /// why (a sign-in, the author's wish, a file kept elsewhere).</summary>
+        UIElement SiteFound(SiteOffer o)
+        {
+            var card = new DockPanel { Margin = new Thickness(0, 16, 0, 0) };
+            // WPF draws no WebP or AVIF
+            if (Uri.TryCreate(o.Picture ?? "", UriKind.Absolute, out var pic) && pic.Scheme == Uri.UriSchemeHttps
+                && !System.Text.RegularExpressions.Regex.IsMatch(pic.AbsolutePath, @"\.(webp|avif|svg)$", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+            {
+                var frame = new Border { Width = 192, Height = 108, Margin = new Thickness(0, 0, 16, 0), Background = B("Ground700"), VerticalAlignment = VerticalAlignment.Top, ClipToBounds = true };
+                try
+                {
+                    var bmp = new BitmapImage();
+                    bmp.BeginInit();
+                    bmp.UriSource = pic;
+                    bmp.DecodePixelWidth = 384;
+                    bmp.EndInit();
+                    frame.Child = new Image { Source = bmp, Stretch = Stretch.UniformToFill };
+                }
+                catch (Exception e) when (e is NotSupportedException || e is IOException || e is InvalidOperationException) { }
+                DockPanel.SetDock(frame, Dock.Left);
+                card.Children.Add(frame);
+            }
+            var words = new StackPanel();
+            bool numbered = o.Site == Sites.Ayaka || o.Site == Sites.Banana || o.Site == Sites.Workshop;
+            words.Children.Add(Heading((o.Name ?? o.Files.FirstOrDefault()?.Name ?? "?") + "  ·  " + o.Shown + (numbered && o.Id != null ? " " + o.Id : "")));
+            var meta = new List<string>();
+            if (o.Author != null) meta.Add(Texts.F("dl_find_by", o.Author));
+            if (o.Version != null && o.Site != Sites.Direct) meta.Add(Texts.F("dl_find_version", o.Version));
+            if (o.Time > 0) meta.Add(Texts.F("dl_find_updated", DateTimeOffset.FromUnixTimeSeconds(o.Time).LocalDateTime.ToString("yyyy-MM-dd")));
+            if (o.Site == Sites.Direct && o.Size > 0) meta.Add(Texts.F("dl_link_size", (o.Size / 1048576.0).ToString("0.0")));
+            if (meta.Count > 0) words.Children.Add(Small(string.Join("  ·  ", meta), new Thickness(0, 4, 0, 0)));
+            if (o.Summary != null)
+            {
+                var said = o.Summary.Replace("\r", "").Trim();
+                if (said.Length > 300) said = said.Substring(0, 300).TrimEnd() + "…";
+                words.Children.Add(new TextBlock { Text = said, Foreground = B("Ink"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0) });
+            }
+            words.Children.Add(Code(o.Page));
+            var have = st?.Mods.FirstOrDefault(x => FromPage(x, o));
+            if (have != null)
+                words.Children.Add(new TextBlock { Text = Texts.F("dl_find_have", have.Name), Foreground = B("Blue"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0) });
+
+            var page = o.Page;
+            var btns = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 12, 0, 0) };
+            if (o.Files.Count == 1)
+            {
+                var file = o.Files[0];
+                var take = new Button { Content = Texts.Get("dl_link_take"), Style = (Style)FindResource("Primary"), MinHeight = 36, IsEnabled = !busy };
+                take.Click += (s, e) => Take(page, file);
+                btns.Children.Add(take);
+            }
+            var open = new Button { Content = Texts.Get("dl_find_page"), Style = (Style)FindResource(o.Files.Count == 0 ? "Primary" : "Ghost"), MinHeight = 36, Margin = new Thickness(o.Files.Count == 1 ? 8 : 0, 0, 0, 0) };
+            open.Click += (s, e) => Process.Start(new ProcessStartInfo(page) { UseShellExecute = true });
+            btns.Children.Add(open);
+            words.Children.Add(btns);
+            // why there is nothing to download here, and what to do instead
+            if (o.Files.Count == 0)
+            {
+                var why = Texts.Get("dl_link_" + (o.NoFiles ?? "none"));
+                words.Children.Add(Small(why.StartsWith("dl_link_") ? Texts.Get("dl_link_none") : why, new Thickness(0, 6, 0, 0)));
+            }
+            card.Children.Add(words);
+
+            if (o.Files.Count < 2) return card;
+            // several files: each with its own button, under the card
+            var all = new StackPanel();
+            all.Children.Add(card);
+            all.Children.Add(Small(Texts.F("dl_link_pick", o.Files.Count), new Thickness(0, 16, 0, 4)));
+            int band = 0;
+            foreach (var f in o.Files)
+            {
+                var line = new DockPanel { Margin = new Thickness(0, 2, 0, 2) };
+                var add = new Button { Content = Texts.Get("dl_link_add"), Style = (Style)FindResource("Ghost"), MinHeight = 34, Margin = new Thickness(8, 0, 0, 0), IsEnabled = !busy, VerticalAlignment = VerticalAlignment.Center };
+                var file = f;
+                add.Click += (s, e) => Take(page, file);
+                DockPanel.SetDock(add, Dock.Right);
+                line.Children.Add(add);
+                var fw = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+                fw.Children.Add(Selectable.Text(f.Label ?? f.Name, 14));
+                var more = new List<string>();
+                if (f.Label != null) more.Add(f.Name);
+                if (f.Version != null) more.Add(f.Version);
+                if (f.Time > 0) more.Add(DateTimeOffset.FromUnixTimeSeconds(f.Time).LocalDateTime.ToString("yyyy-MM-dd"));
+                if (f.Size > 0) more.Add(Texts.F("dl_link_size", (f.Size / 1048576.0).ToString("0.0")));
+                if (more.Count > 0) fw.Children.Add(Small(string.Join("  ·  ", more), new Thickness(0, 2, 0, 0)));
+                line.Children.Add(fw);
+                all.Children.Add(Band(line, band++));
+            }
+            return all;
         }
 
         /// <summary>What a mod's page says: its picture (none for adult content), name, author,

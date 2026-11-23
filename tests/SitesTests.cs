@@ -283,6 +283,28 @@ namespace Hd2Mod.Tests
             base.Dispose();
         }
 
+        /// <summary>The download page's look-up (Sites.Look): a link's page with what the window's
+        /// card shows, its files, or why there are none to download.</summary>
+        [Fact]
+        public void A_link_is_looked_up_with_its_page_s_words_and_files()
+        {
+            var gb = Sites.Look("https://gamebanana.com/mods/1");
+            Assert.Equal(("GameBanana", "1", "Swimsuit"), (gb.Shown, gb.Id, gb.Name));
+            Assert.Equal(new[] { "12", "11" }, gb.Files.Select(f => f.Id));
+            Assert.Null(gb.NoFiles);
+            var ayaka = Sites.Look("https://ayakamods.com/mods/bolt.7/");
+            Assert.Equal(("AyakaMods", "Bolt", "2", "sign_in"), (ayaka.Shown, ayaka.Name, ayaka.Version, ayaka.NoFiles));
+            Assert.Empty(ayaka.Files);
+            // Nexus Mods and a page of no known site: nothing asked of the network
+            int asked = Seen.Count;
+            var nexus = Sites.Look("https://www.nexusmods.com/helldivers2/mods/16662");
+            Assert.Equal(("Nexus Mods", "sign_in"), (nexus.Shown, nexus.NoFiles));
+            var other = Sites.Look("https://example.com/mods/thing");
+            Assert.Equal(("unknown_page", "https://example.com/mods/thing"), (other.NoFiles, other.Page));
+            Assert.Equal(asked, Seen.Count);
+            Assert.Equal("bad_url", Assert.Throws<ModError>(() => Sites.Look("16662")).Kind);
+        }
+
         [Fact]
         public void A_link_s_file_is_added_checked_and_updated_in_place()
         {

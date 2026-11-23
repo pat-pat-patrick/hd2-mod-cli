@@ -34,6 +34,8 @@ namespace Hd2Mod
     public class SiteOffer
     {
         public string Site, Id, Page, Name, Author, Summary, Picture, Version;
+        /// <summary>The site as the window names it (Sites.Look): "GameBanana", a direct link's host.</summary>
+        public string Shown;
         /// <summary>When the mod last had a new file, Unix seconds (0: not said).</summary>
         public long Time;
         /// <summary>The files a player could take: empty where the site needs a sign-in (AyakaMods)
@@ -664,11 +666,23 @@ namespace Hd2Mod
         /// (AyakaMods, Nexus Mods: a sign-in) or that offers none.</summary>
         public static (string Page, string Site, List<SiteFile> Files, string Why) Offered(string url)
         {
+            var o = Look(url);
+            return (o.Page, o.Shown, o.Files, o.Files.Count == 0 ? o.NoFiles ?? "no_files" : null);
+        }
+
+        /// <summary>What a link's page says and the files it offers to add, for the download page's
+        /// look-up (the user, 2026-11-23: one box for a Nexus number and a link, a link's mod shown
+        /// as a Nexus number's is): Shown is the site as the window names it; NoFiles says why
+        /// there is nothing to download here (sign_in for AyakaMods and Nexus Mods, unknown_page
+        /// for a page of no site this program knows). A Nexus Mods page is not read here: the
+        /// window looks its number up (Nexus.LookUp).</summary>
+        public static SiteOffer Look(string url)
+        {
             url = (url ?? "").Trim();
             if (!url.StartsWith("http", StringComparison.OrdinalIgnoreCase)) throw new ModError("not an address: " + url, "bad_url");
             var probe = new Mod();
             Origins.FromUrl(probe, url);
-            if (probe.Nexus != null) return (Nexus.Page(probe.Nexus), "Nexus Mods", new List<SiteFile>(), "sign_in");
+            if (probe.Nexus != null) return new SiteOffer { Site = "nexus", Shown = "Nexus Mods", Page = Nexus.Page(probe.Nexus), NoFiles = "sign_in" };
             if (probe.GitHub != null)
             {
                 var all = GitHubUpdates.List(probe.GitHub);
@@ -677,13 +691,20 @@ namespace Hd2Mod
                                        : all.Where(a => !a.Prerelease).GroupBy(a => a.Tag).Select(g => g.ToList()).FirstOrDefault() ?? new List<GitHubUpdates.Asset>();
                 if (probe.GitHub.Asset != null) pick = pick.Where(a => string.Equals(a.Name, probe.GitHub.Asset, StringComparison.OrdinalIgnoreCase)).ToList();
                 var files = pick.Select(a => new SiteFile { Id = a.Name, Name = a.Name, Version = GitHubUpdates.Label(a.Tag, a.Name), Url = a.Url, Time = a.Uploaded, Size = a.Size }).ToList();
-                var rel = pick.FirstOrDefault()?.Page ?? "https://github.com/" + probe.GitHub.Owner + "/" + probe.GitHub.Repo + "/releases";
-                return (rel, "GitHub", files, files.Count == 0 ? "no_files" : null);
+                return new SiteOffer
+                {
+                    Site = "github", Shown = "GitHub", Name = probe.GitHub.Repo, Author = probe.GitHub.Owner,
+                    Page = pick.FirstOrDefault()?.Page ?? "https://github.com/" + probe.GitHub.Owner + "/" + probe.GitHub.Repo + "/releases",
+                    Version = pick.FirstOrDefault()?.Tag, Time = files.Count > 0 ? files.Max(f => f.Time) : 0,
+                    Files = files, NoFiles = files.Count == 0 ? "no_files" : null,
+                };
             }
             var (site, _) = Of(url);
-            if (site == null) return (url, null, new List<SiteFile>(), "unknown_page");
+            if (site == null) return new SiteOffer { Page = url, NoFiles = "unknown_page" };
             var o = Read(url);
-            return (o.Page, site == Direct ? new Uri(url).Host : site, o.Files, o.Files.Count == 0 ? o.NoFiles ?? "no_files" : null);
+            o.Shown = site == Direct ? new Uri(url).Host : site;
+            if (o.Files.Count == 0 && o.NoFiles == null) o.NoFiles = "no_files";
+            return o;
         }
 
         /// <summary>One file a link offers, downloaded into the mod folder with its origin written as
