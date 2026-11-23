@@ -1122,6 +1122,7 @@
   "session_ended": "Took out the mods that were for that game only",
   "session_end_failed": "Could not take out the mods that were for that game only: {0}. The next start tries again.",
   "deploy_withheld": "{0} protected mods not ready, left out",
+  "deploy_session_only": "{0} mods load only when launched here",
   "note_altered_library": "Changed outside",
   "note_altered_library_tip": "{0} of its files were changed in place by another program since the last deploy. The file in the game folder and the one in the library are the same file (a hard link), so the library's original changed too, and a deploy does not undo it. To go back to the original, install the mod again.",
   "note_altered_library_tip_1": "1 of its files was changed in place by another program since the last deploy. The file in the game folder and the one in the library are the same file (a hard link), so the library's original changed too, and a deploy does not undo it. To go back to the original, install the mod again.",

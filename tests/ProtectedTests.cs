@@ -142,7 +142,9 @@ namespace Hd2Mod.Tests
             AddSample();
             Cli("add", Protect("Prot", "session", "secret"));
             Cli("add", Plain("One", A + ".patch_0", "one"));
-            Cli("deploy");
+            var said = Cli("deploy");
+            Assert.Contains("left out, loads only in a game launched from the manager: Prot", said);
+            Assert.DoesNotContain("not ready", said);     // by design, not a mod that failed (the user, 2026-11-23)
             Assert.Equal("one", Body(A + ".patch_0"));
             Assert.Equal("protected_session", Json.Str(Notes(Row("Prot")).Single(), "key"));
             Assert.False(Directory.Exists(StagedOf("Prot")));     // a deploy's prepare leaves session mods alone

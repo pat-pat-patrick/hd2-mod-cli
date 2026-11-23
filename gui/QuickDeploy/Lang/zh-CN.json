@@ -1096,6 +1096,7 @@
   "session_ended": "已移除仅限本次游戏的 MOD",
   "session_end_failed": "未能移除仅限本次游戏的 MOD：{0}。下次启动本程序时会再次尝试。",
   "deploy_withheld": "{0} 个受保护的 MOD 尚未就绪，未部署",
+  "deploy_session_only": "{0} 个 MOD 仅在从本程序启动游戏时加载",
   "note_altered_library": "文件被外部修改",
   "note_altered_library_tip": "上次部署后，此 MOD 有 {0} 个文件被其他程序直接修改。游戏目录中的文件与 MOD 库中的是同一个文件（硬链接），因此库中的原件也已改变，重新部署不会还原。如需恢复原版，请重新安装此 MOD。",
   "note_altered_game": "部署将还原改动",

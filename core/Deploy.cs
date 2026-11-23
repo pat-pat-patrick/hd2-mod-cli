@@ -36,6 +36,9 @@ namespace Hd2Mod
         public string Mdl3;
         /// <summary>The enabled protected mods left out, not ready (Protected.Withheld), by name.</summary>
         public List<string> Withheld = new List<string>();
+        /// <summary>The enabled session-mode mods left out because no game started from the manager
+        /// runs: by design, not "not ready".</summary>
+        public List<string> SessionOnly = new List<string>();
     }
 
     public class RelinkResult
@@ -471,7 +474,9 @@ namespace Hd2Mod
             try { d = Compute(lib, game, verify); }
             finally { Loaders.ReadAll = false; }
             var r = new DeployResult { Kept = d.Kept, Moved = d.Moves.Count, Written = d.Writes.Count, Deleted = d.Deleted, Files = d.All.Count };
-            r.Withheld = Protected.Withheld(lib).Select(x => x.Mod.Name).ToList();
+            var held = Protected.Withheld(lib);
+            r.Withheld = held.Where(x => x.Source.Key != "protected_session").Select(x => x.Mod.Name).ToList();
+            r.SessionOnly = held.Where(x => x.Source.Key == "protected_session").Select(x => x.Mod.Name).ToList();
             // MDL3's boot needs its native part: installed or updated with it (the user, 2026-10-31)
             r.Mdl3 = Mdl3Native.Ensure(lib, game, dryRun);
             if (dryRun)

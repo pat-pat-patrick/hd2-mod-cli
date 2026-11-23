@@ -9510,6 +9510,7 @@ namespace QuickDeploy
             var said = Texts.F("deployed", Texts.N(r.Kept), Texts.N(r.Moved), Texts.N(r.Written), Texts.N(r.Linked), Texts.N(r.Copied),
                                Texts.N(r.Deleted), Texts.N(r.Files));
             if (r.Withheld.Count > 0) said += " · " + Texts.F("deploy_withheld", Texts.N(r.Withheld.Count));
+            if (r.SessionOnly.Count > 0) said += " · " + Texts.F("deploy_session_only", Texts.N(r.SessionOnly.Count));
             var m3 = Mdl3Native.Last?.Kind == "failed" ? null : Mdl3Said(out _);
             return m3 != null ? said + " · " + m3 : said;
         }

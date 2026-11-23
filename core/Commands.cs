@@ -1683,6 +1683,7 @@ namespace Hd2Mod
             var s = Deploy.Run(lib, g, dry, a.Flag("--copy"), a.Flag("--verify"), o.WriteLine);
             if (s.Mdl3 != null) o.WriteLine(s.Mdl3);
             if (s.Withheld.Count > 0) o.WriteLine("left out, not ready (protected): " + string.Join(", ", s.Withheld));
+            if (s.SessionOnly.Count > 0) o.WriteLine("left out, loads only in a game launched from the manager: " + string.Join(", ", s.SessionOnly));
             if (dry)
                 o.WriteLine("would keep " + s.Kept + ", move " + s.Moved + ", write " + s.Written + ", delete " + s.Deleted + " of " + s.Files + " files");
             else
