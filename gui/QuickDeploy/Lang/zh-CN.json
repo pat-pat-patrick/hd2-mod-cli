@@ -796,7 +796,7 @@
   "dl_link_none": "该页面没有可下载的 zip、7z 或 rar 文件。",
   "dl_find_manual": "在该页面手动下载后，把压缩包拖到 mod 列表上即可加入 mod 库。",
   "dl_find": "查找 MOD",
-  "dl_find_n": "输入 mod 在 Nexus 上的编号（如 16662、N站16662），或 mod 页面地址：Nexus Mods、GameBanana、ModWorkshop、AyakaMods、GitHub 仓库或发布页面，以及 zip、7z、rar 压缩包直链。",
+  "dl_find_n": "支持 Nexus Mods（编号如 16662、N站16662，或页面地址）、GameBanana、ModWorkshop、AyakaMods、GitHub 的页面，以及 zip、7z、rar 压缩包直链。",
   "dl_find_ph": "16662，或 mod 页面地址",
   "dl_find_do": "查找",
   "dl_find_busy": "正在向 Nexus Mods 查询…",

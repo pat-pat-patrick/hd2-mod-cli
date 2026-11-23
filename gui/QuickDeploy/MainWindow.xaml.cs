@@ -4149,7 +4149,9 @@ namespace QuickDeploy
         {
             var panel = new StackPanel();
             panel.Children.Add(Heading(Texts.Get("dl_find")));
-            if (Texts.Hints) panel.Children.Add(Small(Texts.Get("dl_find_n"), new Thickness(0, 4, 0, 0)));
+            // the sites it takes, whatever the hints setting: players knew only Nexus Mods here (the
+            // user, 2026-11-23: "很多人看着以为只有 Nexus")
+            panel.Children.Add(Small(Texts.Get("dl_find_n"), new Thickness(0, 4, 0, 0)));
             var row = new DockPanel { Margin = new Thickness(0, 12, 0, 0) };
             var go = new Button { Content = Texts.Get("dl_find_do"), Style = (Style)FindResource("Primary"), MinHeight = 40, Margin = new Thickness(8, 0, 0, 0), IsEnabled = findBusy == null && !busy };
             DockPanel.SetDock(go, Dock.Right);
