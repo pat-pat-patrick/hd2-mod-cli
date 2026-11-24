@@ -93,7 +93,9 @@ What it adds up to:
 - Windows 10 (1903 or later) or Windows 11.
 - Nothing to install: both programs need only the .NET Framework 4.8 that
   Windows comes with.
-- Download from [Releases](https://github.com/pat-pat-patrick/hd2-mod-cli/releases):
+- Download from [Releases](https://github.com/pat-pat-patrick/hd2-mod-cli/releases),
+  or from the [homepage](https://mods.patpatpatrick.com/#get-quick-deploy) where GitHub
+  cannot be reached (the same files):
   - `HD2.Mod.Quick.Deploy.exe`: the window;
   - `hd2qd.exe`: the command line, if you want it.
 
@@ -760,6 +762,12 @@ A plugin is a DLL of its own (`HD2QD.<name>.dll`) that adds one feature.
 - The official list is read from GitHub
   ([hd2qd-plugins](https://github.com/pat-pat-patrick/hd2qd-plugins)), so a new
   official plugin needs no update of this program.
+- **Where GitHub cannot be reached** (mainland China, for example), the official
+  list, the official plugins and this program's update check fall back to a copy
+  of GitHub's files at `mods.patpatpatrick.com/dl`. Lists: GitHub first (8
+  seconds), then the copy. Plugin files: the copy first, then GitHub; either way
+  a file is added only when its SHA-256 is the one the list names.
+  `HD2QD_MIRROR` names another copy; an empty value turns it off.
 
 | Official plugin | What it does |
 |---|---|

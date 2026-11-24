@@ -43,7 +43,9 @@ namespace Hd2Mod
         /// <summary>A language's translations of the list (locales/<lang>.json beside it, the
         /// user, 2026-11-03: one field per language would not scale): for each plugin file, its
         /// title and summary. English is the list itself.</summary>
-        public static string LocaleUrl(string lang) => ListUrl.Substring(0, ListUrl.LastIndexOf('/') + 1) + "locales/" + lang + ".json";
+        public static string LocaleUrl(string lang) => LocaleBeside(ListUrl, lang);
+
+        static string LocaleBeside(string list, string lang) => list.Substring(0, list.LastIndexOf('/') + 1) + "locales/" + lang + ".json";
 
         public static string LocaleCache(string lang) => Store.PathOf("official_plugins." + lang + ".json");
 
@@ -87,9 +89,18 @@ namespace Hd2Mod
         /// "not_list"; then the kept copy stays. A language with no translations is shown in English.</summary>
         public static (bool Changed, string Why) RefreshList(string lang = null)
         {
-            string text;
             if (string.IsNullOrEmpty(ListUrl)) return (false, "offline");     // tests: no network
-            try { text = Updates.Get(ListUrl); }
+            // GitHub first, briefly; then the author's copy (Mirror), whose list may be older
+            var github = RefreshFrom(ListUrl, lang, Mirror.On ? Mirror.ListWait : (TimeSpan?)null);
+            if (github.Why == null || !Mirror.On) return github;
+            var copy = RefreshFrom(Mirror.Url("plugins/plugins.json"), lang, null);
+            return copy.Why == null ? copy : github;
+        }
+
+        static (bool Changed, string Why) RefreshFrom(string listUrl, string lang, TimeSpan? wait)
+        {
+            string text;
+            try { text = Updates.Get(listUrl, wait); }
             catch (ModError e) { return (false, Why(e)); }
             if (!IsObject(text, "plugins")) return (false, "not_list");
             bool changed = Kept(ListCache) != text;
@@ -97,7 +108,7 @@ namespace Hd2Mod
             if (lang != null && lang != "en")
                 try
                 {
-                    var t = Updates.Get(LocaleUrl(lang));
+                    var t = Updates.Get(LocaleBeside(listUrl, lang), wait);
                     if (IsObject(t, null))
                     {
                         changed |= Kept(LocaleCache(lang)) != t;
@@ -190,12 +201,24 @@ namespace Hd2Mod
         public static string Fetch(OfficialPlugin p)
         {
             var v = p.Latest ?? throw new ModError(p.File + " has not been released yet", "plugin_unreleased", p.File);
-            var url = Downloads.TrimEnd('/') + "/" + p.Repository + "/releases/download/" + Uri.EscapeDataString(v.Tag) + "/" + Uri.EscapeDataString(p.Asset ?? p.File);
-            var bytes = Updates.GetBytes(url);
-            string sha;
-            using (var h = SHA256.Create()) sha = BitConverter.ToString(h.ComputeHash(bytes)).Replace("-", "").ToLowerInvariant();
-            if (sha != v.Sha256)
-                throw new ModError("the download of " + p.File + " " + v.Version + " is not the file the official list names (SHA-256 " + sha + ")", "plugin_sha", p.File);
+            string Sha(byte[] b) { using (var h = SHA256.Create()) return BitConverter.ToString(h.ComputeHash(b)).Replace("-", "").ToLowerInvariant(); }
+            byte[] bytes = null;
+            // the author's copy first (Mirror): taken only when it is the very file the list names
+            if (Mirror.On)
+                try
+                {
+                    var copy = Updates.GetBytes(Mirror.ReleaseFile(p.Repository, v.Tag, p.Asset ?? p.File));
+                    if (Sha(copy) == v.Sha256) bytes = copy;
+                }
+                catch (ModError) { }
+            if (bytes == null)
+            {
+                var url = Downloads.TrimEnd('/') + "/" + p.Repository + "/releases/download/" + Uri.EscapeDataString(v.Tag) + "/" + Uri.EscapeDataString(p.Asset ?? p.File);
+                bytes = Updates.GetBytes(url);
+                var sha = Sha(bytes);
+                if (sha != v.Sha256)
+                    throw new ModError("the download of " + p.File + " " + v.Version + " is not the file the official list names (SHA-256 " + sha + ")", "plugin_sha", p.File);
+            }
             var dir = Path.Combine(Path.GetTempPath(), "hd2qd-plugin-" + Guid.NewGuid().ToString("N").Substring(0, 8));
             Directory.CreateDirectory(dir);
             var path = Path.Combine(dir, p.File);

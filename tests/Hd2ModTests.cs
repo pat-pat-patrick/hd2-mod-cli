@@ -40,6 +40,7 @@ namespace Hd2Mod.Tests
             PluginFiles.ListUrl = null;                                       // never GitHub
             PluginFiles.Downloads = "http://127.0.0.1:1";
             Report.UploadUrl = "http://127.0.0.1:1";                         // never the author's server
+            Mirror.Base = null;                                              // never the author's copy of GitHub
         }
 
         protected static readonly System.Func<string> KeptList = PluginFiles.OfficialJson;

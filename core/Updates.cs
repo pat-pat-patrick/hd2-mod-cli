@@ -57,11 +57,17 @@ namespace Hd2Mod
             return c;
         }
 
-        internal static string Get(string url)
+        /// <summary>A text; wait, when given, is how long to wait before calling it offline (a list
+        /// that has a copy elsewhere: Mirror).</summary>
+        internal static string Get(string url, TimeSpan? wait = null)
         {
             HttpResponseMessage r;
-            try { r = http.GetAsync(url).GetAwaiter().GetResult(); }
-            catch (HttpRequestException e) { throw new ModError("cannot be reached: " + e.Message, "offline"); }
+            using (var cut = new System.Threading.CancellationTokenSource(wait ?? System.Threading.Timeout.InfiniteTimeSpan))
+            {
+                try { r = http.GetAsync(url, cut.Token).GetAwaiter().GetResult(); }
+                catch (HttpRequestException e) { throw new ModError("cannot be reached: " + e.Message, "offline"); }
+                catch (OperationCanceledException) { throw new ModError("cannot be reached: no answer in time", "offline"); }
+            }
             using (r)
             {
                 var body = r.Content.ReadAsStringAsync().GetAwaiter().GetResult();

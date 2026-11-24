@@ -387,6 +387,102 @@ namespace Hd2Mod.Tests
             finally { OfficialList = List(null); }
         }
 
+        /// <summary>The author's copy of GitHub (Mirror, the user, 2026-11-24: players in mainland
+        /// China cannot reach GitHub). Must live: the list from the copy when GitHub cannot be
+        /// reached, or does not answer in time; GitHub's list when it answers. Must die: both
+        /// unreachable gives GitHub's reason and keeps the list read before.</summary>
+        [Fact]
+        public void The_list_comes_from_the_authors_copy_when_GitHub_cannot_be_reached()
+        {
+            PluginFiles.OfficialJson = KeptList;
+            PluginFiles.OfficialLocaleJson = KeptLocale;
+            var u8 = System.Text.Encoding.UTF8;
+            var silent = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);   // takes the connection, never answers
+            silent.Start();
+            try
+            {
+                PluginFiles.ListUrl = "http://127.0.0.1:1/plugins.json";                // GitHub: unreachable
+                Mirror.Base = ServeMany(2, new Dictionary<string, byte[]>
+                {
+                    ["/dl/plugins/plugins.json"] = u8.GetBytes(OfficialList), ["/dl/plugins/locales/zh-CN.json"] = u8.GetBytes(ZhList),
+                }) + "/dl";
+                Assert.Equal((true, (string)null), PluginFiles.RefreshList("zh-CN"));
+                Assert.Equal("示例插件", PluginFiles.OfficialNamed("Sample").TitleIn("zh-CN"));
+
+                PluginFiles.ListUrl = "http://127.0.0.1:" + ((System.Net.IPEndPoint)silent.LocalEndpoint).Port + "/plugins.json";
+                Mirror.ListWait = TimeSpan.FromMilliseconds(400);                     // GitHub: no answer in time
+                Mirror.Base = ServeMany(1, new Dictionary<string, byte[]> { ["/dl/plugins/plugins.json"] = u8.GetBytes(List(null).Replace("A sample.", "From the copy.")) }) + "/dl";
+                Assert.Equal((true, (string)null), PluginFiles.RefreshList());
+                Assert.Equal("From the copy.", PluginFiles.OfficialNamed("Sample").Summary);
+
+                PluginFiles.ListUrl = ServeMany(1, new Dictionary<string, byte[]> { ["/plugins.json"] = u8.GetBytes(OfficialList) }) + "/plugins.json";
+                Mirror.Base = "http://127.0.0.1:1/dl";                                // GitHub answers: the copy is not needed
+                Assert.Equal((true, (string)null), PluginFiles.RefreshList());
+                Assert.Equal("A sample.", PluginFiles.OfficialNamed("Sample").Summary);
+
+                PluginFiles.ListUrl = "http://127.0.0.1:1/plugins.json";              // both unreachable
+                Assert.Equal((false, "offline"), PluginFiles.RefreshList());
+                Assert.Equal(2, PluginFiles.Official().Count);
+            }
+            finally { silent.Stop(); Mirror.Base = null; Mirror.ListWait = TimeSpan.FromSeconds(8); PluginFiles.ListUrl = null; }
+        }
+
+        /// <summary>A plugin's file is taken from the author's copy first, but only when it is the
+        /// very file the list names (SHA-256). Must live: the copy's file, GitHub not asked; a
+        /// copy with other bytes is passed over for GitHub's. Must die: other bytes in the copy and
+        /// GitHub unreachable adds nothing.</summary>
+        [Fact]
+        public void A_plugin_is_taken_from_the_authors_copy_only_when_it_is_the_listed_file()
+        {
+            OfficialList = List(@"{""version"": ""1.0.0"", ""tag"": ""v1.0.0"", ""sha256"": """ + Sha(Sample) + @"""}");
+            try
+            {
+                var (copy, copyAsked) = Serve(File.ReadAllBytes(Sample));
+                Mirror.Base = copy + "/dl";
+                PluginFiles.Downloads = "http://127.0.0.1:1";                         // GitHub: unreachable
+                Assert.Contains("added HD2QD.Sample.dll 1.0.0 to", Cli("plugin-add", "Sample"));
+                Assert.Equal("/dl/github/someone/sample/releases/download/v1.0.0/HD2QD.Sample.dll", copyAsked.Result);
+                Cli("plugin-remove", "Sample");
+
+                var (bad, _) = Serve(Encoding("not the plugin"));
+                Mirror.Base = bad + "/dl";
+                var (github, githubAsked) = Serve(File.ReadAllBytes(Sample));
+                PluginFiles.Downloads = github;
+                Assert.Contains("added HD2QD.Sample.dll 1.0.0 to", Cli("plugin-add", "Sample"));
+                Assert.Equal("/someone/sample/releases/download/v1.0.0/HD2QD.Sample.dll", githubAsked.Result);
+                Cli("plugin-remove", "Sample");
+
+                var (bad2, _) = Serve(Encoding("not the plugin"));
+                Mirror.Base = bad2 + "/dl";
+                PluginFiles.Downloads = "http://127.0.0.1:1";
+                Assert.Equal("offline", Assert.Throws<ModError>(() => PluginFiles.Fetch(PluginFiles.OfficialNamed("Sample"))).Kind);
+                Assert.Empty(PluginFiles.All());
+            }
+            finally { OfficialList = List(null); Mirror.Base = null; PluginFiles.Downloads = "http://127.0.0.1:1"; }
+        }
+
+        /// <summary>This program's own update check reads the author's copy of its releases when
+        /// GitHub cannot be reached. Must die: both unreachable is an error, as before.</summary>
+        [Fact]
+        public void The_update_check_reads_the_authors_copy_when_GitHub_cannot_be_reached()
+        {
+            var api = Updates.GitHubApi;
+            try
+            {
+                Updates.GitHubApi = "http://127.0.0.1:1";
+                var releases = @"[{""tag_name"": ""v98.0.0"", ""prerelease"": false, ""draft"": false, ""html_url"": ""https://example.test/get"", ""body"": """"},
+                                  {""tag_name"": ""v99.0.0-dev"", ""prerelease"": true, ""draft"": false, ""html_url"": ""https://example.test/get"", ""body"": """"}]";
+                Mirror.Base = ServeMany(1, new Dictionary<string, byte[]> { ["/dl/releases/hd2-mod-cli.json"] = Encoding(releases) }) + "/dl";
+                var found = SelfUpdate.Check();
+                Assert.Equal(SelfUpdate.Official ? "v98.0.0" : "v99.0.0-dev", found.Latest);
+                Assert.True(found.Newer);
+
+                Mirror.Base = "http://127.0.0.1:1/dl";
+                Assert.Equal("offline", Assert.Throws<ModError>(() => SelfUpdate.Check()).Kind);
+            }
+            finally { Updates.GitHubApi = api; Mirror.Base = null; }
+        }
+
         /// <summary>An added plugin is offered the official list's newer release, and plugin-update
         /// puts it in place (the user, 2026-11-03: an added plugin was never offered its new
         /// version). Must live: 1.0.0 added, 1.1.0 listed. Must die: the same or an older version

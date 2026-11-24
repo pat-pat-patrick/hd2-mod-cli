@@ -119,7 +119,11 @@ namespace Hd2Mod
         /// <summary>GitHub asked now; the result kept.</summary>
         public static SelfUpdateInfo Check()
         {
-            var list = Json.Parse(Updates.Get(Updates.GitHubApi.TrimEnd('/') + "/repos/" + Repo + "/releases?per_page=30")) as List<object>;
+            string text;
+            // GitHub first, briefly; then the author's copy of the same list (Mirror)
+            try { text = Updates.Get(Updates.GitHubApi.TrimEnd('/') + "/repos/" + Repo + "/releases?per_page=30", Mirror.On ? Mirror.ListWait : (TimeSpan?)null); }
+            catch (ModError) when (Mirror.On) { text = Updates.Get(Mirror.Url("releases/hd2-mod-cli.json")); }
+            var list = Json.Parse(text) as List<object>;
             var found = Pick((list ?? new List<object>()).OfType<Dictionary<string, object>>().ToList(), StateDoc.Version, Official);
             found.CheckedAt = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
             var d = Store.Load(File);
