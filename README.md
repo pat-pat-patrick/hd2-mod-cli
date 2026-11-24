@@ -828,6 +828,23 @@ with the same Guid is taken as that target's build without a question.
 
 The names are not case-sensitive. Other mod managers ignore the field.
 
+**For mod authors: your mod's log in problem reports.** Name the files your
+mod writes in the game's log folder (`%APPDATA%\Arrowhead\Helldivers2`), and
+every problem report includes the end of each:
+
+```json
+{
+  "Name": "My mod",
+  "Logs": ["my_mod.log"]
+}
+```
+
+- Plain file names only, ending `.log` or `.txt`. A name with a folder in it,
+  `..` or a drive is ignored.
+- Each file's last 256 KB is taken, as `game/<name>` in the report; a file
+  that does not exist is left out.
+- Other mod managers ignore the field.
+
 ### Asking about a problem
 
 Settings → *About and diagnostics* → **Problem report…** opens a window:
@@ -845,6 +862,7 @@ What a report holds:
 
 - your mods and their order, the conflicts, the Lua checks, the deploy history;
 - this manager's log and Boot Mod Loader's log;
+- the logs your mods declare in their manifests;
 - when MDL3 is installed, its native part and its logs;
 - the names of the game's crash dumps.
 
@@ -1633,8 +1651,15 @@ Helldivers 2 的 mod 管理器。主要特点：
 
 - 你的 mod 及其顺序、冲突、Lua 检查结果、部署记录；
 - 管理器日志和 Boot Mod Loader 的日志；
+- 各 mod 在清单中声明的日志；
 - 安装了 MDL3 时，其原生组件的状态和日志；
 - 游戏崩溃转储的文件名。
+
+**MOD 作者：让报告包含你的 mod 日志。** 在 `manifest.json` 的 `"Logs"` 中列出 mod 写在游戏日志文件夹（`%APPDATA%\Arrowhead\Helldivers2`）里的文件名，例如 `"Logs": ["my_mod.log"]`：
+
+- 只能是文件名，以 `.log` 或 `.txt` 结尾；含文件夹、`..` 或盘符的名称会被忽略；
+- 每个文件取最后 256 KB，在报告中为 `game/<文件名>`；不存在的文件不收录；
+- 其他 mod 管理器会忽略此字段。
 
 报告不包含什么、保留多久：
 

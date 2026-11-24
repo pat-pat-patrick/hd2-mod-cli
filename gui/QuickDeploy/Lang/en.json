@@ -515,7 +515,7 @@
   "set_hints_note": "Off: the window shows only what it does and what it found. Everything still works the same.",
   "set_about": "ABOUT",
   "set_report": "PROBLEM REPORT",
-  "report_note": "One file to upload to the mods' author, or to save and send yourself: your mods and their order, the conflicts, the Lua checks, the deploy history, this manager's log, Boot Mod Loader's log, MDL3's native part and logs when MDL3 is installed, and the names of the game's crash dumps. Your Nexus Mods sign-in is never in it, and your Windows user folder is written as %USERPROFILE%.",
+  "report_note": "One file to upload to the mods' author, or to save and send yourself: your mods and their order, the conflicts, the Lua checks, the deploy history, this manager's log, Boot Mod Loader's log, the logs your mods declare, MDL3's native part and logs when MDL3 is installed, and the names of the game's crash dumps. Your Nexus Mods sign-in is never in it, and your Windows user folder is written as %USERPROFILE%.",
   "report_do": "Problem report…",
   "report_making": "Packing…",
   "report_title": "Problem report",

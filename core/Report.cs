@@ -15,7 +15,7 @@ namespace Hd2Mod
     /// <summary>A problem report: one zip a player can send with a question (the user,
     /// 2026-10-29: players should not have to find the files themselves). It holds the state
     /// as the window sees it, the deploy history, the crash places learned, the settings, the
-    /// Nexus Mods download history, the manager's own log, Boot Mod Loader's log, the names of the game's crash
+    /// Nexus Mods download history, the manager's own log, Boot Mod Loader's log, the logs the mods declare, the names of the game's crash
     /// dumps, and MDL3's native part and logs when MDL3 is there. Never the dumps themselves (large, and the game's memory), never nexus.json
     /// itself (the sign-in and any key are in it), and the Windows user's folder is written
     /// as %USERPROFILE% everywhere.</summary>
@@ -65,6 +65,7 @@ namespace Hd2Mod
             if (dumps.Count > 0)
                 entries.Add(("game/dumps.txt", string.Join(Environment.NewLine, dumps.Select(d =>
                     d.When.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture) + "  " + d.File)) + Environment.NewLine));
+            ModLogs(lib, logs, entries, sizes);
             var mdl3 = new List<(string Name, string Text)>();
             if (Mdl3(lib, game, mdl3, sizes, LogBudget - entries.Sum(e => (long)(e.Text?.Length ?? 0))) is string native) summary += native + Environment.NewLine;
             entries.AddRange(mdl3);
@@ -108,6 +109,41 @@ namespace Hd2Mod
         /// <summary>A log past this is named in the summary as too large: a log that runs away
         /// (written over and over) is a problem of its own, and often the one asked about.</summary>
         public static long LogTooBig = 100L << 20;
+
+        /// <summary>The most of each log a mod declares ("Logs" in its manifest) taken.</summary>
+        public const int ModLogTail = 1 << 18;
+
+        /// <summary>The logs each mod in the library declares ("Logs" in its manifest.json, Manifest.Logs),
+        /// as game/NAME (the user, 2026-11-24: a report about a mod needs that mod's own log, and
+        /// only its author knows the name). Each file once, only those that exist, within
+        /// LogBudget: past it a log is only listed in game/left_out.txt.</summary>
+        static void ModLogs(Library lib, string folder, List<(string Name, string Text)> entries, List<(string Name, long Bytes)> sizes)
+        {
+            var budget = LogBudget - entries.Sum(e => (long)(e.Text?.Length ?? 0));
+            var left = new List<string>();
+            var seen = new HashSet<string>(entries.Select(e => e.Name).Concat(new[] { "game/left_out.txt" }), StringComparer.OrdinalIgnoreCase);
+            // the mods that are on first: past the budget, those off are the ones left out
+            foreach (var m in lib.Mods.OrderBy(m => m.Enabled ? 0 : 1))
+            {
+                Manifest man;
+                try { man = string.IsNullOrEmpty(m.Path) ? null : Manifest.Read(m.Path); }
+                catch (Exception e) when (e is ModError || e is IOException || e is UnauthorizedAccessException || e is ArgumentException) { continue; }
+                if (man == null) continue;
+                foreach (var log in man.Logs)
+                {
+                    var name = "game/" + log;
+                    var file = Path.Combine(folder, log);
+                    if (!seen.Add(name) || !File.Exists(file)) continue;
+                    Sized(sizes, name, file);
+                    if (budget <= 0) { left.Add(name); continue; }
+                    var text = Tail(file, ModLogTail);
+                    budget -= text.Length;
+                    entries.Add((name, text));
+                }
+            }
+            if (left.Count > 0)
+                entries.Add(("game/left_out.txt", "past the report's size budget, these logs are not in it:" + Environment.NewLine + string.Join(Environment.NewLine, left) + Environment.NewLine));
+        }
 
         static void Sized(List<(string Name, long Bytes)> sizes, string name, string file)
         {

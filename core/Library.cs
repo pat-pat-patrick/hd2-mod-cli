@@ -487,8 +487,12 @@ namespace Hd2Mod
         /// window). Deploy-target ids, lower case ("official", "hellforge"); null when the manifest
         /// says nothing (then the player chooses, Mod.For).</summary>
         public List<string> Targets;
+        /// <summary>The mod's own logs: "Logs" in manifest.json, file names in the game's log
+        /// folder (LuaMods.GameFolder). A problem report takes their ends (Report.ModLogs);
+        /// a name that is not a plain .log or .txt file name there is left out (LogName).</summary>
+        public List<string> Logs = new List<string>();
 
-        static readonly string[] Keys = { "Version", "Guid", "Name", "Description", "IconPath", "Options", "SubOptions", "Include", "Image", "Tags", "Categories", "Targets" };
+        static readonly string[] Keys = { "Version", "Guid", "Name", "Description", "IconPath", "Options", "SubOptions", "Include", "Image", "Tags", "Categories", "Targets", "Logs" };
 
         /// <summary>The managers' spelling of a key, whatever case the author used.</summary>
         static string Canon(string k) => Keys.FirstOrDefault(x => string.Equals(x, k, StringComparison.OrdinalIgnoreCase)) ?? k;
@@ -561,6 +565,19 @@ namespace Hd2Mod
             }
         }
 
+        /// <summary>A "Logs" name as it is taken: a plain file name in the game's log folder,
+        /// ending .log or .txt; null for anything else (a folder, "..", a drive, a path, a
+        /// character Windows does not allow), so a manifest can name no other file.</summary>
+        public static string LogName(string name)
+        {
+            name = name?.Trim();
+            if (string.IsNullOrEmpty(name) || name.Length > 128) return null;
+            if (name.IndexOfAny(System.IO.Path.GetInvalidFileNameChars()) >= 0 || name.IndexOfAny(new[] { '/', '\\', ':' }) >= 0) return null;
+            if (name.Contains("..") || name.StartsWith(".") || name.EndsWith(".") || name.EndsWith(" ")) return null;
+            if (!name.EndsWith(".log", StringComparison.OrdinalIgnoreCase) && !name.EndsWith(".txt", StringComparison.OrdinalIgnoreCase)) return null;
+            return name;
+        }
+
         static Manifest FromRaw(object raw)
         {
             var d = Canonical(raw) as Dictionary<string, object> ?? new Dictionary<string, object>();
@@ -571,6 +588,8 @@ namespace Hd2Mod
             // "Targets": names in any case; a list with no name in it says nothing
             var targets = Json.List(d, "Targets").OfType<string>().Select(t => t.Trim().ToLowerInvariant()).Where(t => t.Length > 0).Distinct().ToList();
             if (targets.Count > 0) m.Targets = targets;
+            foreach (var l in Json.List(d, "Logs").OfType<string>())
+                if (LogName(l) is string log && !m.Logs.Contains(log, StringComparer.OrdinalIgnoreCase)) m.Logs.Add(log);
             var options = Json.List(d, "Options");
             if (options.Count > 0 && options.All(o => o is string))
             {

@@ -502,7 +502,7 @@
   "set_hints_note": "关闭后仅显示操作与结果，不再显示说明文字；功能不受影响。",
   "set_about": "关于",
   "set_report": "问题反馈",
-  "report_note": "导出一个压缩文件，可直接上传给 MOD 作者，或保存后自行发送。内含：MOD 列表与顺序、资源冲突、Lua 检查结果、部署记录、管理器日志、Boot Mod Loader 日志、装有 MDL3 时其原生组件状态与日志，以及游戏崩溃转储的文件名。不含 Nexus Mods 登录信息；Windows 用户文件夹会写成 %USERPROFILE%。",
+  "report_note": "导出一个压缩文件，可直接上传给 MOD 作者，或保存后自行发送。内含：MOD 列表与顺序、资源冲突、Lua 检查结果、部署记录、管理器日志、Boot Mod Loader 日志、各 MOD 声明的日志、装有 MDL3 时其原生组件状态与日志，以及游戏崩溃转储的文件名。不含 Nexus Mods 登录信息；Windows 用户文件夹会写成 %USERPROFILE%。",
   "report_do": "问题报告…",
   "report_making": "正在打包…",
   "report_title": "问题报告",
