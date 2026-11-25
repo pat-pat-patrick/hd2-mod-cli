@@ -59,11 +59,11 @@ namespace Hd2Mod
                                              Run = (a, o) => { Storage.SetDefault(a.Pos["path"]); o.WriteLine("default: " + Store.ModsDir()); } }),
             Cmd("relocate", new Spec { Help = "move mods into another mod folder (--keep: copy, the old folders stay); the game's copies of them become hard links",
                                        Positionals = new[] { "mods" }, Many = true, Values = new[] { "--into" }, Flags = new[] { "--keep" }, Run = RelocateCmd }),
-            Cmd("move-export", new Spec { Help = "pack the whole setup into one file to move it to another computer: the mods, their order, on/off, " +
+            Cmd("move-export", new Spec { Help = "export the whole setup as one migration package for another computer: the mods, their order, on/off, " +
                                                  "options, groups, labels and profiles, the plugins and the mods' own settings (a folder: a file named for today in it)",
                                           Positionals = new[] { "file" }, Run = MoveExport }),
-            Cmd("move-info", new Spec { Help = "what a move package holds", Positionals = new[] { "file" }, Run = MoveInfo }),
-            Cmd("move-restore", new Spec { Help = "put a move package in place here: its mods into a folder on the game's drive (--into another), " +
+            Cmd("move-info", new Spec { Help = "what a migration package holds", Positionals = new[] { "file" }, Run = MoveInfo }),
+            Cmd("move-restore", new Spec { Help = "import a migration package here: its mods into a folder on the game's drive (--into another), " +
                                                   "the list and settings with every path made over; deploy afterwards (--replace: a library that has mods is replaced; their folders stay)",
                                            Positionals = new[] { "file" }, Values = new[] { "--game", "--into" }, Flags = new[] { "--replace" }, Run = MoveRestore }),
             Cmd("list", new Spec { Help = "the load order (the last wins)", Flags = new[] { "--files", "--paths" }, Run = List }),

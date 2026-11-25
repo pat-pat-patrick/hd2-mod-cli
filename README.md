@@ -424,6 +424,37 @@ out after an import or an added folder, and at the top of the Storage page:
 The question names the target folder, and mods can still be moved later from the
 Storage page.
 
+**Migration to another computer** (the Storage page)
+
+*Export migration package…* writes the whole setup into one file
+(`.hd2qdmove`). On the other computer, install this program, then double-click
+the file or drag it onto the window: it is imported and deployed.
+
+| In the package | Not in the package |
+|---|---|
+| The library's mods, their load order, on/off and options | Rollback versions and leftover folders |
+| Groups, labels and profiles | The deploy record and caches (the deploy is done again) |
+| Plugins (the files) and the window's settings | Nexus Mods sign-in: it is valid only on the computer where it was made |
+| The mods' pictures | Plugins' own data folders |
+| The mods' settings files in the game's settings folder (`*_settings.txt`, `*_profiles.txt`, `*_lists.txt`, `*.ini`, `chef_data_*.lua`) | |
+
+- **Size and time**: the mod files are compressed in parallel at the fastest
+  level. Measured on 122 mods (10.81 GB): a 3.49 GB package in 21.8 s; the
+  import took 8.3 s and the deploy 3.1 s.
+- **One file**: the package is split only when the destination is FAT32, which
+  does not allow files over 4 GB. Its parts (`NAME.hd2qdmove.2`, ...) must lie
+  in one folder.
+- **Import**: the mods go into `HD2 Mods` on the game's drive, and every path
+  in the list is made over for this computer. A library that already holds
+  mods is replaced only after a second confirmation; its folders stay on the
+  disk.
+- **Checked before anything changes**: every piece carries a checksum. A
+  damaged or incomplete package, a part of another export or too little free
+  space changes nothing; an import that fails deletes what it had made.
+- **Plugins are not loaded from the package as they are**: an official plugin
+  (matched by SHA-256 against the official list) is added at once; any other
+  is asked about first, as when it is added by hand.
+
 ### Update checks
 
 **Check for updates** (above the list) checks every mod on the channel it came
@@ -985,6 +1016,9 @@ name.
 | `add-loose PATH` | Add, where they are, the mod folders in a library folder that no manager lists. |
 | `relocate MOD... --into FOLDER [--keep]` | Move mods into another mod folder; the game's copies of them become hard links.<br>`--keep`: copy; the old folders stay. |
 | `leftovers [--delete FOLDER... \| --delete --all]` | Folders of old versions this program unpacked that no mod uses any more. `--delete` deletes them; the game is untouched. |
+| `move-export FILE` | Export the whole setup as one migration package. `FILE` may be a folder: the package is named for today in it. |
+| `move-info FILE` | What a migration package holds: mods, size, when and by which version it was exported. |
+| `move-restore FILE [--into FOLDER] [--game DIR] [--replace]` | Import a migration package: its mods into `HD2 Mods` on the game's drive (`--into`: another folder), the list and settings with every path made over. Deploy afterwards.<br>`--replace`: a library that holds mods is replaced; their folders stay. Plugins are not added: the command lists them with the `plugin-add` line for each. |
 
 **Updates and sources**
 
@@ -1402,6 +1436,24 @@ Helldivers 2 的 mod 管理器。主要特点：
 
 提示中会写明目标文件夹；之后仍可随时在存储页移动。
 
+**迁移到其他电脑**（存储页）
+
+“导出迁移包…”将全部配置写入一个文件（`.hd2qdmove`）。在目标电脑上安装本程序后，双击该文件或将其拖入窗口，即可导入并部署。
+
+| 包含 | 不包含 |
+|---|---|
+| mod 库中的 mod 及其加载顺序、开关与可选内容 | 回滚用的旧版本与残留文件夹 |
+| 分组、标签与配置文件 | 部署记录与缓存（导入后重新部署） |
+| 插件文件与窗口设置 | Nexus Mods 登录信息：仅在创建它的电脑上有效 |
+| mod 的图片 | 插件自己的数据文件夹 |
+| 游戏设置文件夹中各 mod 的设置文件（`*_settings.txt`、`*_profiles.txt`、`*_lists.txt`、`*.ini`、`chef_data_*.lua`） | |
+
+- **大小与用时**：mod 文件以最快级别并行压缩。实测 122 个 mod（10.81 GB）：迁移包 3.49 GB，导出用时 21.8 秒；导入用时 8.3 秒，部署 3.1 秒。
+- **单个文件**：仅当目标位置为 FAT32 格式（单个文件不能超过 4 GB）时分为多个文件，各部分（`名称.hd2qdmove.2` 等）须置于同一文件夹中。
+- **导入**：mod 存放于游戏所在分区的 `HD2 Mods`，列表中的所有路径按本机改写。库中已有 mod 时，需再次确认才会替换，原文件夹仍保留在磁盘上。
+- **更改前先校验**：每一块数据都带校验值。迁移包损坏、不完整、混入其他导出的文件或空间不足时，不做任何更改；导入中途失败时，删除已写入的内容。
+- **不直接加载迁移包中的插件**：官方插件（按 SHA-256 与官方列表比对）直接添加；其他插件与手动添加时一样，逐个询问。
+
 ### 检查更新
 
 点击列表上方的 **检查更新**，程序按各 mod 的来源渠道检查新版本。打开管理器时也会自动检查：
@@ -1704,6 +1756,7 @@ Helldivers 2 的 mod 管理器。主要特点：
     hd2qd plugins            # 列出已添加的插件和尚未添加的官方插件
     hd2qd self-update        # 检查本程序是否有新版本（正式版只看正式发布，开发版也看预发布）
     hd2qd report             # 生成问题报告（zip，默认在桌面）；加 --upload 类型 直接上传并显示报告编号
+    hd2qd move-export D:\    # 将全部配置导出为迁移包；在目标电脑上用 move-restore 导入
 
 完整命令列表见英文部分的表格。
 

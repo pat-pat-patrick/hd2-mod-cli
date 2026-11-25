@@ -547,7 +547,7 @@ namespace Hd2Mod
                     return info;
                 }
             }
-            throw new ModError("not a move package of this program: " + file, "move_not_pack", file);
+            throw new ModError("not a migration package of this program: " + file, "move_not_pack", file);
         }
 
         // ------------------------------------------------------------------ restoring
@@ -913,7 +913,7 @@ namespace Hd2Mod
                 int got = 0;
                 while (got < 18) { int n = now.Read(head, got, 18 - got); if (n == 0) break; got += n; }
                 if (got < 18 || !head.Take(8).SequenceEqual(Magic))
-                    throw new ModError("not a move package of this program: " + name, "move_not_pack", name);
+                    throw new ModError("not a migration package of this program: " + name, "move_not_pack", name);
                 var mine = head.Skip(8).Take(8).ToArray();
                 if (id == null) id = mine;
                 else if (!id.SequenceEqual(mine) || BitConverter.ToUInt16(head, 16) != part)
