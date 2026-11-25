@@ -204,7 +204,7 @@ namespace Hd2Mod
             Directory.CreateDirectory(folder);
             var dest = Paths.Join(folder, name);
             Fetch(uri, dest, progress);
-            LastFile = (Json.Str(info, "version"), Json.Long(info, "uploaded_timestamp"));
+            LastFile = (Json.Str(info, "version"), Json.Long(info, "uploaded_timestamp"), Json.Str(info, "name"));
             return (dest, Json.Str(modInfo, "name"));
         }
 
@@ -258,8 +258,8 @@ namespace Hd2Mod
             try { File.Delete(path); } catch (IOException) { } catch (UnauthorizedAccessException) { }
         }
 
-        /// <summary>The version and upload time of the file Download fetched last.</summary>
-        static (string Version, long Time) LastFile;
+        /// <summary>The version, upload time and name on its page of the file Download fetched last.</summary>
+        static (string Version, long Time, string Name) LastFile;
 
         /// <summary>A link's file downloaded and put in the library: a mod already there from the
         /// same Nexus mod gets it as its new version (its place, on/off and options kept);
@@ -272,6 +272,8 @@ namespace Hd2Mod
         {
             public NxmLink Link;
             public string Folder, ModName, Page;
+            /// <summary>The file's name on its page ("HD2 Transmog Cache"), else null.</summary>
+            public string FileName;
             public NexusRef Nexus;
             public long Bytes;
             public System.Diagnostics.Stopwatch Clock;
@@ -300,6 +302,7 @@ namespace Hd2Mod
                 f.Unpacked = f.Clock.Elapsed.TotalSeconds - f.Downloaded;
                 try { File.Delete(file); } catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { }
                 f.ModName = modName;
+                f.FileName = LastFile.Name;
                 f.Page = Page(new NexusRef { Game = link.Game, Mod = link.Mod });
                 f.Nexus = new NexusRef { Game = link.Game, Mod = link.Mod, File = link.File, Version = LastFile.Version, Time = LastFile.Time };
                 return f;
@@ -352,6 +355,60 @@ namespace Hd2Mod
         }
 
 
+        /// <summary>Which of the library's mods from the same Nexus page a download is a new version
+        /// of, else null (a mod of its own). A page can hold several files that are each a mod (the
+        /// user, 2026-11-24: Transmog's Foundation, Cache and Style Library replaced each other in
+        /// turn), so the page alone does not say it; the file's line does, as the update check reads
+        /// it from the public API (Updates.Line): the same file, or one sharing its group or name.
+        /// A mod whose file is not known (added from a file, matched to the page) or no longer on
+        /// the page goes by its file's name, from its download or folder name; without the API,
+        /// every mod goes by name. The only mod from the page with no name to tell by is taken as
+        /// before when the API gives no line, or when the page holds that one file only. Anything
+        /// else is added beside them: an extra entry is easy to remove, a wrong replace takes a mod
+        /// out of the library.</summary>
+        static Mod SameFile(List<Mod> fromPage, NxmLink link, string fileName)
+        {
+            if (fromPage.Count == 0) return null;
+            var exact = fromPage.FirstOrDefault(m => m.Nexus.File == link.File);
+            if (exact != null) return exact;
+            List<Dictionary<string, object>> files = null;
+            try { files = Updates.Files(new NexusRef { Game = link.Game, Mod = link.Mod }); }
+            catch (ModError) { }
+            var mine = files?.FirstOrDefault(x => Json.Long(x, "fileId") == link.File);
+            var line = mine == null ? null : Updates.Line(files, mine);
+            if (line != null)
+            {
+                var ids = new HashSet<long>(line.Select(x => Json.Long(x, "fileId")));
+                var lined = fromPage.FirstOrDefault(m => ids.Contains(m.Nexus.File));
+                if (lined != null) return lined;
+            }
+            // the names this file goes by: its own, and those of its line's other versions
+            var names = new HashSet<string>();
+            void Name(string n) { var k = NewVersions.Key(n); if (k != null) names.Add(k); }
+            Name(fileName);
+            if (line != null) foreach (var x in line) Name(Json.Str(x, "name"));
+            bool onPage(Mod m) => files != null && m.Nexus.File > 0 && files.Any(x => Json.Long(x, "fileId") == m.Nexus.File);
+            var unknown = fromPage.Where(m => !onPage(m)).ToList();
+            string KeyOf(Mod m)
+            {
+                foreach (var n in new[] { m.Source, Path.GetFileName((m.Path ?? "").TrimEnd('\\', '/')) })
+                    if (!string.IsNullOrEmpty(n) && !n.StartsWith("http", StringComparison.OrdinalIgnoreCase) && Origins.NexusFileName(n) is string own)
+                        return NewVersions.Key(own);
+                return null;
+            }
+            var named = unknown.FirstOrDefault(m => KeyOf(m) is string k && names.Contains(k));
+            if (named != null) return named;
+            if (fromPage.Count == 1 && unknown.Count == 1)
+            {
+                var k = KeyOf(unknown[0]);
+                // nothing to tell by: as before
+                if (line == null && (k == null || names.Count == 0)) return unknown[0];
+                // a page that holds this one file only
+                if (line != null && k == null && line.Count == files.Count) return unknown[0];
+            }
+            return null;
+        }
+
         static (Mod Mod, bool Replaced) PutNow(Fetched f)
         {
             var link = f.Link;
@@ -360,7 +417,7 @@ namespace Hd2Mod
             var cfg = Store.Config();
             var lib = Library.Load();
             var manifest = Manifest.Read(folder);
-            var had = lib.Mods.FirstOrDefault(m => m.Nexus != null && m.Nexus.Game == link.Game && m.Nexus.Mod == link.Mod);
+            var had = SameFile(lib.Mods.Where(m => m.Nexus != null && m.Nexus.Game == link.Game && m.Nexus.Mod == link.Mod).ToList(), link, f.FileName);
             if (had != null)
             {
                 Versions.Keep(lib, cfg, had, folder);

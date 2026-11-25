@@ -338,7 +338,7 @@ namespace Hd2Mod
         }
 
         /// <summary>A mod's files on its page: fileId, name, version, category, date, groupId, changelogText.</summary>
-        static List<Dictionary<string, object>> Files(NexusRef r)
+        internal static List<Dictionary<string, object>> Files(NexusRef r)
         {
             var d = Nexus.PostGraphQL(FilesQuery, new Dictionary<string, object>
             {
@@ -432,22 +432,7 @@ namespace Hd2Mod
         static List<Change> ChangesSince(List<Dictionary<string, object>> files, Dictionary<string, object> latest, long since)
         {
             long until = Json.Long(latest, "date");
-            string NameOf(Dictionary<string, object> f) =>
-                System.Text.RegularExpressions.Regex.Replace((Json.Str(f, "name") ?? "").Trim(), @"\.(zip|7z|rar)$", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase).ToLowerInvariant();
-            var line = new HashSet<Dictionary<string, object>> { latest };
-            var groups = new HashSet<long>();
-            var names = new HashSet<string>();
-            for (bool grew = true; grew;)
-            {
-                foreach (var f in line)
-                {
-                    if (Json.Long(f, "groupId") != 0) groups.Add(Json.Long(f, "groupId"));
-                    if (NameOf(f).Length > 0) names.Add(NameOf(f));
-                }
-                grew = false;
-                foreach (var f in files)
-                    if (!line.Contains(f) && (groups.Contains(Json.Long(f, "groupId")) || names.Contains(NameOf(f)))) { line.Add(f); grew = true; }
-            }
+            var line = Line(files, latest);
             var shown = since <= 0 ? new List<Dictionary<string, object>> { latest }
                       : line.Where(f => f == latest || (Json.Long(f, "date") > since && Json.Long(f, "date") <= until)).ToList();
             var out_ = new List<Change>();
@@ -460,6 +445,33 @@ namespace Hd2Mod
                 out_.Add(new Change { Version = version, Lines = lines });
             }
             return out_;
+        }
+
+        /// <summary>A file's name on its page without an archive's extension, in lower case.</summary>
+        internal static string FileNameKey(string name) =>
+            System.Text.RegularExpressions.Regex.Replace((name ?? "").Trim(), @"\.(zip|7z|rar)$", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase).ToLowerInvariant();
+
+        /// <summary>The versions of one file on a page: the file, every file that shares a group or
+        /// a name with it, and every file that shares one with those, and so on (see ChangesSince).
+        /// The other files on the page are mods of their own (Nexus mod 16633, 2026-11-24:
+        /// Foundation, Cache and Style Library, each its own group and name).</summary>
+        internal static HashSet<Dictionary<string, object>> Line(List<Dictionary<string, object>> files, Dictionary<string, object> start)
+        {
+            var line = new HashSet<Dictionary<string, object>> { start };
+            var groups = new HashSet<long>();
+            var names = new HashSet<string>();
+            for (bool grew = true; grew;)
+            {
+                foreach (var f in line)
+                {
+                    if (Json.Long(f, "groupId") != 0) groups.Add(Json.Long(f, "groupId"));
+                    if (FileNameKey(Json.Str(f, "name")).Length > 0) names.Add(FileNameKey(Json.Str(f, "name")));
+                }
+                grew = false;
+                foreach (var f in files)
+                    if (!line.Contains(f) && (groups.Contains(Json.Long(f, "groupId")) || names.Contains(FileNameKey(Json.Str(f, "name"))))) { line.Add(f); grew = true; }
+            }
+            return line;
         }
 
         // ------------------------------------------------------------ fewer requests to Nexus Mods
