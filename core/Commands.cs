@@ -1669,7 +1669,8 @@ namespace Hd2Mod
             var lib = Library.Load();
             var p = Profiles.Make(lib, a.Pos["name"], a.Flag("--empty"));
             lib.Save();
-            o.WriteLine("made " + Ops.Repr(p.Name) + ", a copy of " + Ops.Repr(lib.Active) + " (still in use): hd2qd profile-use " + Ops.Repr(p.Name));
+            o.WriteLine("made " + Ops.Repr(p.Name) + (a.Flag("--empty") ? ", empty" : ", a copy of " + Ops.Repr(lib.Active)) +
+                        " (" + Ops.Repr(lib.Active) + " is still in use): hd2qd profile-use " + Ops.Repr(p.Name));
         }
 
         static void ProfileUse(Args a, TextWriter o)

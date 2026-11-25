@@ -62,7 +62,8 @@ namespace Hd2Mod.Tests
             const string manifest = "{\"Version\": 1, \"Guid\": \"8236065a-0000-4000-8000-000000000002\", \"Name\": \"Scope\"}";
             Cli("add", Mod("Scope", Files((A + ".patch_0", "v1")), manifest));
             Cli("profiles-on");
-            Cli("profile-new", "Turrets", "--empty");
+            Assert.Contains("made 'Turrets', empty ('Default' is still in use)", Cli("profile-new", "Turrets", "--empty"));
+            Assert.Contains("made 'Copy', a copy of 'Default'", Cli("profile-new", "Copy"));
             Cli("profile-use", "Turrets", "--no-deploy");
             var lib = Library.Load();
             Assert.False(Profiles.InProfile(lib, lib.Mods.Single()));
