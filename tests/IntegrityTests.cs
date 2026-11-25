@@ -273,6 +273,53 @@ namespace Hd2Mod.Tests
             finally { try { System.IO.Directory.Delete(root, true); } catch { } }
         }
 
+        /// <summary>(2026-11-25) A cached manifest without the mod's version is fetched again at
+        /// once, not a day later: a player who took the creator's new release within a day of the
+        /// last fetch was reported as an unknown package. A version still missing after that is
+        /// asked for again at most every 10 minutes.</summary>
+        [Fact]
+        public void ACachedManifestWithoutTheModsVersionIsFetchedAgain()
+        {
+            var root = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "hd2qd-integrity-" + System.Guid.NewGuid().ToString("N"));
+            var keepHome = Store.HomeOverride;
+            var keepFetch = IntegrityWiring.LiveEnv.Fetch;
+            try
+            {
+                Store.HomeOverride = root;
+                System.IO.Directory.CreateDirectory(root);
+                long now = System.DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+                void Cache(string text, long at) => System.IO.File.WriteAllText(System.IO.Path.Combine(root, "integrity_state.json"),
+                    Json.Write(new Dictionary<string, object> { ["manifest"] = new Dictionary<string, object> {
+                        ["mod:" + Guid] = new Dictionary<string, object> { ["at"] = at, ["text"] = text } } }));
+                int fetches = 0;
+                string served = Manifest(Shell);
+                IntegrityWiring.LiveEnv.Fetch = (issuer, by, id) => { fetches++; return served; };
+                var env = new IntegrityWiring.LiveEnv(true, root);
+
+                // fetched an hour ago, before the creator released v0.35.0
+                Cache(Manifest(Shell, version: "v0.34.0"), now - 3600);
+                Assert.Empty(Integrity.Scan(new[] { Mod(Shell) }, env));      // no "package" report
+                Assert.Equal(1, fetches);
+                Assert.Empty(Integrity.Scan(new[] { Mod(Shell) }, env));      // the new one is cached now
+                Assert.Equal(1, fetches);
+
+                // a version the creator never released: asked again, but not more than every 10 minutes
+                served = Manifest(Shell, version: "v0.34.0");
+                Cache(served, now - 60);
+                Assert.Single(Integrity.Scan(new[] { Mod(Shell) }, env));
+                Assert.Equal(1, fetches);
+                Cache(served, now - IntegrityWiring.LiveEnv.MissRetrySeconds - 1);
+                Assert.Single(Integrity.Scan(new[] { Mod(Shell) }, env));
+                Assert.Equal(2, fetches);
+            }
+            finally
+            {
+                Store.HomeOverride = keepHome;
+                IntegrityWiring.LiveEnv.Fetch = keepFetch;
+                try { System.IO.Directory.Delete(root, true); } catch { }
+            }
+        }
+
         /// <summary>The live environment: the accounts are the game's own save files, never the
         /// receipt being checked; a sealed claim is read as its ciphertext.</summary>
         [Fact]

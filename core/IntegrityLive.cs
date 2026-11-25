@@ -130,6 +130,7 @@ namespace Hd2Mod
                 bool bySegments = !string.IsNullOrEmpty(mod.SegmentsId);
                 string slot = (bySegments ? "segments:" : "mod:") + (bySegments ? mod.SegmentsId : mod.Guid);
                 bool Good(string t) => Integrity.ParseManifest(t, mod.Issuer, mod.KeyModulusHex, out _) != null;
+                bool Has(string t) => Integrity.ParseManifest(t, mod.Issuer, mod.KeyModulusHex, out _) is var m && m != null && m.ContainsKey(mod.Version ?? "");
                 var state = LoadState();
                 var cache = Dict(state, "manifest");
                 var row = Dict(cache, slot);
@@ -137,8 +138,13 @@ namespace Hd2Mod
                 string text = Json.Str(row, "text");
                 if (text != null && !Good(text)) text = null;
                 long now = NowUnix();
-                if (text != null && at <= now && now - at < Integrity.ThrottleSeconds) return text;
-                string fetched = TryFetch(mod.Issuer, bySegments ? "segments" : "mod", bySegments ? mod.SegmentsId : mod.Guid);
+                // (2026-11-25) a version the cached manifest does not have is asked for again, at most
+                // every MissRetrySeconds: a player who took the creator's new release within a day of
+                // the last fetch was reported as an unknown package, and that used the day's report
+                bool stale = !(at <= now && now - at < Integrity.ThrottleSeconds);
+                bool missing = text != null && !Has(text) && !(at <= now && now - at < MissRetrySeconds);
+                if (text != null && !stale && !missing) return text;
+                string fetched = Fetch(mod.Issuer, bySegments ? "segments" : "mod", bySegments ? mod.SegmentsId : mod.Guid);
                 if (fetched == null || !Good(fetched)) return text;   // offline or none: the cached good one, if any
                 if (persist)
                 {
@@ -147,6 +153,13 @@ namespace Hd2Mod
                 }
                 return fetched;
             }
+
+            /// <summary>(2026-11-25) How long a cached manifest that lacks the mod's version is kept
+            /// before it is fetched again (the window's check runs at most every 10 minutes anyway).</summary>
+            public const long MissRetrySeconds = 600;
+
+            /// <summary>The manifest fetch (issuer, "segments" or "mod", id); tests replace it.</summary>
+            public static Func<string, string, string, string> Fetch = TryFetch;
 
             static string TryFetch(string issuer, string by, string value)
             {
