@@ -97,15 +97,21 @@ namespace QuickDeploy
             {
                 case "unpack": what = Texts.F("nx_unpacking", (int)j.StageClock.Elapsed.TotalSeconds); break;
                 case "add": what = Texts.Get(j.FromFind ? "dl_adding_drop" : "nx_adding"); break;
+                // the move package (MoveView): bytes read, of all of them
+                case "pack":
+                case "restore":
+                    what = Texts.F("mv_progress", Texts.Size(j.Done), Texts.Size(j.Total), j.Total > 0 ? j.Done * 100 / j.Total : 0);
+                    break;
                 default:
                     what = j.Total > 0 ? Texts.F("dl_progress", j.Site, Texts.Size(j.Done), Texts.Size(j.Total), j.Done * 100 / j.Total)
                                        : Texts.F("dl_progress_n", j.Site, Texts.Size(j.Done));
                     break;
             }
-            return title ? j.Title + " · " + what : what;
+            return title && !string.IsNullOrEmpty(j.Title) ? j.Title + " · " + what : what;
         }
 
-        double? JobShare() => job == null ? 0 : job.Stage == "download" && job.Total > 0 ? job.Done / (double)job.Total : (double?)null;
+        double? JobShare() => job == null ? 0 : (job.Stage == "download" || job.Stage == "pack" || job.Stage == "restore") && job.Total > 0
+                                                ? job.Done / (double)job.Total : (double?)null;
 
         /// <summary>The job as it stands, wherever it shows.</summary>
         void ShowJob()

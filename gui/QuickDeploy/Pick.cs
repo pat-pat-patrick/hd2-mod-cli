@@ -36,6 +36,22 @@ namespace QuickDeploy
                 return d.ShowDialog(new Owner(owner)) == System.Windows.Forms.DialogResult.OK && d.FileNames.Length > 0 ? d.FileNames : null;
         }
 
+        /// <summary>A file to write, name offered; null: cancelled. The system asks before an existing one is replaced.</summary>
+        public static string Save(Window owner, string title, string kind, string patterns, string name)
+        {
+            using (var d = new System.Windows.Forms.SaveFileDialog
+            {
+                Title = title,
+                Filter = kind + "|" + patterns,
+                FileName = name,
+                AutoUpgradeEnabled = true,
+                OverwritePrompt = true,
+                AddExtension = true,
+                DefaultExt = patterns.TrimStart('*', '.'),
+            })
+                return d.ShowDialog(new Owner(owner)) == System.Windows.Forms.DialogResult.OK ? d.FileName : null;
+        }
+
         /// <summary>One existing folder; start: the folder it opens in, when it is still there.</summary>
         public static string Folder(Window owner, string title, string start = null) => Folders(owner, title, start, false)?[0];
 
