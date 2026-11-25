@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text;
 
 namespace Hd2Mod
@@ -20,6 +21,32 @@ namespace Hd2Mod
         {
             public int Method;
             public long Compressed, Size, Offset;
+            /// <summary>The general purpose flags; bit 11: the name is UTF-8.</summary>
+            public int Flags;
+            /// <summary>The name's bytes as stored, before any decoding.</summary>
+            public byte[] Name;
+        }
+
+        /// <summary>How the names of a zip's entries without the UTF-8 flag are to be read
+        /// (ZipFile.Open's entryNameEncoding). .NET reads them as UTF-8, and a zip made on a
+        /// Chinese Windows by a tool that writes the system's code page stores them in GBK:
+        /// a folder "材质包" came out garbled, and the manifest's
+        /// Include no longer found it (a player's skin, 2026-11-15). UTF-8 when every such name
+        /// is valid UTF-8 (many tools leave the flag out); else GBK when every one is valid
+        /// GBK; else UTF-8, as before.</summary>
+        public static Encoding NameEncoding(List<Entry> entries)
+        {
+            var strict = new UTF8Encoding(false, true);
+            var legacy = entries.Where(e => (e.Flags & 0x800) == 0 && e.Name != null && e.Name.Any(b => b >= 0x80)).ToList();
+            if (legacy.Count == 0 || legacy.All(e => Decodes(strict, e.Name))) return Encoding.UTF8;
+            var gbk = Encoding.GetEncoding(936, EncoderFallback.ExceptionFallback, DecoderFallback.ExceptionFallback);
+            return legacy.All(e => Decodes(gbk, e.Name)) ? Encoding.GetEncoding(936) : Encoding.UTF8;
+        }
+
+        static bool Decodes(Encoding enc, byte[] b)
+        {
+            try { enc.GetString(b); return true; }
+            catch (DecoderFallbackException) { return false; }
         }
 
         /// <summary>The central directory's entries; zip64 sizes and offsets are read.</summary>
@@ -65,10 +92,11 @@ namespace Hd2Mod
                     int nameLen = BitConverter.ToUInt16(head, 28), extraLen = BitConverter.ToUInt16(head, 30), commentLen = BitConverter.ToUInt16(head, 32);
                     var e = new Entry
                     {
-                        Method = BitConverter.ToUInt16(head, 10),
+                        Method = BitConverter.ToUInt16(head, 10), Flags = BitConverter.ToUInt16(head, 8),
                         Compressed = BitConverter.ToUInt32(head, 20), Size = BitConverter.ToUInt32(head, 24), Offset = BitConverter.ToUInt32(head, 42),
+                        Name = new byte[nameLen],
                     };
-                    f.Seek(nameLen, SeekOrigin.Current);
+                    Fill(f, e.Name);
                     var extra = new byte[extraLen];
                     Fill(f, extra);
                     f.Seek(commentLen, SeekOrigin.Current);

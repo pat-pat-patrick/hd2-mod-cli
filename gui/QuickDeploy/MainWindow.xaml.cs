@@ -9689,11 +9689,15 @@ namespace QuickDeploy
         async Task DropPaths(List<string> many)
         {
             if (busy) return;
-            var before = new HashSet<string>(Library.Load().Mods.Select(m => m.Id));
+            // the mods shown before: new ones, and ones the library had that the drop put into
+            // the profile in use, are chosen after it
+            var was = Library.Load();
+            var before = new HashSet<string>(was.Mods.Where(m => Profiles.InProfile(was, m)).Select(m => m.Id));
             int added = 0;
             mdl3Note = null;
             foreach (var p in many) if (await Act(() => Cli.Run("add", p), false)) added++;
-            var fresh = Library.Load().Mods.Where(m => !before.Contains(m.Id)).ToList();
+            var now = Library.Load();
+            var fresh = now.Mods.Where(m => Profiles.InProfile(now, m) && !before.Contains(m.Id)).ToList();
             var foot = Texts.F("drop_processed", Texts.N(added)) + (mdl3Note != null ? " · " + mdl3Note : "");
             // now, and again after the state read the adds started
             if (added > 0) { Foot(foot, "Blue"); lastDone = foot; }

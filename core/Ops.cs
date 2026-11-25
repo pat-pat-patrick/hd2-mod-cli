@@ -132,30 +132,34 @@ namespace Hd2Mod
             var damaged = Damaged(zipPath);
             if (damaged != null) throw new ModError(zipPath + ": " + damaged, "archive_damaged", zipPath);
             if (!IsZip(zipPath)) { if (SevenZip.Is(zipPath)) Extract7z(zipPath, tmp); else ExtractOther(zipPath, tmp); }
-            else using (var z = ZipFile.OpenRead(zipPath))
+            else
             {
-                var targets = new List<(ZipArchiveEntry Entry, string Target)>();
-                foreach (var e in z.Entries)
-                {
-                    var target = Paths.Norm(Paths.Join(tmp, e.FullName));
-                    if (!target.StartsWith(root + "\\", StringComparison.Ordinal) && target != root)
-                        throw new ModError(zipPath + ": a path leaves the folder: " + e.FullName);
-                    targets.Add((e, target));
-                }
-                Directory.CreateDirectory(tmp);
-                // an entry packed with LZMA, which .NET refuses, by our own reader (ZipLzma); the
-                // central directory lists the entries in ZipArchive's order
+                // the central directory first: each entry's method, and the encoding of its names
                 var raw = ZipLzma.Directory(zipPath);
-                if (raw.Count != targets.Count) raw = null;
-                for (int i = 0; i < targets.Count; i++)
+                using (var z = ZipFile.Open(zipPath, ZipArchiveMode.Read, ZipLzma.NameEncoding(raw)))
                 {
-                    var (e, target) = targets[i];
-                    if (e.FullName.EndsWith("/") || e.FullName.EndsWith("\\")) { Directory.CreateDirectory(target); continue; }
-                    Directory.CreateDirectory(System.IO.Path.GetDirectoryName(target));
-                    if (raw != null && raw[i].Method == ZipLzma.Method)
-                        try { ZipLzma.Extract(zipPath, raw[i], target); }
-                        catch (InvalidDataException x) { z.Dispose(); Remove(tmp); throw new ModError(zipPath + ": " + e.FullName + ": " + x.Message, "archive_damaged", zipPath); }
-                    else e.ExtractToFile(target, true);
+                    var targets = new List<(ZipArchiveEntry Entry, string Target)>();
+                    foreach (var e in z.Entries)
+                    {
+                        var target = Paths.Norm(Paths.Join(tmp, e.FullName));
+                        if (!target.StartsWith(root + "\\", StringComparison.Ordinal) && target != root)
+                            throw new ModError(zipPath + ": a path leaves the folder: " + e.FullName);
+                        targets.Add((e, target));
+                    }
+                    Directory.CreateDirectory(tmp);
+                    // an entry packed with LZMA, which .NET refuses, by our own reader (ZipLzma); the
+                    // central directory lists the entries in ZipArchive's order
+                    if (raw.Count != targets.Count) raw = null;
+                    for (int i = 0; i < targets.Count; i++)
+                    {
+                        var (e, target) = targets[i];
+                        if (e.FullName.EndsWith("/") || e.FullName.EndsWith("\\")) { Directory.CreateDirectory(target); continue; }
+                        Directory.CreateDirectory(System.IO.Path.GetDirectoryName(target));
+                        if (raw != null && raw[i].Method == ZipLzma.Method)
+                            try { ZipLzma.Extract(zipPath, raw[i], target); }
+                            catch (InvalidDataException x) { z.Dispose(); Remove(tmp); throw new ModError(zipPath + ": " + e.FullName + ": " + x.Message, "archive_damaged", zipPath); }
+                        else e.ExtractToFile(target, true);
+                    }
                 }
             }
             // a zip with one folder at the top that holds the manifest: that folder is the mod

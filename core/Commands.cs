@@ -618,14 +618,14 @@ namespace Hd2Mod
                     // official build, switched off, and 0.13.4 kept running)
                     if (same == null && matches.Count == 1 && matches[0].For == null && matches[0].Pair == null && !Targets.DeclaredFor(matches[0], out _))
                         same = matches[0];
-                    if (same != null) { a.Pos["mod"] = same.Id; Replace(a, o); return; }
+                    if (same != null) { a.Pos["mod"] = same.Id; ReplaceAdded(a, o); return; }
                     if (declaredFor != null && (declaredFor == Targets.Official || offered.Contains(declaredFor))) forTarget = declaredFor;
                 }
                 // one build for each target: the one of the target asked for, else ask
                 if (forTarget != null)
                 {
                     var same = matches.FirstOrDefault(m => m.For == forTarget);
-                    if (same != null) { a.Pos["mod"] = same.Id; Replace(a, o); return; }
+                    if (same != null) { a.Pos["mod"] = same.Id; ReplaceAdded(a, o); return; }
                     pairWith = matches.FirstOrDefault(m => m.Pair == null) ?? matches.FirstOrDefault();
                 }
                 else if (matches.Count > 1 && !a.Flag("--replace"))
@@ -639,7 +639,7 @@ namespace Hd2Mod
                 else if (matches.Count == 1)
                 {
                     a.Pos["mod"] = matches[0].Id;
-                    Replace(a, o);
+                    ReplaceAdded(a, o);
                     return;
                 }
             }
@@ -657,7 +657,7 @@ namespace Hd2Mod
                 {
                     o.WriteLine("a new version of " + found.Mod.Name + " (the same download source)");
                     a.Pos["mod"] = found.Mod.Id;
-                    Replace(a, o);
+                    ReplaceAdded(a, o);
                     return;
                 }
                 if (found != null)
@@ -690,6 +690,24 @@ namespace Hd2Mod
             if (pairWith != null) o.WriteLine("added as the " + mod.For + " version of " + pairWith.Name + " (" + pairWith.Name + " is for " + (pairWith.For ?? "both") + ")");
             o.WriteLine("added " + lib.Mods.Count + " " + mod.Name + "  (" + folder + ")");
             Mdl3Line(mod, o);
+        }
+
+        /// <summary>An added mod the library has already (the same Guid or download source):
+        /// replaced, and put into the profile in use when it is not in it. Without that, a mod
+        /// imported into another profile and then dropped in again stayed outside the one in
+        /// use, off, and the window said it was added (a player, 2026-11-15: "左下角显示已添加或
+        /// 更新一个mod，但是配置文件里就是显示不出来"). Only adding does this: an update (hd2qd
+        /// replace, a download's new version) leaves the mod in the profiles it is in.</summary>
+        static void ReplaceAdded(Args a, TextWriter o)
+        {
+            Replace(a, o);
+            var lib = Library.Load();
+            var mod = lib.Mods.FirstOrDefault(m => m.Id == a.Pos["mod"]);
+            if (mod == null || Profiles.InProfile(lib, mod)) return;
+            Profiles.Add(lib, new[] { mod });
+            if (mod.For != null && mod.For != Targets.Current(lib)) mod.Enabled = false;
+            lib.Save();
+            o.WriteLine("put into the profile in use: " + lib.Active);
         }
 
         /// <summary>MDL3 dragged in or updated: its native part installed at once when the game is
