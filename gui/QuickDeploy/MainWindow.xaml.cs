@@ -2635,8 +2635,9 @@ namespace QuickDeploy
                 changed = true;
             }
             if (changed) Refresh();
-            // an empty library: the lists of the managers found (HD2 Arsenal, HD2ModManager)
-            if (st.Mods.Count == 0) ImportFromManagers(true);
+            // an empty library: the lists of the managers found (HD2 Arsenal, HD2ModManager); not
+            // when this start opens a migration package, which brings the whole library itself
+            if (st.Mods.Count == 0 && App.StartMove == null) ImportFromManagers(true);
             NoPurgeTip();
             // the versions and sources HD2 Arsenal recorded for its mods, learnt once per start
             await Queued(() =>
