@@ -25,6 +25,9 @@ namespace QuickDeploy
         public static string StartLink;
 #endif
 
+        /// <summary>A move package this start was given (double-clicked), for the window to restore.</summary>
+        public static string StartMove;
+
         static System.Threading.Mutex single;
 
         /// <summary>One window: a start while it runs brings it forward and ends.</summary>
@@ -34,6 +37,7 @@ namespace QuickDeploy
 #if HAS_NEXUS
             StartLink = e.Args.FirstOrDefault(a => a.StartsWith("nxm://", StringComparison.OrdinalIgnoreCase));
 #endif
+            StartMove = e.Args.FirstOrDefault(a => a.IndexOf(".hd2qdmove", StringComparison.OrdinalIgnoreCase) >= 0 && System.IO.File.Exists(a));
             // the first window holds this; a second start knows at once (no wait on the pipe)
             single = new System.Threading.Mutex(true, Pipe, out bool first);
             // --tray: started with Windows, into the notification area; --exit: a window put away
@@ -51,9 +55,9 @@ namespace QuickDeploy
                     {
                         c.Connect(5000);
 #if HAS_NEXUS
-                        var bytes = Encoding.UTF8.GetBytes((exit ? ExitLine : StartLink ?? "") + "\n");
+                        var bytes = Encoding.UTF8.GetBytes((exit ? ExitLine : StartLink ?? StartMove ?? "") + "\n");
 #else
-                        var bytes = Encoding.UTF8.GetBytes((exit ? ExitLine : "") + "\n");
+                        var bytes = Encoding.UTF8.GetBytes((exit ? ExitLine : StartMove ?? "") + "\n");
 #endif
                         c.Write(bytes, 0, bytes.Length);
                         c.Flush();

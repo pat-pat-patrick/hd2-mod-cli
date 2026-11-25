@@ -261,6 +261,8 @@ namespace QuickDeploy
             ModUpdatesAtStart();
             PluginsAtStart();
             SessionAtStart();
+            RegisterMovePack();
+            if (App.StartMove != null) Dispatcher.BeginInvoke(new Action(() => RestoreMove(App.StartMove)), DispatcherPriority.ApplicationIdle);
 #if HAS_NEXUS
             if (App.StartLink != null) Dispatcher.BeginInvoke(new Action(() => Arrived(App.StartLink)), DispatcherPriority.ApplicationIdle);
 #endif
@@ -4656,6 +4658,9 @@ namespace QuickDeploy
             if (Texts.Hints) won.Children.Add(Small(Texts.Get("st_saved_note"), new Thickness(0, 12, 0, 0)));
             Storages.Children.Add(new Border { BorderBrush = B("Grid"), BorderThickness = new Thickness(1), Background = B("Ground700"), Padding = new Thickness(16), Child = won });
             Storages.Children.Add(new Border { Height = 20 });
+            // the whole setup to another computer, and back from one (MoveView)
+            Storages.Children.Add(MoveCard());
+            Storages.Children.Add(new Border { Height = 20 });
 
             // mods on another drive than the game, unless the player chose to keep them there
             var kept = KeptDrives();
@@ -5632,6 +5637,8 @@ namespace QuickDeploy
                 return;
             }
             BringBack();
+            // a move package double-clicked while the window runs
+            if (!string.IsNullOrEmpty(link) && IsMovePack(link)) { RestoreMove(link); return; }
 #if HAS_NEXUS
             if (string.IsNullOrEmpty(link)) return;
             links.Enqueue(link);
@@ -9638,7 +9645,7 @@ namespace QuickDeploy
         {
             var paths = data != null && data.GetDataPresent(DataFormats.FileDrop) ? data.GetData(DataFormats.FileDrop) as string[] : null;
             if (paths == null) return new List<string>();
-            return paths.Where(p => Directory.Exists(p)
+            return paths.Where(p => Directory.Exists(p) || IsMovePack(p)
                                     || (System.IO.File.Exists(p) && Archives.Contains(IOPath.GetExtension(p).ToLowerInvariant()))).ToList();
         }
 
@@ -9651,7 +9658,8 @@ namespace QuickDeploy
             e.Effects = ok ? DragDropEffects.Copy : DragDropEffects.None;
             e.Handled = true;
             DropHintText.Text = Texts.Get(ok ? "drop_here" : "drop_no");
-            DropHintWhat.Text = ok ? Texts.F("drop_what", Texts.N(many.Count)) : Texts.Get(busy ? "working" : "drop_none");
+            DropHintWhat.Text = ok ? (many.Any(IsMovePack) ? Texts.Get("mv_drop_what") : Texts.F("drop_what", Texts.N(many.Count)))
+                                   : Texts.Get(busy ? "working" : "drop_none");
             DropHint.Visibility = Visibility.Visible;
         }
 
@@ -9689,6 +9697,9 @@ namespace QuickDeploy
         async Task DropPaths(List<string> many)
         {
             if (busy) return;
+            // a move package is the whole library, not a mod: restored on its own
+            var move = many.FirstOrDefault(IsMovePack);
+            if (move != null) { RestoreMove(move); return; }
             var before = new HashSet<string>(Library.Load().Mods.Select(m => m.Id));
             int added = 0;
             mdl3Note = null;
