@@ -4657,11 +4657,7 @@ namespace QuickDeploy
             won.Children.Add(nums);
             // an explaining line, gone with the others (the user, 2026-10-25)
             if (Texts.Hints) won.Children.Add(Small(Texts.Get("st_saved_note"), new Thickness(0, 12, 0, 0)));
-            Storages.Children.Add(new Border { BorderBrush = B("Grid"), BorderThickness = new Thickness(1), Background = B("Ground700"), Padding = new Thickness(16), Child = won });
-            Storages.Children.Add(new Border { Height = 20 });
-            // the whole setup to another computer, and back from one (MoveView)
-            Storages.Children.Add(MoveCard());
-            Storages.Children.Add(new Border { Height = 20 });
+            var wonCard = new Border { BorderBrush = B("Grid"), BorderThickness = new Thickness(1), Background = B("Ground700"), Padding = new Thickness(16), Child = won };
 
             // mods on another drive than the game, unless the player chose to keep them there
             var kept = KeptDrives();
@@ -4686,6 +4682,19 @@ namespace QuickDeploy
 
             // the folders
             foreach (var f in folders) Storages.Children.Add(FolderCard(f));
+
+            // below the folders, side by side and of one height: what the hard links saved, and
+            // the whole setup to another computer and back from one (MoveView) (the user,
+            // 2026-11-25: "这两个完全可以并列吧，然后我认为应该放在这个库的下边")
+            var pair = new Grid { Margin = new Thickness(0, 10, 0, 8) };
+            pair.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            pair.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(20) });
+            pair.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            pair.Children.Add(wonCard);
+            var moveCard = MoveCard();
+            Grid.SetColumn(moveCard, 2);
+            pair.Children.Add(moveCard);
+            Storages.Children.Add(pair);
 
             // the chosen folder's mods
             var sel = folders.FirstOrDefault(f => string.Equals(f.Path, storageSel, StringComparison.OrdinalIgnoreCase));
