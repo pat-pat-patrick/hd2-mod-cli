@@ -15,7 +15,8 @@ namespace QuickDeploy
     public partial class MainWindow
     {
         /// <summary>What the window hands a plugin: the core's host (PluginHost), and what only
-        /// the window has: window(title, content), the manager's own window frame; ask(text,
+        /// the window has: tab(title, content, closed), a tab of this window ({show, close});
+        /// window(title, content), the manager's own window frame; ask(text,
         /// action), ask_text(text, action, start) (a line typed in, or null) and tell(text), its
         /// dialogs; foot(text, colour), its status line; refresh(), the library and this page
         /// read again.</summary>
@@ -23,6 +24,9 @@ namespace QuickDeploy
         {
             var host = PluginHost.Make();
             host["window"] = (Func<string, FrameworkElement, Window>)((title, content) => new ChromeWindow(this, title, content));
+            // a tab of this window in place of a window (PluginTabs.cs); a plugin that does not
+            // know it still asks for "window"
+            host["tab"] = TabMaker();
             host["ask"] = (Func<string, string, bool>)((text, action) => Dialog.Ask(this, text, action));
             host["ask_text"] = (Func<string, string, string, string>)((text, action, start) => Dialog.AskText(this, text, action, start));
             host["tell"] = (Action<string>)(text => Dialog.Tell(this, text));
@@ -505,6 +509,16 @@ namespace QuickDeploy
         /// that is the smallest at least as large as 20 at this screen's scale, scaled smoothly.</summary>
         UIElement PluginIcon(Type type)
         {
+            var frame = PluginIconFrame(type);
+            if (frame == null) return null;
+            var image = new Image { Source = frame, Width = 20, Height = 20, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+            System.Windows.Media.RenderOptions.SetBitmapScalingMode(image, System.Windows.Media.BitmapScalingMode.HighQuality);
+            return image;
+        }
+
+        /// <summary>The frame of a plugin's icon PluginIcon draws; null when it has none.</summary>
+        System.Windows.Media.ImageSource PluginIconFrame(Type type)
+        {
             var bytes = PluginFiles.IconBytes(type, PluginHostHere());
             if (bytes == null) return null;
             try
@@ -513,11 +527,8 @@ namespace QuickDeploy
                 var frames = new System.Windows.Media.Imaging.IconBitmapDecoder(new System.IO.MemoryStream(bytes),
                     System.Windows.Media.Imaging.BitmapCreateOptions.None, System.Windows.Media.Imaging.BitmapCacheOption.OnLoad).Frames;
                 var want = 20 * scale;
-                var frame = frames.Where(f => f.PixelWidth >= want).OrderBy(f => f.PixelWidth).FirstOrDefault()
-                            ?? frames.OrderByDescending(f => f.PixelWidth).First();
-                var image = new Image { Source = frame, Width = 20, Height = 20, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
-                System.Windows.Media.RenderOptions.SetBitmapScalingMode(image, System.Windows.Media.BitmapScalingMode.HighQuality);
-                return image;
+                return frames.Where(f => f.PixelWidth >= want).OrderBy(f => f.PixelWidth).FirstOrDefault()
+                       ?? frames.OrderByDescending(f => f.PixelWidth).First();
             }
             catch (Exception e) when (e is System.IO.IOException || e is NotSupportedException || e is System.IO.FileFormatException || e is ArgumentException)
             {

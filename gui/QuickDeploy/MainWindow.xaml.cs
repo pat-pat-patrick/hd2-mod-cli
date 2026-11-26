@@ -142,6 +142,7 @@ namespace QuickDeploy
             // the loader panel's details close like a menu (LoaderInfo)
             PreviewKeyDown += (s, e) => { if (e.Key == Key.Escape && loaderPop != null && loaderPop.IsOpen) { CloseLoaderInfo(); e.Handled = true; } };
             // Esc leaves the settings page for the page it was opened from
+            PreviewKeyDown += TabKeys;
             PreviewKeyDown += (s, e) => { if (e.Key == Key.Escape && !e.Handled && (SettingsPage.Visibility == Visibility.Visible || PluginsPage.Visibility == Visibility.Visible)) { ShowPage(pageBack); e.Handled = true; } };
             PreviewTextInput += TypeToSearch;
             PreviewMouseDown += (s, e) =>
@@ -166,6 +167,8 @@ namespace QuickDeploy
                 started = true;
                 Start();
                 TrayStarted();
+                // the plugin tabs of the last start, once the window has drawn its own
+                Dispatcher.BeginInvoke(new Action(ReopenTabs), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
             };
         }
 
@@ -339,6 +342,53 @@ namespace QuickDeploy
                 tt.Start();
                 return;
             }
+            if (page == "plugintabs")
+            {
+                // pictures only: 6 s after the start every window plugin added is opened (each a
+                // tab), then every 3 s the next tab is shown, the first one first, then the
+                // manager's; then the first plugin opened again (its tab shown, no second one), and the tabs closed one by one
+                var pt = new DispatcherTimer { Interval = TimeSpan.FromSeconds(6) };
+                int step = -1, opened = 0;
+                Type firstType = null;
+                pt.Tick += (s, e) =>
+                {
+                    pt.Interval = TimeSpan.FromSeconds(3);
+                    if (step < 0)
+                        foreach (var (file, type, _) in ByName(PluginFiles.All()))
+                            if (type != null && PluginFiles.Kind(type) == "window") { Mark("opening " + file); OpenPlugin(type); firstType = firstType ?? type; }
+                    if (step < 0) opened = tabs.Count;
+                    step++;
+                    if (step < opened) ShowTab(tabs[step]);
+                    else if (step == opened) { ShowPage(managerPage); Mark("the manager's tab: on " + shownPage); }
+                    else if (step == opened + 1) { OpenPlugin(firstType); Mark("opened again: " + tabs.Count + " tabs, on " + shownPage); }
+                    else if (tabs.Count > 0) { Mark("closing " + tabs[0].Title); CloseTab(tabs[0]); Mark(tabs.Count + " tabs, on " + shownPage); }
+                    else { pt.Stop(); Mark("all closed, on " + shownPage); }
+                };
+                pt.Start();
+                return;
+            }
+            if (page == "savetabs")
+            {
+                // tests only: 6 s after the start every window plugin added is opened, the second
+                // tab shown, and the program ended 3 s later, so the tabs are kept (SaveTabs)
+                var sv = new DispatcherTimer { Interval = TimeSpan.FromSeconds(6) };
+                sv.Tick += (s, e) =>
+                {
+                    if (sv.Interval.TotalSeconds > 4)
+                    {
+                        foreach (var (file, type, _) in ByName(PluginFiles.All()))
+                            if (type != null && PluginFiles.Kind(type) == "window") OpenPlugin(type);
+                        if (tabs.Count > 1) ShowTab(tabs[1]);
+                        Mark("kept: " + string.Join(", ", tabs.Select(t => t.File)) + "; on " + TabOf(shownPage)?.File);
+                        sv.Interval = TimeSpan.FromSeconds(3);
+                        return;
+                    }
+                    sv.Stop();
+                    Application.Current.Shutdown();
+                };
+                sv.Start();
+                return;
+            }
             if (page == "trayplugin")
             {
                 // tests only: put away 6 s after the start, then the first pinned plugin opened from
@@ -387,6 +437,14 @@ namespace QuickDeploy
                         Dispatcher.BeginInvoke(new Action(() => OnShow().ScrollToVerticalOffset(y)), DispatcherPriority.Loaded);
                 };
                 tp.Start();
+                return;
+            }
+            if (page == "settingspage")
+            {
+                // pictures only: the settings' general tab 4 s after the start
+                var sp = new DispatcherTimer { Interval = TimeSpan.FromSeconds(4) };
+                sp.Tick += (s, e) => { sp.Stop(); settingsTab = "general"; ShowPage("settings"); };
+                sp.Start();
                 return;
             }
             if (Environment.GetEnvironmentVariable("HD2QD_CLICK_TEST") == "storage")
@@ -2235,6 +2293,8 @@ namespace QuickDeploy
 
         protected override void OnClosed(EventArgs e)
         {
+            SaveTabs();
+            CloseTabs();
             DisposeTrayIcon();
             base.OnClosed(e);
         }
@@ -4501,14 +4561,18 @@ namespace QuickDeploy
         readonly Dictionary<string, string> pageDrawn = new Dictionary<string, string>();
 
         UIElement PageOf(string page) => page == "deploy" ? Body : page == "download" ? DownloadPage : page == "lua" ? LuaPage
-            : page == "storage" ? StoragePage : page == "tags" ? TagsPage : page == "settings" ? SettingsPage : page == "plugins" ? (UIElement)PluginsArea : null;
+            : page == "storage" ? StoragePage : page == "tags" ? TagsPage : page == "settings" ? SettingsPage : page == "plugins" ? (UIElement)PluginsArea
+            : TabOf(page)?.Page;
 
         void ShowPage(string page)
         {
             if (shownPage != null && shownPage != page) Motion.In(PageOf(page), 0, 6, 120, 0.35);
+            var before = shownPage;
             shownPage = page;
             if ((page == "settings" || page == "plugins") && SettingsPage.Visibility != Visibility.Visible && PluginsPage.Visibility != Visibility.Visible)
-                pageBack = StoragePage.IsVisible ? "storage" : TagsPage.IsVisible ? "tags" : DownloadPage.IsVisible ? "download" : LuaPage.IsVisible ? "lua" : "deploy";
+                pageBack = TabOf(before) != null ? before
+                    : StoragePage.IsVisible ? "storage" : TagsPage.IsVisible ? "tags" : DownloadPage.IsVisible ? "download" : LuaPage.IsVisible ? "lua" : "deploy";
+            if (TabOf(page) == null) managerPage = page;
             PageDeploy.IsChecked = page == "deploy";
             PageLua.IsChecked = page == "lua";
             PageDownload.IsChecked = page == "download";
@@ -4522,6 +4586,9 @@ namespace QuickDeploy
             SettingsPage.Visibility = page == "settings" ? Visibility.Visible : Visibility.Collapsed;
             PluginsPage.Visibility = page == "plugins" ? Visibility.Visible : Visibility.Collapsed;
             PluginsArea.Visibility = PluginsPage.Visibility;            // the column and its guide
+            foreach (var t in tabs) t.Page.Visibility = page == t.Key ? Visibility.Visible : Visibility.Collapsed;
+            FitTabs();
+            PaintTabs();
             // the gear and the plug lit while their page is on show, as the page buttons are
             SettingsBtn.Background = page == "settings" ? B("Yellow") : Brushes.Transparent;
             SettingsBtn.BorderBrush = page == "settings" ? B("Yellow") : B("Grid");
@@ -9054,6 +9121,20 @@ namespace QuickDeploy
             };
             body.Children.Add(fline);
             body.Children.Add(Small(Texts.Get("set_fling_note"), new Thickness(0, 8, 0, 0)));
+
+            // the plugin tabs open again at the next start (PluginTabs.cs; the user, 2026-11-26)
+            body.Children.Add(Label("set_reopen_tabs", new Thickness(0, 20, 0, 6)));
+            var rtSw = new CheckBox { Style = (Style)FindResource("Switch"), IsChecked = ReopenTabsOn, VerticalAlignment = VerticalAlignment.Center };
+            var rtLine = new StackPanel { Orientation = Orientation.Horizontal };
+            rtLine.Children.Add(rtSw);
+            rtLine.Children.Add(new TextBlock { Text = Texts.Get("set_reopen_tabs_on"), Foreground = B("Ink"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 0, 0, 0) });
+            rtSw.Click += (s, e2) =>
+            {
+                try { ReopenTabsOn = rtSw.IsChecked == true; }
+                catch (Exception err) when (err is IOException || err is UnauthorizedAccessException || err is FormatException) { rtSw.IsChecked = ReopenTabsOn; }
+            };
+            body.Children.Add(rtLine);
+            body.Children.Add(Small(Texts.Get("set_reopen_tabs_note"), new Thickness(0, 8, 0, 0)));
 
             body.Children.Add(Group("set_group_mods"));
             // profiles: a switch of their own (the user, 2026-10-25)

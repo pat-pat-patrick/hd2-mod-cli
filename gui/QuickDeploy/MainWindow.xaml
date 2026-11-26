@@ -14,11 +14,23 @@
 
   <Border x:Name="Frame" BorderBrush="{StaticResource Grid}" BorderThickness="1">
     <DockPanel>
+      <!-- the tabs, as a browser's (PluginTabs.cs; the user, 2026-11-26: plugin windows piled
+           up): the manager the first, each open window plugin one more. The row is the window's
+           top, with its caption buttons, while a plugin is open; hidden while none is -->
+      <Border x:Name="TabStrip" DockPanel.Dock="Top" Visibility="Collapsed" Height="40"
+              Background="{StaticResource Ground900}" BorderBrush="{StaticResource Grid}" BorderThickness="0,0,0,1">
+        <DockPanel x:Name="StripDock" LastChildFill="False">
+          <StackPanel x:Name="TabRow" DockPanel.Dock="Left" Orientation="Horizontal" Margin="8,0,0,0"/>
+        </DockPanel>
+      </Border>
+      <Grid>
+    <!-- the manager's tab: its title bar, its pages and its footer -->
+    <DockPanel x:Name="ManagerView">
       <!-- the header -->
       <Border DockPanel.Dock="Top" Background="{StaticResource Ground700}" BorderBrush="{StaticResource Grid}"
               BorderThickness="0,0,0,1" Height="72">
         <Grid>
-          <DockPanel LastChildFill="False">
+          <DockPanel x:Name="HeadDock" LastChildFill="False">
           <!-- this window's own mark, the one on its icon: a drop pod coming down onto a planet
                (the user's design, gui\design\droppod-icon, 2026-10-26). The hazard tape belongs to HD2 Mod Setting GUI,
                another window (the user, 2026-10-24) -->
@@ -261,6 +273,10 @@
           <StackPanel x:Name="PluginsBox" Margin="32,24,32,32" MaxWidth="720"/>
         </ScrollViewer>
       </Grid>
+      </Grid>
+    </DockPanel>
+      <!-- the open plugins' pages, one shown at a time in place of the manager's tab (PluginTabs.cs) -->
+      <Grid x:Name="TabArea"/>
       </Grid>
     </DockPanel>
   </Border>
