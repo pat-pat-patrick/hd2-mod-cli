@@ -305,7 +305,7 @@ namespace QuickDeploy
         void AddChoice(StackPanel box, ModRow m)
         {
             box.Children.Add(new TextBlock { Text = Texts.Get("for_head"), FontWeight = FontWeights.SemiBold });
-            var row = new System.Windows.Controls.Primitives.UniformGrid { Rows = 1, Margin = new Thickness(0, 8, 0, 0) };
+            var row = new System.Windows.Controls.Primitives.UniformGrid { Rows = 1 };
             var choices = new List<(string Value, string Title)> { ("both", Texts.Get("for_both")), ("official", Texts.Get("target_official")) };
             choices.AddRange(st.TargetOffers.Select(o => (o.Id, o.Title)));
             if (m.For != null && choices.All(c => c.Value != m.For)) choices.Add((m.For, m.For));
@@ -320,7 +320,9 @@ namespace QuickDeploy
                 rb.Click += (s, e) => { if ((m.For ?? "both") != value) _ = Act(() => Cli.Run("for", m.Id, value), false); };
                 row.Children.Add(rb);
             }
-            box.Children.Add(new Border { BorderBrush = B("Grid"), BorderThickness = new Thickness(1), Child = row });
+            // the space under the heading outside the frame: inside it, it pushed the choices down
+            // from the frame's top (the user, 2026-11-28)
+            box.Children.Add(new Border { BorderBrush = B("Grid"), BorderThickness = new Thickness(1), Margin = new Thickness(0, 8, 0, 0), Child = row });
             box.Children.Add(Small(Texts.Get("for_note"), new Thickness(0, 8, 0, 0)));
         }
 
