@@ -58,6 +58,10 @@ namespace QuickDeploy
                 var caption = new UIElement[] { CloseBtn, MaxBtn, MinBtn };
                 foreach (var b in caption) from.Children.Remove(b);
                 for (int i = 0; i < caption.Length; i++) to.Children.Insert(i, caption[i]);
+                // the plugins and settings buttons (and the plugins' own) stay where they were,
+                // the caption buttons' room kept free under the strip (the user, 2026-11-28: they
+                // went to the window's right edge while a plugin was open)
+                HeadRight.Margin = new Thickness(0, 0, 28 + (strip ? caption.Length * 46 : 0), 0);
                 UpdateLayout();
                 FitHeader();
             }
