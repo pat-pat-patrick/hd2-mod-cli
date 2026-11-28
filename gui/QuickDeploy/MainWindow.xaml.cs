@@ -234,6 +234,18 @@ namespace QuickDeploy
         /// at each step of the start, so a slow start can be taken apart.</summary>
         static readonly string timing = Environment.GetEnvironmentVariable("HD2QD_TIMING");
 
+        /// <summary>Every element of type T under the element, in the visual tree.</summary>
+        static IEnumerable<T> Descendants<T>(DependencyObject under) where T : DependencyObject
+        {
+            if (under == null) yield break;
+            for (int i = 0; i < VisualTreeHelper.GetChildrenCount(under); i++)
+            {
+                var c = VisualTreeHelper.GetChild(under, i);
+                if (c is T t) yield return t;
+                foreach (var d in Descendants<T>(c)) yield return d;
+            }
+        }
+
         static void Mark(string step)
         {
             if (timing == null) return;
@@ -365,6 +377,62 @@ namespace QuickDeploy
                     else { pt.Stop(); Mark("all closed, on " + shownPage); }
                 };
                 pt.Start();
+                return;
+            }
+            if (page == "scrollkeep")
+            {
+                // measuring only: 6 s after the start every window plugin added is opened; then for
+                // each page with a scroller (the manager's and each plugin's tab), scrolled to 400,
+                // left for a plugin's tab and for another of the manager's pages, and come back to:
+                // the offset it came back at is logged (the user, 2026-11-28: back at the top)
+                var steps = new List<Action>();
+                ScrollViewer Scroller(string p)
+                {
+                    if (TabOf(p) is PluginTab pt) return Descendants<ScrollViewer>(pt.Page).FirstOrDefault(v => v.ScrollableHeight > 0) ?? Descendants<ScrollViewer>(pt.Page).FirstOrDefault();
+                    return p == "deploy" ? ListScroll : p == "lua" ? LuaPage : p == "storage" ? StoragePage : p == "tags" ? TagsPage
+                        : p == "download" ? DownloadPage : p == "settings" ? SettingsPage : p == "plugins" ? PluginsPage : null;
+                }
+                var pt0 = new DispatcherTimer { Interval = TimeSpan.FromSeconds(6) };
+                pt0.Tick += (s0, e0) =>
+                {
+                    pt0.Stop();
+                    foreach (var (file, type, _) in ByName(PluginFiles.All()))
+                        if (type != null && PluginFiles.Kind(type) == "window") OpenPlugin(type);
+                    var pages = new List<string> { "deploy", "lua", "storage", "tags", "download", "settings", "plugins" };
+                    pages.AddRange(tabs.Select(t => t.Key));
+                    foreach (var p in pages)
+                        foreach (var away in new[] { tabs.Count > 0 && TabOf(p) == null ? tabs[0].Key : null, TabOf(p) != null ? "deploy" : p == "deploy" ? "lua" : "deploy" })
+                        {
+                            if (away == null) continue;
+                            var mine = p;
+                            var set = 0.0;
+                            steps.Add(() =>
+                            {
+                                ShowPage(mine); UpdateLayout();
+                                var sv = Scroller(mine);
+                                if (sv == null) return;
+                                sv.ScrollToVerticalOffset(Math.Min(400, sv.ScrollableHeight)); UpdateLayout();
+                                set = sv.VerticalOffset;
+                            });
+                            steps.Add(() => { ShowPage(away); UpdateLayout(); });
+                            steps.Add(() => { ShowPage(mine); });
+                            steps.Add(() =>
+                            {
+                                var sv = Scroller(mine);
+                                Mark("scrollkeep " + (TabOf(mine)?.Title ?? mine) + " via " + (TabOf(away)?.Title ?? away) + ": set " + set.ToString("0")
+                                     + ", back at " + (sv == null ? "no scroller" : sv.VerticalOffset.ToString("0")) + (sv != null && sv.ScrollableHeight <= 0 ? " (nothing to scroll)" : ""));
+                            });
+                        }
+                    int i = 0;
+                    var run = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(600) };
+                    run.Tick += (s1, e1) =>
+                    {
+                        if (i < steps.Count) steps[i++]();
+                        else { run.Stop(); Mark("scrollkeep done"); }
+                    };
+                    run.Start();
+                };
+                pt0.Start();
                 return;
             }
             if (page == "tabswitch")
@@ -4750,8 +4818,10 @@ namespace QuickDeploy
             if (page == "storage" && !Fresh("storage")) RenderStorage();
             if (page == "lua") RenderLua();
             if (page == "tags" && !Fresh("tags")) RenderTags();
-            if (page == "settings") { RenderSettings(); SettingsPage.ScrollToTop(); }
-            if (page == "plugins") { if (!Fresh("plugins")) RenderPlugins(); PluginsPage.ScrollToTop(); RefreshListSoon(false); }
+            // each page comes back where it was scrolled to, as the others do (the user, 2026-11-28:
+            // back from a plugin's tab, the plugins page was at its top again)
+            if (page == "settings") RenderSettings();
+            if (page == "plugins") { if (!Fresh("plugins")) RenderPlugins(); RefreshListSoon(false); }
         }
 
         void Page_Click(object sender, RoutedEventArgs e) =>
