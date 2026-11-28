@@ -30,6 +30,9 @@ namespace QuickDeploy
 
         readonly List<PluginTab> tabs = new List<PluginTab>();
         int tabCount;
+        // the widest a plugin's page is drawn: the widest of the plugins' own windows (the
+        // settings window's 1180), its margins inside
+        const double TabPageWidth = 1200;
         // the manager's page shown last: its tab and a tab closed with none left go back to it
         string managerPage = "deploy";
         // where the strip last put the caption buttons, and the drag height it set
@@ -86,7 +89,9 @@ namespace QuickDeploy
                 var (file, type) = PluginOf(closed);
                 t = new PluginTab { Key = "tab:" + (++tabCount), Title = title, Content = content, Closed = closed, File = file,
                                     Icon = type == null ? null : PluginIconFrame(type) };
-                t.Page = new Border { Child = content, Visibility = Visibility.Collapsed };
+                // a column in the middle as wide as the plugins' own windows were (980 to 1180),
+                // not the whole window (the user, 2026-11-28: "太分散到两边了")
+                t.Page = new Border { Child = content, Visibility = Visibility.Collapsed, MaxWidth = TabPageWidth };
                 TabArea.Children.Add(t.Page);
                 tabs.Add(t);
             }
