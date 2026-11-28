@@ -235,9 +235,28 @@ namespace Hd2Mod
                     // is encrypted, but currently not supported")
                     if (Regex.IsMatch(why, "encrypt|password", RegexOptions.IgnoreCase))
                         throw new ModError("cannot unpack " + archive + ": it is protected by a password", "archive_password", archive);
+                    // a rar that Windows's reader cannot read, though another program unpacks it
+                    // (issue 22, 2026-11-12, bsdtar: "Truncated data in huffman tables"): said as
+                    // such, with what the player can do, not as tar's words alone
+                    if (IsRar(archive))
+                        throw new ModError("cannot unpack " + archive + ": Windows's own reader cannot read this rar (" + (why.Length > 0 ? why : "tar exit " + p.ExitCode) + ")", "rar_unreadable", archive + "\n" + why);
                     throw new ModError("cannot unpack " + archive + ": " + (why.Length > 0 ? why : "tar exit " + p.ExitCode), "not_zip", archive + "\n" + why);
                 }
             }
+        }
+
+        /// <summary>A rar by its signature ("Rar!" 1A 07, RAR 4 and RAR 5 alike), whatever its name.</summary>
+        static bool IsRar(string path)
+        {
+            try
+            {
+                using (var f = File.OpenRead(path))
+                {
+                    var b = new byte[6];
+                    return f.Read(b, 0, 6) == 6 && b[0] == 0x52 && b[1] == 0x61 && b[2] == 0x72 && b[3] == 0x21 && b[4] == 0x1A && b[5] == 0x07;
+                }
+            }
+            catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { return false; }
         }
 
         /// <summary>Why an archive cannot be whole, before it is unpacked, or null: a zip whose
@@ -381,6 +400,32 @@ namespace Hd2Mod
                 if (Ours(d, cfg) && !used.Contains(Paths.Abs(d))) out_.Add(Paths.Abs(d));
             out_.Sort(StringComparer.CurrentCultureIgnoreCase);
             return out_;
+        }
+
+        /// <summary>What a left-over folder holds: its mod's name, and the library mod it is an
+        /// older version of (the same manifest Guid, else the same name), or null when none is
+        /// found: most often a mod taken out of the library, which can be added back from here
+        /// (issue 16, 2026-11-09: a removed mod had no way back in the window). Added back, one
+        /// of the first kind would take its newer version's place, so only the second is offered;
+        /// one with neither Guid nor a matching name comes back as a mod of its own.</summary>
+        public static (string Title, string Of) LeftoverOf(string folder, Library lib)
+        {
+            Manifest man = null;
+            try { man = Manifest.Read(folder); } catch (ModError) { }
+            var title = man?.Name?.Trim();
+            if (string.IsNullOrEmpty(title)) title = UnpackedName(System.IO.Path.GetFileName(folder)) ?? System.IO.Path.GetFileName(folder);
+            foreach (var m in lib.Mods)
+            {
+                if (man?.Guid != null)
+                {
+                    Manifest theirs = null;
+                    try { theirs = Manifest.Read(m.Path); } catch (ModError) { }
+                    if (string.Equals(theirs?.Guid, man.Guid, StringComparison.OrdinalIgnoreCase)) return (title, m.Id);
+                }
+                if (string.Equals(m.Name, title, StringComparison.CurrentCultureIgnoreCase)
+                    || string.Equals(m.RealName, title, StringComparison.CurrentCultureIgnoreCase)) return (title, m.Id);
+            }
+            return (title, null);
         }
 
         /// <summary>Deletes one of those folders. The mod's files in the game folder are hard

@@ -242,6 +242,9 @@ namespace QuickDeploy
     {
         public string Path, Name;
         public long Bytes;
+        /// <summary>The mod it holds, and the library mod it is an older version of (null: a mod
+        /// taken out of the library, which can be added back).</summary>
+        public string Title, Of;
     }
 
     class State
@@ -428,7 +431,7 @@ namespace QuickDeploy
                 }
             }
             foreach (var l in List(d, "leftovers").OfType<Dictionary<string, object>>())
-                s.Leftovers.Add(new Leftover { Path = Str(l, "path"), Name = Str(l, "name"), Bytes = Long(l, "bytes") });
+                s.Leftovers.Add(new Leftover { Path = Str(l, "path"), Name = Str(l, "name"), Bytes = Long(l, "bytes"), Title = Str(l, "title"), Of = Str(l, "of") });
             foreach (var (key, into) in new[] { ("conflicts", s.Clashes), ("all_conflicts", s.AllClashes) })
                 foreach (var c in List(d, key).OfType<Dictionary<string, object>>())
                     into.Add(new Clash

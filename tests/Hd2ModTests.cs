@@ -37,6 +37,7 @@ namespace Hd2Mod.Tests
             PluginFiles.OfficialJson = KeptList;          // the test home's copy: none until a test reads one
             PluginHost.Lang = () => "en";
             PluginFiles.OfficialLocaleJson = KeptLocale;
+            PluginFiles.CommunityJson = KeptCommunity;
             PluginFiles.ListUrl = null;                                       // never GitHub
             PluginFiles.Downloads = "http://127.0.0.1:1";
             Report.UploadUrl = "http://127.0.0.1:1";                         // never the author's server
@@ -45,6 +46,7 @@ namespace Hd2Mod.Tests
 
         protected static readonly System.Func<string> KeptList = PluginFiles.OfficialJson;
         protected static readonly System.Func<string, string> KeptLocale = PluginFiles.OfficialLocaleJson;
+        protected static readonly System.Func<string> KeptCommunity = PluginFiles.CommunityJson;
 
         public virtual void Dispose()
         {
@@ -2476,6 +2478,45 @@ namespace Hd2Mod.Tests
             Assert.Contains(Path.GetFileName(now), Cli("leftovers"));
             Cli("leftovers", "--delete", "--all");
             Assert.False(Directory.Exists(now));
+        }
+
+        /// <summary>A mod taken out of the library is found among the left-over folders and added
+        /// back where it is; an older version of a library mod is said as one, never offered, since
+        /// added it would take the newer one's place (issue 16, 2026-11-09).</summary>
+        [Fact]
+        public void A_removed_mod_can_be_added_back_from_its_left_over_folder()
+        {
+            var one = Path.Combine(Root, "Cape v1.zip");
+            var two = Path.Combine(Root, "Cape v2.zip");
+            var boots = Path.Combine(Root, "Boots.zip");
+            const string man = "{\"Version\": 1, \"Guid\": \"0f0e0d0c-0b0a-0908-0706-050403020100\", \"Name\": \"Cape\"}";
+            Zip(one, ("Cape/manifest.json", man), ("Cape/" + A + ".patch_0", "cape v1"));
+            Zip(two, ("Cape/manifest.json", man), ("Cape/" + A + ".patch_0", "cape v2"));
+            Zip(boots, ("Boots/" + B + ".patch_0", "boots"));
+            Cli("add", one, "--name", "Cape");
+            var cape = Library.Load().Mods[0];
+            Cli("replace", "Cape", two, "--keep-old");
+            Cli("add", boots);
+            var added = Library.Load().Mods.Last();
+            var bootsFolder = added.Path;
+            Cli("remove", added.Id);
+            Assert.True(Directory.Exists(bootsFolder), "remove keeps the folder");
+
+            var left = Json.List((Dictionary<string, object>)Json.Parse(Cli("state")), "leftovers").OfType<Dictionary<string, object>>().ToList();
+            Assert.Equal(2, left.Count);
+            var old = left.Single(l => (string)l["of"] != null);
+            Assert.Equal(cape.Id, (string)old["of"]);
+            var removed = left.Single(l => l["of"] == null);
+            Assert.Equal(added.Name, (string)removed["title"]);
+            Assert.Equal(Paths.Abs(bootsFolder), Paths.Abs((string)removed["path"]));
+
+            // added back: the same folder, nothing copied, and no longer left over
+            Cli("add", (string)removed["path"]);
+            var back = Library.Load().Mods.Single(m => m.Name == added.Name);
+            Assert.Equal(Paths.Abs(bootsFolder), Paths.Abs(back.Path));
+            Assert.Single(Json.List((Dictionary<string, object>)Json.Parse(Cli("state")), "leftovers"));
+            // Cape's two versions and Boots: no copy of Boots was made
+            Assert.Equal(3, Directory.GetDirectories(Store.ModsDir()).Length);
         }
 
         /// <summary>The library folder is often another manager's own (HD2 Arsenal's), so only the

@@ -19,6 +19,13 @@ A mod manager for Helldivers 2. What sets it apart:
 - **Add from a link.** Paste a GameBanana or ModWorkshop page, a GitHub
   repository or a direct link to an archive in *Find a mod*: the mod's page is
   shown, and its file is downloaded and added.
+- **Dependencies.** A mod that names what it needs (`"Requires"`), such as
+  Super Holo HUD: once it is added, its install list offers what is missing,
+  too old or off, Install all downloads and turns it on and chooses the
+  loader, an update brings what the new version needs, and after a game its
+  log says whether it ran or what stopped it. Dependencies come from GitHub,
+  GameBanana, ModWorkshop or Nexus Mods. A Nexus Mods mod that names nothing
+  shows the Requirements on its page.
 - **Plugins.** Asset check, Model repair, HD2 Mod Console and more, each added
   only when it is wanted.
 - **Problem reports.** One upload gives a report number to pass to the mods'
@@ -876,6 +883,66 @@ every problem report includes the end of each:
   that does not exist is left out.
 - Other mod managers ignore the field.
 
+**For mod authors: what your mod needs (dependencies).** List in `"Requires"`
+the mods and plugins your mod needs beside it. When a player adds your mod and
+something on the list is missing, too old or off, Quick Deploy offers to set it
+up in one go: it downloads each missing mod from where you say it is, turns it
+on with the options you name, and chooses the loader.
+
+```json
+{
+  "Name": "My mod",
+  "Requires": [
+    {"Name": "Boot Mod Loader", "Guid": "3f7a2c91-6d4e-4b58-9a0c-e15b82d4f6a7",
+     "GitHub": "pat-pat-patrick/boot-mod-loader", "Loader": true},
+    {"Name": "My mod's assets", "Guid": "…", "GitHub": "me/my-mod-assets",
+     "Version": "2.2.0", "Options": ["Assets"]},
+    {"Name": "A shared loader", "Nexus": 17760},
+    {"Name": "Some textures", "GameBanana": 669221, "File": "SA-8"},
+    {"Plugin": "HD2QD.License.dll"}
+  ]
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `Guid` | another mod, by its manifest Guid: how Quick Deploy knows it is installed |
+| `GitHub` | that repository's releases (`owner/repo`): the newest file whose `manifest.json` has the Guid |
+| `GameBanana`, `ModWorkshop` | the mod's number on that site |
+| `Nexus` | the mod's number on Nexus Mods |
+| `Page` | any other page (`https://`): opened for the player, never downloaded from |
+| `File` | which of the page's files, by a part of its name, when it has several |
+| `Version` | the oldest version that will do; an older one is replaced by a newer release |
+| `Options` | its options that must be on |
+| `Loader` | choose it as the loader in effect |
+| `Optional` | shown, not installed by *Install all* |
+| `Plugin` | an official plugin, by its file |
+
+- Name as many sites as the mod is on. They are tried in the order GitHub,
+  GameBanana, ModWorkshop, Nexus Mods:
+  - GitHub and GameBanana are downloaded from by themselves.
+  - ModWorkshop is too, unless its author turned mod managers off.
+  - Nexus Mods only for a premium account signed in. Otherwise its Files page
+    opens, and its *Mod Manager Download* button hands the file to Quick
+    Deploy.
+  - A page with several files and no `File` opens for the player to choose.
+- Without a `Guid`, the mod is known by the page it came from.
+- Downloads come only from these sites and the official plugins, never from
+  another address. The player sees each dependency, and where it comes from,
+  before anything is downloaded.
+- A dependency that has a `"Requires"` of its own brings its needs too.
+- Turning off, removing or deleting a mod that another one needs says which
+  first. Once the mod they were installed for is gone, the ones nothing else
+  needs are offered for removal; a loader, or a mod the player added, never is.
+- When your mod is updated and its new version needs a newer dependency, that
+  is updated with it.
+- Other mod managers ignore the field.
+- A mod from Nexus Mods that names nothing here: the *Requirements* on its
+  page are shown instead, read without a key once a day. They are shown with
+  their pages, never downloaded, and never hold the game back. The mod
+  managers pages list (HD2ModManager, HD2 Arsenal) are left out, and so are
+  outside addresses that are not a mod site.
+
 ### Asking about a problem
 
 Settings → *About and diagnostics* → **Problem report…** opens a window:
@@ -1030,6 +1097,7 @@ name.
 | `source MOD URL` / `source MOD --clear` | Set where a mod comes from: a Nexus Mods, AyakaMods, GameBanana or ModWorkshop page, a GitHub repository, a direct link to its archive, or another page. |
 | `add-link URL [--file ID] [--name N] [--new]` | Add a mod from a link: a GameBanana or ModWorkshop page, a GitHub repository or release, or a direct link to a zip, 7z or rar. The file is downloaded and added as `add` adds a file, its page kept for update checks. A page with several files lists them; `--file` takes one. AyakaMods and Nexus Mods pages need their own sign-in: download there, then `add` the file. |
 | `match MOD [--all]` | Fill in a mod's name, version, author, description and picture from its source (Nexus Mods or GitHub). |
+| `install NAME [--check]` | A mod's install list, by its name (`install super holo hud`): each step it needs, an official plugin or a mod from its GitHub releases, is added, turned on, its options set and the loader chosen; a mod got by hand is named with where to get it. `--check` only says where each step stands, and what the mod's log said of the last game. |
 | `nexus-info NUMBER\|URL` | A mod on Nexus Mods by its number (`16662`) or page: name, author, version, page, and whether the library has it. No sign-in. |
 | `nexus-login` / `nexus-logout` / `nexus URL` | Builds with the Nexus Mods part only: sign in (in your browser), sign out, download an `nxm://` link into the library. |
 | `keep-previous-on` / `keep-previous-off` | Whether a mod with Lua scripts keeps the version it had when a new one comes. Off keeps no more; the ones kept stay. |
@@ -1154,6 +1222,7 @@ Helldivers 2 的 mod 管理器。主要特点：
 - **分组、标签和配置文件**：mod 可按文件夹的方式分组，最多三层，不移动任何文件。
 - **检查更新无需登录**：支持来自 Nexus Mods、GitHub、AyakaMods、GameBanana、ModWorkshop 和压缩包直链的 mod，包括手动下载的压缩包，并列出每个版本的改动。
 - **从链接添加**：在“查找 MOD”中粘贴 GameBanana 或 ModWorkshop 的页面、GitHub 仓库或压缩包直链，显示 mod 页面的信息，文件下载后即加入 mod 库。
+- **依赖**：MOD 声明了需要的前置（`"Requires"`，如 Super Holo HUD）时，加入后会显示安装清单，列出缺少、版本过旧或未启用的前置；“一键安装”会下载并启用它们、设好加载器；更新 MOD 时会一起更新新版本需要的前置；进游戏后可以查看它的日志，确认是否正常运行，或是什么问题让它没有运行。前置可以来自 GitHub、GameBanana、ModWorkshop 或 Nexus Mods；没有声明前置的 Nexus Mods MOD，会显示它页面上的“Requirements”。
 - **插件**：资源检查、模型修复、HD2 MOD 控制台等，需要时再添加。
 - **问题报告**：上传后得到一个报告编号，发给 mod 作者即可。
 - **授权 MOD**：有些 MOD 只向创作者的会员提供，公开包里只有一个外壳，功能代码按你的游戏账号授权。对于这类 MOD 中创作者开启了完整性检查的，Quick Deploy 会把该 MOD 文件的哈希、版本和本机的游戏账号标识发送给该 MOD 的创作者，用于发现被改动或被分享的授权内容。对其他任何 MOD 都不会这样做，不发送其他 MOD 的任何信息，也从不因此拦截部署。运行 `hd2qd integrity` 可以查看本机会上报什么。
@@ -1712,6 +1781,35 @@ Helldivers 2 的 mod 管理器。主要特点：
 - 只能是文件名，以 `.log` 或 `.txt` 结尾；含文件夹、`..` 或盘符的名称会被忽略；
 - 每个文件取最后 256 KB，在报告中为 `game/<文件名>`；不存在的文件不收录；
 - 其他 mod 管理器会忽略此字段。
+
+**MOD 作者：声明 mod 需要的前置（依赖）。** 在 `manifest.json` 的 `"Requires"` 中列出 mod 需要一起安装的 MOD 和插件。玩家加入你的 mod 时，如果其中有缺少、版本过旧或未启用的，Quick Deploy 会提示一键安装：从你写的来源下载缺少的 MOD，按你写的选项启用，并设好加载器。格式见上方英文部分的示例。
+
+| 字段 | 含义 |
+|---|---|
+| `Guid` | 另一个 MOD 的 manifest Guid，用来判断它是否已安装 |
+| `GitHub` | 发布它的 GitHub 仓库（`owner/repo`）：取发布中 `manifest.json` 的 Guid 相同的最新文件 |
+| `GameBanana`、`ModWorkshop` | 它在该网站上的编号 |
+| `Nexus` | 它在 Nexus Mods 上的编号 |
+| `Page` | 其他页面（`https://`）：只为玩家打开，不从这里下载 |
+| `File` | 页面上有多个文件时，用文件名的一部分指定其中一个 |
+| `Version` | 最低可用版本；库中版本更旧时，换成更新的发布 |
+| `Options` | 需要勾选的选项 |
+| `Loader` | 设为当前使用的加载器 |
+| `Optional` | 显示，但“一键安装”不安装 |
+| `Plugin` | 官方插件，写插件文件名 |
+
+- MOD 发布在几个网站上，就可以都写上。按 GitHub、GameBanana、ModWorkshop、Nexus Mods 的顺序尝试：
+  - GitHub 和 GameBanana 会自动下载。
+  - ModWorkshop 也会自动下载，除非作者关闭了 MOD 管理器下载。
+  - Nexus Mods 只有登录了高级会员账号时才自动下载；否则打开它的 Files 页面，玩家点“Mod Manager Download”后由 Quick Deploy 接收。
+  - 页面上有多个文件又没有写 `File` 时，打开页面让玩家自己选。
+- 没有写 `Guid` 时，按 MOD 的来源页面判断是否已安装。
+- 只从以上网站和官方插件下载，不接受其他地址；下载前玩家能看到每一项及其来源。
+- 前置自己也有 `"Requires"` 时，它需要的也会一起安装。
+- 关闭、移除或删除一个被其他 MOD 需要的 MOD 时，会先说明是谁需要它。为某个 MOD 一起安装的前置，在那个 MOD 移除后，如果没有其他 MOD 需要，会提示一并移除；加载器和玩家自己加入的 MOD 不会被提示。
+- mod 更新后，如果新版本需要更新的前置，会一起更新。
+- 其他 mod 管理器会忽略此字段。
+- 来自 Nexus Mods、但没有写 `"Requires"` 的 MOD，会改为显示它页面上的“Requirements”（不需要 key，每天读取一次）。这些只显示页面，不会下载，也不会影响启动游戏。页面里列的 MOD 管理器（HD2ModManager、HD2 Arsenal）不显示；不是 MOD 网站的外部链接也不显示。
 
 报告不包含什么、保留多久：
 

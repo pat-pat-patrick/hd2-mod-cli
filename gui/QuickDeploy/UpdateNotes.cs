@@ -68,9 +68,20 @@ namespace QuickDeploy
             });
 
             var w = new ChromeWindow(this, Texts.F("notes_title", Bare(u.Latest)), root) { Width = 680, Height = 640, MinWidth = 480, MinHeight = 360, ShowInTaskbar = false };
+            // the update itself (the user, 2026-11-26: downloading it from GitHub every time was a chore)
+            if (u.Newer)
+            {
+                var install = new Button { Content = Texts.Get("self_install"), Style = (Style)FindResource("Primary"), MinHeight = 38, Padding = new Thickness(18, 0, 18, 0), Margin = new Thickness(0, 0, 8, 0) };
+                install.Click += (s, e) => InstallUpdate(u, w, busy =>
+                {
+                    install.IsEnabled = !busy;
+                    install.Content = Texts.Get(busy ? "self_installing" : "self_install");
+                });
+                buttons.Children.Add(install);
+            }
             if (!string.IsNullOrEmpty(u.Page))
             {
-                var open = new Button { Content = Texts.Get("self_open"), Style = (Style)FindResource("Primary"), MinHeight = 38, Padding = new Thickness(18, 0, 18, 0), Margin = new Thickness(0, 0, 8, 0), ToolTip = u.Page };
+                var open = new Button { Content = Texts.Get("self_open"), Style = (Style)FindResource(u.Newer ? "Ghost" : "Primary"), MinHeight = 38, Padding = new Thickness(18, 0, 18, 0), Margin = new Thickness(0, 0, 8, 0), ToolTip = u.Page };
                 var page = u.Page;
                 open.Click += (s, e) => { Process.Start(new ProcessStartInfo(page) { UseShellExecute = true }); w.Close(); };
                 buttons.Children.Add(open);
@@ -81,6 +92,86 @@ namespace QuickDeploy
             w.Closed += (s, e) => notesWindow = null;
             notesWindow = w;
             w.Show();
+        }
+
+        bool installing;
+
+        /// <summary>The newer version in place of this one (SelfUpdate.Install), after a question,
+        /// then started, and this one ended. owner: the window the dialogs belong to; state: told
+        /// true while it downloads, false when it stops without a restart. Not while a deploy or
+        /// another command runs: the files it writes would be the old version's work cut off.</summary>
+        async void InstallUpdate(SelfUpdateInfo u, Window owner, Action<bool> state)
+        {
+            if (installing) return;
+            if (busy) { Dialog.Tell(owner, Texts.Get("self_busy")); return; }
+            if (!Dialog.Ask(owner, Texts.F("self_install_ask", Bare(u.Latest)), Texts.Get("self_install"))) return;
+            InstallNow(u, owner, state);
+        }
+
+        /// <summary>InstallUpdate once the player said yes.</summary>
+        async void InstallNow(SelfUpdateInfo u, Window owner, Action<bool> state)
+        {
+            installing = true;
+            state(true);
+            var exe = Process.GetCurrentProcess().MainModule.FileName;
+            var cli = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(exe), "hd2qd.exe");
+            string why = null, left = null;
+            bool swapped = false;
+            try
+            {
+                left = await System.Threading.Tasks.Task.Run(() =>
+                {
+                    // a check kept by an older version has no file digests: asked again
+                    var with = u.Files.ContainsKey(SelfUpdate.WindowAsset) ? u : SelfUpdate.Check();
+                    return SelfUpdate.Install(with, exe, cli);
+                });
+            }
+            catch (ModError err) { why = InstallWhy(err); }
+            catch (Exception err) when (!(err is OutOfMemoryException)) { why = err.Message; }
+            // the new version waits for this one to end (App: --after-update), then opens. Not
+            // while a command runs: they run in this process, and one begun while the update came
+            // (a deploy) would be cut off half done. Once the gate is held none starts; it is never
+            // given back, as this process ends
+            if (why == null)
+            {
+                await gate.WaitAsync();
+                try
+                {
+                    Process.Start(new ProcessStartInfo(exe, "--after-update " + Process.GetCurrentProcess().Id)
+                    {
+                        UseShellExecute = false, WorkingDirectory = System.IO.Path.GetDirectoryName(exe),
+                    });
+                }
+                catch (Exception err) when (err is System.ComponentModel.Win32Exception || err is InvalidOperationException)
+                {
+                    gate.Release();
+                    why = err.Message;
+                    swapped = true;
+                }
+            }
+            if (why != null)
+            {
+                installing = false;
+                state(false);
+                ManagerLog.Warn("self-update " + u.Latest + ": " + why);
+                // the notes window may have been closed meanwhile: a dialog cannot belong to it then
+                Dialog.Tell(owner != null && owner.IsLoaded ? owner : this, Texts.F(swapped ? "self_restart_failed" : "self_install_failed", why));
+                return;
+            }
+            ManagerLog.Info("self-update: " + StateDoc.Version + " -> " + u.Latest + (left != null ? " (not updated: " + left + ")" : ""));
+            ExitForGood();
+        }
+
+        static string InstallWhy(ModError err)
+        {
+            switch (err.Kind)
+            {
+                case "self_no_digest": return Texts.Get("self_why_no_digest");
+                case "self_sha": return Texts.Get("self_why_sha");
+                case "self_bad_file": return Texts.Get("self_why_bad_file");
+                case "self_folder": return Texts.F("self_why_folder", err.Arg);
+                default: return CheckWhy(err.Kind) ?? err.Message;
+            }
         }
 
         /// <summary>A tag's version without the "v" ("v0.15.0" -> "0.15.0", as the window's own version reads).</summary>

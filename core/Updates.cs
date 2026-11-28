@@ -86,15 +86,23 @@ namespace Hd2Mod
             q.Headers.Accept.ParseAdd("application/octet-stream");
             HttpResponseMessage r;
             try { r = http.SendAsync(q).GetAwaiter().GetResult(); }
-            catch (HttpRequestException e) { throw new ModError("cannot be reached: " + e.Message, "offline"); }
+            catch (Exception e) when (Broken(e)) { throw Unreached(e); }
             using (r)
             {
                 if ((int)r.StatusCode == 404) throw new ModError("no such file: " + url, "missing");
                 if ((int)r.StatusCode == 403 || (int)r.StatusCode == 429) throw new ModError("too many requests for now", "busy");
                 if (!r.IsSuccessStatusCode) throw new ModError("answered " + (int)r.StatusCode, "error");
-                return r.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult();
+                try { return r.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult(); }
+                catch (Exception e) when (Broken(e)) { throw Unreached(e); }
             }
         }
+
+        /// <summary>A download that did not come: the server not reached, the client's time up
+        /// (HttpClient ends a request that takes too long with TaskCanceledException), or the
+        /// connection lost while the file came.</summary>
+        static bool Broken(Exception e) => e is HttpRequestException || e is System.Threading.Tasks.TaskCanceledException || e is IOException;
+
+        static ModError Unreached(Exception e) => new ModError("cannot be reached: " + (e is System.Threading.Tasks.TaskCanceledException ? "no answer in time" : e.Message), "offline");
 
         /// <summary>Bytes from to to (inclusive) of a file, by an HTTP range; null when the server
         /// sends the whole file instead (it is not read).</summary>
@@ -106,12 +114,13 @@ namespace Hd2Mod
             q.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(from, to);
             HttpResponseMessage r;
             try { r = http.SendAsync(q, HttpCompletionOption.ResponseHeadersRead).GetAwaiter().GetResult(); }
-            catch (HttpRequestException e) { throw new ModError("cannot be reached: " + e.Message, "offline"); }
+            catch (Exception e) when (Broken(e)) { throw Unreached(e); }
             using (r)
             {
                 if ((int)r.StatusCode == 403 || (int)r.StatusCode == 429) throw new ModError("too many requests for now", "busy");
                 if ((int)r.StatusCode != 206) return null;
-                return r.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult();
+                try { return r.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult(); }
+                catch (Exception e) when (Broken(e)) { throw Unreached(e); }
             }
         }
 

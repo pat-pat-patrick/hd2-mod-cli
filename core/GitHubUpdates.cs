@@ -106,6 +106,11 @@ namespace Hd2Mod
             u.Status = "current";
         }
 
+        /// <summary>The newest release file (not a pre-release) whose manifest has this Guid, else
+        /// null: a mod not yet in the library, known only by its Guid (Recipes).</summary>
+        public static Asset Newest(GitHubRef r, string guid) =>
+            List(r).FirstOrDefault(a => !a.Prerelease && string.Equals(GuidOf(a), guid, StringComparison.OrdinalIgnoreCase));
+
         /// <summary>Whether an archive is this mod: the same manifest Guid; else the same name with
         /// its digits left out; else the only archive of its release.</summary>
         static bool Mine(Asset a, string installedName, string guid)

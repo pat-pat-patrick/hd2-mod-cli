@@ -103,11 +103,43 @@ namespace Hd2Mod
             }
         }
 
+        /// <summary>A settings file. One that does not read as JSON (a power cut can leave it all
+        /// zero bytes: a player's gui.json, 2026-11-28, stopped the window at every start) is put
+        /// aside as .broken and its .bak (the version before, from Save) takes its place. With no
+        /// .bak that reads, only window preferences start empty (Disposable); any other file
+        /// stops with its name, since an empty mod list or deploy record would do harm.</summary>
         public static Dictionary<string, object> Load(string name)
         {
             var p = PathOf(name);
             if (!File.Exists(p)) return new Dictionary<string, object>();
-            return ReadJson(p) as Dictionary<string, object> ?? new Dictionary<string, object>();
+            object d;
+            try { d = ReadJson(p); }
+            catch (FormatException e) { d = Recover(name, p, e); }
+            return d as Dictionary<string, object> ?? new Dictionary<string, object>();
+        }
+
+        /// <summary>Settings that only remember how the window looked: lost, nothing of the
+        /// player's mods is lost.</summary>
+        public static readonly string[] Disposable = { "gui.json" };
+
+        static object Recover(string name, string p, FormatException e)
+        {
+            var bak = p + ".bak";
+            object good = null;
+            if (File.Exists(bak))
+                try { good = ReadJson(bak); }
+                catch (FormatException) { }
+            bool disposable = Disposable.Contains(name, StringComparer.OrdinalIgnoreCase);
+            var why = e.Message.Replace("\0", "\\0");             // a zeroed file says NUL: not into the log raw
+            if (good == null && !disposable)
+                throw new ModError(name + " in " + Home + " is damaged (" + why + ") and has no readable " + name + ".bak. "
+                                   + "Rename a copy of it over " + name + ", or move " + name + " away to start it empty.");
+            File.Copy(p, p + ".broken", true);
+            if (good != null) File.Copy(bak, p, true);
+            else File.Delete(p);
+            ManagerLog.Warn(name + " was damaged (" + why + "): kept as " + name + ".broken, "
+                            + (good != null ? "the version before it (.bak) put back" : "started empty"));
+            return good;
         }
 
         public static object ReadJson(string path) => Json.Parse(File.ReadAllText(path, Encoding.UTF8));
@@ -123,7 +155,14 @@ namespace Hd2Mod
             Directory.CreateDirectory(Home);
             var p = PathOf(name);
             var tmp = p + ".tmp";
-            File.WriteAllText(tmp, Json.Write(data, true) + "\n", new UTF8Encoding(false));
+            // on the disk before the rename: otherwise a power cut can leave the new name on
+            // a file whose bytes were never written (all zeros; a player's gui.json, 2026-11-28)
+            var bytes = new UTF8Encoding(false).GetBytes(Json.Write(data, true) + "\n");
+            using (var f = new FileStream(tmp, FileMode.Create, FileAccess.Write, FileShare.None))
+            {
+                f.Write(bytes, 0, bytes.Length);
+                f.Flush(true);
+            }
             if (!File.Exists(p)) { File.Move(tmp, p); return; }
             try { File.Replace(tmp, p, p + ".bak"); }
             catch (IOException) { File.Replace(tmp, p, null); }          // the backup is a comfort, never a reason to fail

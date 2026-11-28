@@ -38,8 +38,26 @@ namespace QuickDeploy
             StartLink = e.Args.FirstOrDefault(a => a.StartsWith("nxm://", StringComparison.OrdinalIgnoreCase));
 #endif
             StartMove = e.Args.FirstOrDefault(a => a.IndexOf(".hd2qdmove", StringComparison.OrdinalIgnoreCase) >= 0 && System.IO.File.Exists(a));
-            // the first window holds this; a second start knows at once (no wait on the pipe)
-            single = new System.Threading.Mutex(true, Pipe, out bool first);
+            // --after-update PID: started by the version this one replaced (SelfUpdate.Install),
+            // which is ending: wait for it, so this start is the window and not a second one
+            int at = Array.IndexOf(e.Args, "--after-update");
+            int oldPid = 0;
+            bool afterUpdate = at >= 0 && at + 1 < e.Args.Length && int.TryParse(e.Args[at + 1], out oldPid);
+            if (afterUpdate)
+                try { using (var old = System.Diagnostics.Process.GetProcessById(oldPid)) old.WaitForExit(120000); }
+                catch (ArgumentException) { }                       // it has ended already
+            // the first window holds this; a second start knows at once (no wait on the pipe).
+            // After an update the old version holds it until it has ended: waited for, so a slow
+            // end (a plugin finishing, a slow disk) does not make this start a second one that
+            // hands itself to the ending window and leaves none open
+            bool first;
+            if (afterUpdate)
+            {
+                single = new System.Threading.Mutex(false, Pipe);
+                try { first = single.WaitOne(TimeSpan.FromMinutes(2)); }
+                catch (System.Threading.AbandonedMutexException) { first = true; }   // ended without letting go: ours now
+            }
+            else single = new System.Threading.Mutex(true, Pipe, out first);
             // --tray: started with Windows, into the notification area; --exit: a window put away
             // there ends (for scripts that replace this program's file)
             bool tray = e.Args.Contains("--tray"), exit = e.Args.Contains("--exit");
@@ -69,6 +87,9 @@ namespace QuickDeploy
                 if (exit) { Shutdown(); return; }                   // but never a window for --exit
             }
             base.OnStartup(e);
+            // what an update left beside this program's files (the old version, renamed)
+            var exe = System.Diagnostics.Process.GetCurrentProcess().MainModule.FileName;
+            Hd2Mod.SelfUpdate.CleanOld(exe, System.IO.Path.Combine(System.IO.Path.GetDirectoryName(exe), "hd2qd.exe"));
             // the manager's log: when the window ran, and what broke it
             Hd2Mod.ManagerLog.Where = "window";
             Hd2Mod.ManagerLog.Info("window started: HD2 Mod Quick Deploy " + Hd2Mod.StateDoc.Version + " (" + (Hd2Mod.SelfUpdate.Official ? "official build" : "development build") + ")");

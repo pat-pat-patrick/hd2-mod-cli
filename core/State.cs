@@ -749,9 +749,16 @@ namespace Hd2Mod
                 ["target"] = TargetBlock(lib, pluginHost),
                 // whether mods with a script keep the version they had (Versions)
                 ["keep_previous"] = Versions.KeepOn(),
-                ["leftovers"] = Ops.Leftovers(lib, null).Select(d => (object)new Dictionary<string, object>
+                // with the mod each holds: an older version of a library mod ("of"), or a mod taken
+                // out of the library, which the window offers to add back
+                ["leftovers"] = Ops.Leftovers(lib, null).Select(d =>
                 {
-                    ["path"] = d, ["name"] = System.IO.Path.GetFileName(d), ["bytes"] = LibraryBytes(new DirectoryInfo(d)),
+                    var (title, of) = Ops.LeftoverOf(d, lib);
+                    return (object)new Dictionary<string, object>
+                    {
+                        ["path"] = d, ["name"] = System.IO.Path.GetFileName(d), ["bytes"] = LibraryBytes(new DirectoryInfo(d)),
+                        ["title"] = title, ["of"] = of,
+                    };
                 }).ToList(),
             };
         }

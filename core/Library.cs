@@ -75,6 +75,11 @@ namespace Hd2Mod
         /// <summary>The MD5 of the archive it was added from, else null: Nexus Mods knows a file by it
         /// (Fingerprints).</summary>
         public string ArchiveMd5;
+        /// <summary>The manifest Guids of the mods it was installed for, by their install lists
+        /// (Recipes; the user, 2026-11-28: as a package manager marks what it pulled in): once none
+        /// of the library needs it any more, it is offered for removal with them (Recipes.Orphans).
+        /// Empty for a mod the player added.</summary>
+        public List<string> InstalledFor = new List<string>();
     }
 
     /// <summary>A mod's version before the newest, as it was: its folder and where it came from
@@ -186,6 +191,7 @@ namespace Hd2Mod
                 mod.For = Json.Str(m, "for") is string f && f.Length > 0 ? f : null;
                 mod.Pair = Json.Str(m, "pair");
                 mod.ArchiveMd5 = Json.Str(m, "archive_md5");
+                mod.InstalledFor = Json.List(m, "installed_for").OfType<string>().ToList();
                 var pv = Json.Obj(m, "previous");
                 if (pv != null && !string.IsNullOrEmpty(Json.Str(pv, "path")))
                     mod.Previous = new PreviousVersion
@@ -306,6 +312,7 @@ namespace Hd2Mod
                 if (m.For != null) entry["for"] = m.For;
                 if (m.Pair != null) entry["pair"] = m.Pair;
                 if (m.ArchiveMd5 != null) entry["archive_md5"] = m.ArchiveMd5;
+                if (m.InstalledFor.Count > 0) entry["installed_for"] = m.InstalledFor.Cast<object>().ToList();
                 if (m.Previous != null)
                 {
                     var pv = new Dictionary<string, object>
@@ -473,6 +480,21 @@ namespace Hd2Mod
         public List<ManifestOption> SubOptions = new List<ManifestOption>();
     }
 
+    /// <summary>One entry of a manifest's "Requires": another mod or an official plugin (Plugin:
+    /// its file). A mod is known by its manifest Guid, else by its page; it comes from where the
+    /// entry says, the first of these that can download it here: the releases of a GitHub
+    /// repository (GitHub, owner/repo, with a Guid), a GameBanana or ModWorkshop mod (its number),
+    /// a Nexus Mods mod (its number), else a page the player opens (Page, https). File picks one
+    /// of a page's files by its name; Version: the oldest that will do; Options: those it needs
+    /// on; Loader: it is the loader to use.</summary>
+    public class Requirement
+    {
+        public string Name, Guid, GitHub, Plugin, Version, GameBanana, ModWorkshop, Page, File;
+        public long Nexus;
+        public bool Loader, Optional;
+        public List<string> Options = new List<string>();
+    }
+
     public class Manifest
     {
         public string Name, Description = "", IconPath, Guid;
@@ -491,8 +513,22 @@ namespace Hd2Mod
         /// folder (LuaMods.GameFolder). A problem report takes their ends (Report.ModLogs);
         /// a name that is not a plain .log or .txt file name there is left out (LogName).</summary>
         public List<string> Logs = new List<string>();
+        /// <summary>What the mod needs installed beside it: "Requires" in manifest.json (the user,
+        /// 2026-11-28: dependencies as a package manager has them). Each one is another mod, known
+        /// by its Guid and found in a GitHub repository's releases, or an official plugin by its
+        /// file; read as written, checked where it is used (Recipes.PlanFor).</summary>
+        public List<Requirement> Requires = new List<Requirement>();
 
-        static readonly string[] Keys = { "Version", "Guid", "Name", "Description", "IconPath", "Options", "SubOptions", "Include", "Image", "Tags", "Categories", "Targets", "Logs" };
+        /// <summary>A mod's number on a site, written as a number or as digits ("12345"); null otherwise.</summary>
+        static string Number(Dictionary<string, object> o, string key)
+        {
+            if (o == null || !o.TryGetValue(key, out var v) || v == null) return null;
+            var t = Convert.ToString(v, System.Globalization.CultureInfo.InvariantCulture).Trim();
+            return System.Text.RegularExpressions.Regex.IsMatch(t, @"^[1-9]\d{0,11}$") ? t : null;
+        }
+
+        static readonly string[] Keys = { "Version", "Guid", "Name", "Description", "IconPath", "Options", "SubOptions", "Include", "Image", "Tags", "Categories", "Targets", "Logs",
+                                          "Requires", "GitHub", "Plugin", "Loader", "Optional", "Nexus", "GameBanana", "ModWorkshop", "Page", "File" };
 
         /// <summary>The managers' spelling of a key, whatever case the author used.</summary>
         static string Canon(string k) => Keys.FirstOrDefault(x => string.Equals(x, k, StringComparison.OrdinalIgnoreCase)) ?? k;
@@ -590,6 +626,17 @@ namespace Hd2Mod
             if (targets.Count > 0) m.Targets = targets;
             foreach (var l in Json.List(d, "Logs").OfType<string>())
                 if (LogName(l) is string log && !m.Logs.Contains(log, StringComparer.OrdinalIgnoreCase)) m.Logs.Add(log);
+            foreach (var o in Json.List(d, "Requires").OfType<Dictionary<string, object>>())
+                m.Requires.Add(new Requirement
+                {
+                    Name = Json.Str(o, "Name"), Guid = Json.Str(o, "Guid"), GitHub = Json.Str(o, "GitHub"), Plugin = Json.Str(o, "Plugin"),
+                    Version = Json.Str(o, "Version"), Loader = Json.Bool(o, "Loader"), Optional = Json.Bool(o, "Optional"),
+                    Options = Json.List(o, "Options").OfType<string>().ToList(),
+                    Nexus = Number(o, "Nexus") is string nx ? long.Parse(nx, System.Globalization.CultureInfo.InvariantCulture) : 0,
+                    GameBanana = Number(o, "GameBanana"), ModWorkshop = Number(o, "ModWorkshop"),
+                    Page = Json.Str(o, "Page") is string pg && pg.StartsWith("https://", StringComparison.OrdinalIgnoreCase) ? pg : null,
+                    File = Json.Str(o, "File"),
+                });
             var options = Json.List(d, "Options");
             if (options.Count > 0 && options.All(o => o is string))
             {

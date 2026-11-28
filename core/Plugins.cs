@@ -113,6 +113,23 @@ namespace Hd2Mod
             }
         }
 
+        /// <summary>Paths dropped from Explorer on the Plugins page, split: the .dll files, offered
+        /// as plugins the way chosen files are (Inspect then says which are not, and an official
+        /// release goes in under any name), and the rest (folders, archives, other files), which
+        /// are not added. Each path once, in the order dropped.</summary>
+        public static (List<string> Plugins, List<string> Others) Dropped(IEnumerable<string> paths)
+        {
+            var plugins = new List<string>();
+            var others = new List<string>();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var p in paths ?? Enumerable.Empty<string>())
+            {
+                if (string.IsNullOrWhiteSpace(p) || !seen.Add(p)) continue;
+                (File.Exists(p) && string.Equals(Path.GetExtension(p), ".dll", StringComparison.OrdinalIgnoreCase) ? plugins : others).Add(p);
+            }
+            return (plugins, others);
+        }
+
         /// <summary>A plugin copied into Dir, over one of the same name: its file name, its version
         /// and the version it replaced (null when it is new).</summary>
         public static (string File, string Version, string Replaced) Install(string path)
@@ -272,12 +289,20 @@ namespace Hd2Mod
         /// official list (false when the list was never read).</summary>
         public static bool IsOfficialRelease(string path) => OfficialBySha(path) != null;
 
+        /// <summary>The community plugin one of whose listed versions is the file at path, else
+        /// null: it came from the community list, not reviewed (asked before it is added).</summary>
+        public static OfficialPlugin CommunityRelease(string path) => BySha(path, Community());
+
+        /// <summary>The added plugin file is a community plugin's listed release (CommunityRelease).</summary>
+        public static OfficialPlugin CommunityOf(string file) => CommunityRelease(PathOf(file));
+
         /// <summary>The official plugin one of whose released versions has the SHA-256 of the file
         /// at path, else null (also when the list was never read, or the file cannot be read).
         /// Hashed once while the file is unchanged.</summary>
-        static OfficialPlugin OfficialBySha(string path)
+        static OfficialPlugin OfficialBySha(string path) => BySha(path, Official());
+
+        static OfficialPlugin BySha(string path, List<OfficialPlugin> list)
         {
-            var list = Official();
             if (list.All(p => p.Versions.Count == 0)) return null;
             var fi = new FileInfo(path);
             if (!fi.Exists) return null;
@@ -296,13 +321,14 @@ namespace Hd2Mod
             return list.FirstOrDefault(p => p.Versions.Any(v => v.Sha256 == r.Sha));
         }
 
-        /// <summary>An added plugin's newer official release: the official list names its file and
-        /// has a version newer than the one added (the user, 2026-11-03: an added plugin was never
-        /// offered its new version). By the name: the release that replaces it is checked against
-        /// the list's SHA-256 when it is downloaded (Fetch). Null when there is none.</summary>
+        /// <summary>An added plugin's newer listed release: the official list (else the community
+        /// list) names its file and has a version newer than the one added (the user, 2026-11-03:
+        /// an added plugin was never offered its new version). By the name: the release that
+        /// replaces it is checked against the list's SHA-256 when it is downloaded (Fetch). Null
+        /// when there is none.</summary>
         public static (OfficialPlugin Plugin, string Added, string Newest)? UpdateOf(string file, Type t)
         {
-            var o = Official().FirstOrDefault(p => string.Equals(p.File, file, StringComparison.OrdinalIgnoreCase));
+            var o = Listed().FirstOrDefault(p => string.Equals(p.File, file, StringComparison.OrdinalIgnoreCase));
             var latest = o?.Latest;
             var added = Version(t);
             if (latest == null || added == null) return null;

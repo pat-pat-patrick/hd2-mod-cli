@@ -385,5 +385,55 @@ namespace Hd2Mod.Tests
             Assert.All(next, u => Assert.Equal("update", u.Status));
             Assert.All(next, u => Assert.Equal("page_only_sign_in", u.Why));
         }
+
+        const string Needing = "77777777-8888-9999-aaaa-bbbbbbbbbbbb";
+
+        /// <summary>A mod that needs one of a GameBanana page's files (most mods are not on GitHub:
+        /// the user, 2026-11-28).</summary>
+        string Needs(string requires)
+        {
+            Cli("add", Mod("Needs", new Dictionary<string, byte[]> { ["Main/" + A + ".patch_0"] = Archive((1, 777UL)) },
+                "{\"Version\":1,\"Guid\":\"" + Needing + "\",\"Name\":\"Needs\",\"Options\":[{\"Name\":\"Main\",\"Include\":[\"Main\"]}],\"Requires\":" + requires + "}"));
+            return Library.Load().Mods.Last().Id;
+        }
+
+        Recipes.Recipe PlanOf(string id) { var lib = Library.Load(); return Recipes.PlanFor(lib, lib.Mods.First(m => m.Id == id), new List<Recipes.Recipe>()); }
+
+        [Fact]
+        public void A_dependency_on_GameBanana_is_the_file_it_names_downloaded_and_known_again_by_its_page()
+        {
+            var id = Needs("[{\"Name\":\"Swimsuit DP-00\",\"GameBanana\":1,\"File\":\"DP-00\"}]");
+            var plan = PlanOf(id);
+            var step = plan.Steps[0];
+            Assert.Equal("1", step.Banana);
+            Assert.Equal(new[] { Sites.Banana }, Recipes.AutoSites(step));
+            Assert.Equal("missing", Recipes.StateOf(plan, step, Library.Load()).Is);
+            Assert.Single(Recipes.Unfinished(plan, Library.Load()));
+
+            var said = Recipes.RunAll(() => PlanOf(id));
+            Assert.Single(said);
+            var lib = Library.Load();
+            var dp = lib.Mods.Single(m => m.Name.Contains("DP-00"));
+            Assert.Equal("https://gamebanana.com/mods/1", dp.Page);
+            Assert.Contains(Needing, dp.InstalledFor);
+            Assert.True(Recipes.StateOf(PlanOf(id), PlanOf(id).Steps[0], lib).Done);
+            Assert.Empty(Recipes.Unfinished(PlanOf(id), lib));
+            lock (Seen) { Assert.Contains(Seen, x => x.StartsWith("GET /gb/dl/12 ")); Assert.DoesNotContain(Seen, x => x.StartsWith("GET /gb/dl/11 ")); }
+            // the page's mod is the one it needs: said before it goes, offered after the mod is gone
+            Assert.Equal(new[] { "Needs" }, Recipes.NeededBy(lib, dp, true, new List<Recipes.Recipe>()).Select(m => m.Name));
+        }
+
+        [Fact]
+        public void A_page_with_several_files_and_none_named_is_the_player_s_and_the_rest_go_on()
+        {
+            var id = Needs("[{\"Name\":\"Swimsuit\",\"GameBanana\":\"1\"},{\"Name\":\"Swimsuit SA-8\",\"GameBanana\":\"1\",\"File\":\"sa-8\"}]");
+            // the first is the player's to choose; the second, named, still comes
+            var said = Recipes.RunAll(() => PlanOf(id));
+            Assert.StartsWith("Swimsuit: by hand", said[0]);
+            Assert.Contains("https://gamebanana.com/mods/1", said[0]);
+            Assert.Equal(2, said.Count);
+            Assert.Single(Library.Load().Mods, m => m.Name.Contains("SA-8"));
+            lock (Seen) Assert.DoesNotContain(Seen, x => x.StartsWith("GET /gb/dl/12 "));
+        }
     }
 }

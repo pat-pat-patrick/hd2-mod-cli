@@ -520,7 +520,12 @@ namespace Hd2Mod
         /// browser writes (the page it came from, the address it came from) and what the page said
         /// of it (PageRef), so adding it records where it came from as a drop of a browser's
         /// download does. The file's path.</summary>
-        public static string Download(string url, string page, PageRef said, string folder, Action<long, long> progress = null)
+        public static string Download(string url, string page, PageRef said, string folder, Action<long, long> progress = null) =>
+            Download(url, page, said, folder, progress, null);
+
+        /// <summary>The same; hostUrl: the address the file's origin names instead of url (a copy of
+        /// a GitHub release file, downloaded from the author's copy, is still that release's: Recipes).</summary>
+        public static string Download(string url, string page, PageRef said, string folder, Action<long, long> progress, string hostUrl)
         {
             Directory.CreateDirectory(folder);
             HttpResponseMessage r;
@@ -563,7 +568,7 @@ namespace Hd2Mod
                     if (said.Version == null && said.Time > 0) said.Version = Date(said.Time);
                 }
                 // HostUrl: the address asked for (a GitHub asset's says its release; where it went on to does not)
-                Native.WriteStream(dest, "Zone.Identifier", Zone(url, page ?? url, said));
+                Native.WriteStream(dest, "Zone.Identifier", Zone(hostUrl ?? url, page ?? url, said));
                 return dest;
             }
         }

@@ -15,6 +15,10 @@ namespace Hd2Qd.Sample
         public const int Api = 2;
         public const string Kind = "window";
 
+        /// <summary>The key that brings its window up over the game (PluginKeys), as an author may
+        /// write it.</summary>
+        public const string OverlayKey = "Shift + Page Down";
+
         /// <summary>Its words, one table per language tag; anything else is English.</summary>
         static readonly Dictionary<string, Dictionary<string, string>> Words = new Dictionary<string, Dictionary<string, string>>
         {

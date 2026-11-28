@@ -255,15 +255,17 @@
       </ScrollViewer>
       <!-- the plugins page, opened by the plug beside the gear: the same one column, with the
            guide on its left (the user, 2026-11-10: which plugins are added, and a click goes to
-           one's card), as wide as the deploy page's library panel. ShowPage shows and hides the
+           one's card); in the Browse tab the list of plugins, the same width so that the page does
+           not move between the tabs (the user, 2026-11-28). ShowPage shows and hides the
            two with the column (PluginsPage) -->
       <Grid x:Name="PluginsArea" Visibility="Collapsed" Background="Transparent"
-            AllowDrop="True" DragOver="PluginsPage_DragOver" Drop="PluginsPage_Drop">
+            AllowDrop="True" DragEnter="PluginsPage_DragOver" DragOver="PluginsPage_DragOver"
+            DragLeave="PluginsPage_DragLeave" Drop="PluginsPage_Drop">
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="Auto"/>
           <ColumnDefinition Width="*"/>
         </Grid.ColumnDefinitions>
-        <Border x:Name="PluginGuideBar" Width="232" BorderBrush="{StaticResource Grid}" BorderThickness="0,0,1,0">
+        <Border x:Name="PluginGuideBar" Width="300" BorderBrush="{StaticResource Grid}" BorderThickness="0,0,1,0">
           <ScrollViewer VerticalScrollBarVisibility="Auto" Focusable="False">
             <StackPanel x:Name="PluginGuide" Margin="16,24,16,24"/>
           </ScrollViewer>
@@ -272,6 +274,17 @@
                       ScrollChanged="PluginsPage_ScrollChanged">
           <StackPanel x:Name="PluginsBox" Margin="32,24,32,32" MaxWidth="720"/>
         </ScrollViewer>
+        <!-- while files are dragged in from Explorer: what dropping them would do, over the
+             whole page, as the deploy page's list has it (DropHint) -->
+        <Border x:Name="PluginDropHint" Grid.ColumnSpan="2" Visibility="Collapsed" IsHitTestVisible="False" Opacity="0.94"
+                Background="{StaticResource Ground900}" BorderBrush="{StaticResource Yellow}" BorderThickness="2">
+          <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="640">
+            <TextBlock x:Name="PluginDropHintText" FontSize="22" FontWeight="Bold" Foreground="{StaticResource Yellow}"
+                       HorizontalAlignment="Center" TextAlignment="Center"/>
+            <TextBlock x:Name="PluginDropHintWhat" FontSize="13" Foreground="{StaticResource Ink}" Margin="24,8,24,0"
+                       HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"/>
+          </StackPanel>
+        </Border>
       </Grid>
       </Grid>
     </DockPanel>

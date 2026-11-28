@@ -48,6 +48,27 @@ namespace Hd2Mod.Tests
             Assert.Equal("", string.Join(" ", asked.Where(k => !en.ContainsKey(k))));
         }
 
+        /// <summary>A line break inside a word is written \n: our own reader took a raw one, a strict
+        /// JSON reader refuses the whole file (2026-11-28: two words had one for a day).</summary>
+        [Fact]
+        public void No_word_holds_a_raw_control_character()
+        {
+            foreach (var f in Directory.GetFiles(Path.Combine(Repo, @"gui\QuickDeploy\Lang"), "*.json"))
+            {
+                var s = File.ReadAllText(f);
+                bool inString = false;
+                int line = 1;
+                for (int i = 0; i < s.Length; i++)
+                {
+                    char c = s[i];
+                    if (c == '\n') line++;
+                    if (inString && c < 0x20) Assert.Fail(Path.GetFileName(f) + " line " + line + ": a raw control character inside a word");
+                    if (c == '"') inString = !inString;
+                    else if (c == '\\' && inString) i++;
+                }
+            }
+        }
+
         [Fact]
         public void Each_language_names_itself_and_has_only_words_English_has()
         {

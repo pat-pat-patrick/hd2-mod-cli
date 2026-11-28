@@ -142,7 +142,7 @@ namespace QuickDeploy
             // the loader panel's details close like a menu (LoaderInfo)
             PreviewKeyDown += (s, e) => { if (e.Key == Key.Escape && loaderPop != null && loaderPop.IsOpen) { CloseLoaderInfo(); e.Handled = true; } };
             // Esc leaves the settings page for the page it was opened from
-            PreviewKeyDown += TabKeys;
+            KeyDown += TabKeys;
             PreviewKeyDown += (s, e) => { if (e.Key == Key.Escape && !e.Handled && (SettingsPage.Visibility == Visibility.Visible || PluginsPage.Visibility == Visibility.Visible)) { ShowPage(pageBack); e.Handled = true; } };
             PreviewTextInput += TypeToSearch;
             PreviewMouseDown += (s, e) =>
@@ -367,6 +367,118 @@ namespace QuickDeploy
                 pt.Start();
                 return;
             }
+            if (page == "tabswitch")
+            {
+                // measuring only: 6 s after the start every window plugin added is opened, then
+                // every 1.5 s the first plugin's tab and the manager's are shown in turn, each
+                // switch timed until it is drawn (ContextIdle comes after layout and render)
+                var ts = new DispatcherTimer { Interval = TimeSpan.FromSeconds(6) };
+                int sw = -1;
+                // the window's thread held up: every gap of more than 100 ms between two 20 ms ticks
+                var gap = Stopwatch.StartNew();
+                var beat = new DispatcherTimer(DispatcherPriority.Input) { Interval = TimeSpan.FromMilliseconds(20) };
+                beat.Tick += (s2, e2) =>
+                {
+                    if (gap.ElapsedMilliseconds > 100) Mark("stall: " + gap.ElapsedMilliseconds + " ms (on " + (TabOf(shownPage)?.Title ?? shownPage) + ", " + tabs.Count + " tabs)");
+                    gap.Restart();
+                };
+                beat.Start();
+                ts.Tick += (s, e) =>
+                {
+                    ts.Interval = TimeSpan.FromSeconds(1.5);
+                    // HD2QD_TABSWITCH_FROM: the manager's page the plugins are opened from;
+                    // HD2QD_TABSWITCH_READ=1: the state read again while a plugin's tab is on show
+                    if (sw < 0)
+                    {
+                        var from = Environment.GetEnvironmentVariable("HD2QD_TABSWITCH_FROM");
+                        if (!string.IsNullOrEmpty(from)) ShowPage(from);
+                        foreach (var (file, type, _) in ByName(PluginFiles.All()))
+                            if (type != null && PluginFiles.Kind(type) == "window") OpenPlugin(type);
+                    }
+                    sw++;
+                    if (sw >= 12 || tabs.Count == 0) { ts.Stop(); beat.Stop(); Mark("tabswitch done"); return; }
+                    bool toManager = sw % 2 == 1;
+                    var watch = Stopwatch.StartNew();
+                    if (toManager) ShowPage(managerPage); else ShowTab(tabs[0]);
+                    if (!toManager && Environment.GetEnvironmentVariable("HD2QD_TABSWITCH_READ") == "1") Refresh();
+                    var call = watch.ElapsedMilliseconds;
+                    Dispatcher.BeginInvoke(new Action(() =>
+                        Mark("switch to " + (toManager ? "manager" : "plugin") + ": " + call + " ms in ShowPage, " + watch.ElapsedMilliseconds + " ms drawn")),
+                        DispatcherPriority.ContextIdle);
+                };
+                ts.Start();
+                return;
+            }
+            if (page == "optclick")
+            {
+                // measuring only (issue 21: a mod of 758 options, each click about 5 s): 5 s after
+                // the start the mod HD2QD_OPTMOD is opened in the list with its first group
+                // unfolded, then every 4 s a card of that group is picked as its click does, each
+                // timed in the click, to its first frame, and the state read after it (Marks)
+                var oc = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+                int ck = -1;
+                var gap = Stopwatch.StartNew();
+                var beat = new DispatcherTimer(DispatcherPriority.Input) { Interval = TimeSpan.FromMilliseconds(20) };
+                beat.Tick += (s2, e2) =>
+                {
+                    if (gap.ElapsedMilliseconds > 100) Mark("stall: " + gap.ElapsedMilliseconds + " ms");
+                    gap.Restart();
+                };
+                beat.Start();
+                oc.Tick += (s, e) =>
+                {
+                    oc.Interval = TimeSpan.FromSeconds(4);
+                    var om = st?.Mods.FirstOrDefault(x => x.Name == Environment.GetEnvironmentVariable("HD2QD_OPTMOD"));
+                    if (om == null) { Mark("optclick: no such mod"); oc.Stop(); beat.Stop(); return; }
+                    if (ck < 0)
+                    {
+                        if (groupView) View_Click(ViewOrder, null);
+                        var w0 = Stopwatch.StartNew();
+                        Current(om.Id);
+                        open.Add(om.Id);
+                        SetFolded(om.Id, om.Options[0].Name, false, true);
+                        RenderList();
+                        RenderDetail();
+                        var t0 = w0.ElapsedMilliseconds;
+                        Dispatcher.BeginInvoke(new Action(() => Mark("optclick: opened in " + t0 + " ms, drawn " + w0.ElapsedMilliseconds + " ms; elements " + Motion.Under<FrameworkElement>(this).Count())), DispatcherPriority.ContextIdle);
+                        ck = 0;
+                        return;
+                    }
+                    if (ck >= 3) { oc.Stop(); beat.Stop(); Mark("optclick done"); return; }
+                    int sj = ck + 1;
+                    ck++;
+                    var w = Stopwatch.StartNew();
+                    Mark("optclick: click " + ck);
+                    Change(om.Id, c => { for (int k = 0; k < c.Options[0].Subs.Count; k++) c.Options[0].Subs[k].Enabled = k == sj; }, "set", om.Id, "1." + (sj + 1), "on", "--only");
+                    var inClick = w.ElapsedMilliseconds;
+                    int n = ck;
+                    Dispatcher.BeginInvoke(new Action(() => Mark("optclick: click " + n + " " + inClick + " ms in the click, " + w.ElapsedMilliseconds + " ms drawn; elements " + Motion.Under<FrameworkElement>(this).Count())), DispatcherPriority.ContextIdle);
+                };
+                oc.Start();
+                return;
+            }
+            if (page == "manytabs")
+            {
+                // pictures only: 4 s after the start every window plugin added is opened, then
+                // stand-in tabs up to HD2QD_MANYTABS in all (12 by default), the first plugin's shown,
+                // so the narrow tabs can be seen; each Ctrl+Tab after is marked
+                var mt = new DispatcherTimer { Interval = TimeSpan.FromSeconds(4) };
+                mt.Tick += (s, e) =>
+                {
+                    mt.Stop();
+                    foreach (var (file, type, _) in ByName(PluginFiles.All()))
+                        if (type != null && PluginFiles.Kind(type) == "window") OpenPlugin(type);
+                    int want = int.TryParse(Environment.GetEnvironmentVariable("HD2QD_MANYTABS"), out var w) ? w : 12;
+                    var make = TabMaker();
+                    for (int i = tabs.Count; i < want; i++)
+                        make("Stand-in tab " + (i + 1), new Border { Background = B("Ground700") }, null);
+                    if (tabs.Count > 0) ShowTab(tabs[0]);
+                    KeyDown += (s2, e2) => { if (e2.Key == Key.Tab) Dispatcher.BeginInvoke(new Action(() => Mark("ctrl+tab: on " + (TabOf(shownPage)?.Title ?? shownPage))), DispatcherPriority.ContextIdle); };
+                    Mark("tabs: " + tabs.Count + ", on " + TabOf(shownPage)?.Title);
+                };
+                mt.Start();
+                return;
+            }
             if (page == "savetabs")
             {
                 // tests only: 6 s after the start every window plugin added is opened, the second
@@ -437,6 +549,23 @@ namespace QuickDeploy
                         Dispatcher.BeginInvoke(new Action(() => OnShow().ScrollToVerticalOffset(y)), DispatcherPriority.Loaded);
                 };
                 tp.Start();
+                return;
+            }
+            if (page == "selfupdate")
+            {
+                // tests only: 4 s after the start, the update check, then the update as the player's
+                // yes to its question gives it (InstallNow): download, check, swap, restart
+                var su = new DispatcherTimer { Interval = TimeSpan.FromSeconds(4) };
+                su.Tick += async (s, e) =>
+                {
+                    su.Stop();
+                    SelfUpdateInfo u;
+                    try { u = await Task.Run(() => SelfUpdate.Check()); }
+                    catch (ModError err) { Mark("check failed: " + err.Message); return; }
+                    Mark("found " + u.Latest + (u.Newer ? " (newer)" : "") + ", files " + string.Join(", ", u.Files.Keys));
+                    if (u.Newer) InstallNow(u, this, on => Mark(on ? "installing" : "install stopped"));
+                };
+                su.Start();
                 return;
             }
             if (page == "settingspage")
@@ -1938,7 +2067,7 @@ namespace QuickDeploy
                 {
                     if (waited == 0) { ShowPage("download"); g.Interval = TimeSpan.FromMilliseconds(500); }
                     waited++;
-                    bool done = findBusy == null && (found != null || foundSite != null || findSaid != null);
+                    bool done = findBusy == null && (found != null || foundSite != null || findSaid != null || foundPlan != null);
                     if (!done && waited < 60) return;
                     if (done && waited < 8) return;     // the picture comes in after the words
                     g.Stop();
@@ -2184,6 +2313,12 @@ namespace QuickDeploy
                 {
                     g.Stop();
                     ShowPage("plugins");
+                    // HD2QD_PLUGIN_TAB=browse: that tab, HD2QD_PLUGIN_PICK=<file> chosen in it
+                    if (Environment.GetEnvironmentVariable("HD2QD_PLUGIN_TAB") is string tab)
+                    {
+                        browseSel = Environment.GetEnvironmentVariable("HD2QD_PLUGIN_PICK");
+                        ShowPluginTab(tab);
+                    }
                     // HD2QD_OPEN_PLUGIN=AssetCheck: that plugin's window opened too, for its picture
                     var open = Environment.GetEnvironmentVariable("HD2QD_OPEN_PLUGIN");
                     var p = open == null ? default : PluginFiles.All().FirstOrDefault(x => string.Equals(x.File, "HD2QD." + open + ".dll", StringComparison.OrdinalIgnoreCase));
@@ -2860,6 +2995,7 @@ namespace QuickDeploy
         {
             var m = st?.Mods.FirstOrDefault(x => x.Id == id);
             if (m == null || busy) return;
+            if (args.Length > 0 && args[0] == "disable" && !DependentsAgree(id, "dep_off_ask", "dep_off_go")) return;
             local(m);
             m.Assumed = m.Enabled ? "pending" : "off";
             // its translation packs go off with it and come back with it, as the command line does
@@ -2925,6 +3061,12 @@ namespace QuickDeploy
                     }
                 case "archive_damaged": Dialog.Tell(this, Texts.F("unpack_damaged", System.IO.Path.GetFileName(r.Refused.Arg))); break;
                 case "archive_password": Dialog.Tell(this, Texts.F("unpack_password", System.IO.Path.GetFileName(r.Refused.Arg))); break;
+                case "rar_unreadable":
+                    {
+                        var parts = r.Refused.Arg.Split(new[] { '\n' }, 2);
+                        Dialog.Tell(this, Texts.F("unpack_rar", System.IO.Path.GetFileName(parts[0]), parts.Length > 1 && parts[1].Length > 0 ? parts[1] : Texts.Get("unpack_no_reason")));
+                        break;
+                    }
                 case "group_exists": Dialog.Tell(this, Texts.F("g_exists", r.Refused.Arg)); break;
                 case "group_depth": Dialog.Tell(this, Texts.Get("g_depth")); break;
                 case "group_inside": Dialog.Tell(this, Texts.Get("g_inside")); break;
@@ -4023,11 +4165,13 @@ namespace QuickDeploy
 #if !HAS_NEXUS
             // what this build leaves out is said whatever the hints setting
             Downloads.Children.Add(Small(Texts.Get("dl_intro_dev"), new Thickness(0, 0, 0, 20)));
+            PlanOnPage();
             Downloads.Children.Add(Card(FindMod(false)));
             Downloads.Children.Add(new Border { Height = 20 });
             JobOnPage();
 #else
             Downloads.Children.Add(Texts.Hints ? Small(Texts.Get("dl_intro"), new Thickness(0, 0, 0, 20)) : new Border { Height = 12 });
+            PlanOnPage();
 
             // the button and the key, side by side
             var top = new Grid { Margin = new Thickness(0, 0, 0, 20) };
@@ -4546,6 +4690,7 @@ namespace QuickDeploy
                 case "not_zip": return Texts.Get("dl_not_zip");
                 case "archive_damaged": return Texts.Get("dl_damaged");
                 case "archive_password": return Texts.Get("dl_password");
+                case "rar_unreadable": return Texts.Get("dl_rar");
                 default: return kind ?? "";
             }
         }
@@ -5087,12 +5232,41 @@ namespace QuickDeploy
                 };
                 DockPanel.SetDock(size, Dock.Right);
                 line.Children.Add(size);
+                // a mod taken out of the library comes back from here, where it is (issue 16,
+                // 2026-11-09); an older version of a library mod is not offered: added, it would
+                // take the newer one's place
+                if (l.Of == null)
+                {
+                    var back = new Button { Content = Texts.Get("st_old_readd"), Style = (Style)FindResource("Ghost"), MinHeight = 30, Margin = new Thickness(12, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+                    System.Windows.Automation.AutomationProperties.SetAutomationId(back, "readd:" + l.Name);
+                    back.Click += (s, e) => AddBack(path, l.Title ?? l.Name);
+                    DockPanel.SetDock(back, Dock.Right);
+                    line.Children.Add(back);
+                }
+                // which mod it is, then its folder: the folders' names alone (with their digests)
+                // did not say which mod each was
+                var what = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+                var ofMod = l.Of == null ? null : st.Mods.FirstOrDefault(x => x.Id == l.Of);
+                what.Children.Add(new TextBlock
+                {
+                    Text = l.Of == null ? l.Title ?? l.Name : Texts.F("st_old_of", ofMod?.Name ?? l.Title ?? l.Name),
+                    FontSize = 13, TextTrimming = TextTrimming.CharacterEllipsis,
+                });
                 var folder = Selectable.Text(l.Name, 12, "Muted", Mono);
-                folder.VerticalAlignment = VerticalAlignment.Center;
-                line.Children.Add(folder);
+                what.Children.Add(folder);
+                line.Children.Add(what);
                 box.Children.Add(Band(line, oldBand++));
             }
             Storages.Children.Add(Card(box));
+        }
+
+        /// <summary>A mod taken out of the library added back from its folder, where it is (nothing
+        /// is copied); it comes into the profile in use, at the bottom, as an added mod does.</summary>
+        async void AddBack(string path, string title)
+        {
+            oldPick.Remove(path);
+            if (await Act(() => Cli.Run("add", path), false)) Foot(Texts.F("st_old_readded", title), "Blue");
+            Refresh();
         }
 
         async void DropOldVersions()
@@ -6456,9 +6630,14 @@ namespace QuickDeploy
             }
 
             // a heading that folds what follows it: the chevron and the name are what is clicked
-            // (the switch keeps its own click); folded, it says what is chosen
-            void Foldable(string key, DockPanel head, FrameworkElement title, TextBlock chosen, params UIElement[] body)
+            // (the switch keeps its own click); folded, it says what is chosen. fill makes the
+            // cards, the first time the group is shown unfolded: a folded group makes none (issue
+            // 21, 2026-11-11: Better Aim Reticles' 758 options were all made, and each picture's
+            // file looked at, on every drawing of the mod's row, folded or not)
+            void Foldable(string key, DockPanel head, FrameworkElement title, TextBlock chosen, Action fill, params UIElement[] body)
             {
+                bool filled = false;
+                void Fill() { if (!filled) { filled = true; fill?.Invoke(); } }
                 var chev = FoldChevron();
                 // a button: the keyboard and UI Automation reach it as a mouse does
                 var toggle = new Button { Content = chev, Template = Plain(), Cursor = Cursors.Hand, FocusVisualStyle = null, VerticalAlignment = VerticalAlignment.Center, Padding = new Thickness(0) };
@@ -6468,6 +6647,7 @@ namespace QuickDeploy
                 head.Children.Insert(0, toggle);
                 void Set(bool fold)
                 {
+                    if (!fold) Fill();
                     foreach (var b in body) b.Visibility = fold ? Visibility.Collapsed : Visibility.Visible;
                     ((RotateTransform)chev.RenderTransform).Angle = fold ? 0 : 90;
                     chosen.Visibility = fold && chosen.Text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -6479,6 +6659,7 @@ namespace QuickDeploy
                 title.Cursor = Cursors.Hand;
                 title.MouseLeftButtonUp += (s, e) => { e.Handled = true; Flip(); };
                 bool now = IsFolded(m.Id, key, foldFirst);
+                if (!now) Fill();
                 foreach (var b in body) b.Visibility = now ? Visibility.Collapsed : Visibility.Visible;
                 ((RotateTransform)chev.RenderTransform).Angle = now ? 0 : 90;
                 chosen.Visibility = now && chosen.Text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -6519,23 +6700,26 @@ namespace QuickDeploy
                     body.Add(d);
                 }
                 var cards = new WrapPanel { IsEnabled = o.Enabled, Opacity = o.Enabled ? 1 : 0.45 };
-                for (int j = 0; j < o.Subs.Count; j++)
+                void SubCards()
                 {
-                    var sub = o.Subs[j];
-                    int sj = j;
-                    string sref = (i + 1) + "." + (j + 1);
-                    cards.Children.Add(Card(sub.Name, sub.Icon, sub.Files, sub.Bytes, sub.Enabled, sub.Description, sub.Clashes, () =>
+                    for (int j = 0; j < o.Subs.Count; j++)
                     {
-                        // one of a kind: the sub-options replace the same resources (the user, 2026-10-27)
-                        bool was = sub.Enabled;
-                        if (!was)
-                            Change(m.Id, c => { for (int k = 0; k < c.Options[oi].Subs.Count; k++) c.Options[oi].Subs[k].Enabled = k == sj; },
-                                   "set", m.Id, sref, "on", "--only");
-                    }));
+                        var sub = o.Subs[j];
+                        int sj = j;
+                        string sref = (oi + 1) + "." + (j + 1);
+                        cards.Children.Add(Card(sub.Name, sub.Icon, sub.Files, sub.Bytes, sub.Enabled, sub.Description, sub.Clashes, () =>
+                        {
+                            // one of a kind: the sub-options replace the same resources (the user, 2026-10-27)
+                            bool was = sub.Enabled;
+                            if (!was)
+                                Change(m.Id, c => { for (int k = 0; k < c.Options[oi].Subs.Count; k++) c.Options[oi].Subs[k].Enabled = k == sj; },
+                                       "set", m.Id, sref, "on", "--only");
+                        }));
+                    }
                 }
                 box.Children.Add(cards);
                 body.Add(cards);
-                Foldable(o.Name, head, t, chosen, body.ToArray());
+                Foldable(o.Name, head, t, chosen, SubCards, body.ToArray());
             }
             if (parts.Count > 0)
             {
@@ -6546,18 +6730,21 @@ namespace QuickDeploy
                 head.Children.Add(t);
                 box.Children.Add(head);
                 var cards = new WrapPanel();
-                foreach (var (o, i) in parts)
+                void PartCards()
                 {
-                    string oref = (i + 1).ToString();
-                    cards.Children.Add(Card(o.Name, o.Icon, o.Files, o.Bytes, o.Enabled, o.Description, o.Clashes, () =>
+                    foreach (var (o, i) in parts)
                     {
-                        bool was = o.Enabled;
-                        Change(m.Id, c => c.Options[i].Enabled = !was, "set", m.Id, oref, was ? "off" : "on");
-                    }));
+                        string oref = (i + 1).ToString();
+                        cards.Children.Add(Card(o.Name, o.Icon, o.Files, o.Bytes, o.Enabled, o.Description, o.Clashes, () =>
+                        {
+                            bool was = o.Enabled;
+                            Change(m.Id, c => c.Options[i].Enabled = !was, "set", m.Id, oref, was ? "off" : "on");
+                        }));
+                    }
                 }
                 box.Children.Add(cards);
                 // the count chosen is in the heading already: nothing more to say folded
-                Foldable(ExtrasFold, head, t, new TextBlock(), cards);
+                Foldable(ExtrasFold, head, t, new TextBlock(), PartCards, cards);
             }
             SayAll();
             var chosenFiles = m.Files.Count;
@@ -9241,10 +9428,10 @@ namespace QuickDeploy
                 var btns = new StackPanel { Orientation = Orientation.Horizontal };
                 if (u.Newer && !string.IsNullOrEmpty(u.Page))
                 {
-                    var open = new Button { Content = Texts.Get("self_open"), Style = (Style)FindResource("Primary"), MinHeight = 36, Margin = new Thickness(0, 0, 8, 0), ToolTip = u.Page };
-                    var page = u.Page;
-                    open.Click += (s, e2) => Process.Start(new ProcessStartInfo(page) { UseShellExecute = true });
-                    btns.Children.Add(open);
+                    // the update in place (the user, 2026-11-26); the download page stays in the notes window
+                    var install = new Button { Content = Texts.Get(installing ? "self_installing" : "self_install"), Style = (Style)FindResource("Primary"), MinHeight = 36, Margin = new Thickness(0, 0, 8, 0), IsEnabled = !installing };
+                    install.Click += (s, e2) => InstallUpdate(u, this, on => FillUpdate());
+                    btns.Children.Add(install);
                     var notes = new Button { Content = Texts.Get("self_notes"), Style = (Style)FindResource("Ghost"), MinHeight = 36, Margin = new Thickness(0, 0, 8, 0) };
                     notes.Click += (s, e2) => ShowUpdateNotes(SelfUpdate.Last());
                     btns.Children.Add(notes);
@@ -9803,6 +9990,7 @@ namespace QuickDeploy
             var foot = Texts.F("drop_processed", Texts.N(added)) + (mdl3Note != null ? " · " + mdl3Note : "");
             // now, and again after the state read the adds started
             if (added > 0) { Foot(foot, "Blue"); lastDone = foot; }
+            if (added > 0) PlanAfterAdd();
             if (fresh.Count == 0) return;
             Current(fresh[0].Id);
             AdviseDrive(fresh);
@@ -9871,6 +10059,9 @@ namespace QuickDeploy
         {
             switch (msg)
             {
+                case WM_HOTKEY:
+                    if (PluginKeyPressed(wParam.ToInt32())) { handled = true; return IntPtr.Zero; }
+                    break;
                 case WM_NCHITTEST:
                     if (OverMax(lParam)) { SetMaxHover(true); handled = true; return new IntPtr(HTMAXBUTTON); }
                     SetMaxHover(false);

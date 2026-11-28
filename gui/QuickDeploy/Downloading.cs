@@ -211,7 +211,7 @@ namespace QuickDeploy
             {
                 bool github = m.Channel == "GitHub";
                 await BeginJob(m.Name, github ? "GitHub" : m.Channel ?? "");
-                string file = null, page = null, unpacked = null;
+                string file = null, page = null, unpacked = null, withIt = null;
                 Mod mod = null;
                 try
                 {
@@ -241,6 +241,7 @@ namespace QuickDeploy
                         lastDone = Texts.F("took", r.Out, Seconds(job.Clock.Elapsed.TotalSeconds));
                         updates.Remove(m.Id);
                         updated.Add(m.Id);
+                        withIt = mod?.Id ?? m.Id;
                     }
                 }
                 finally
@@ -248,6 +249,8 @@ namespace QuickDeploy
                     if (file != null) try { System.IO.File.Delete(file); } catch (Exception e) when (e is System.IO.IOException || e is UnauthorizedAccessException) { }
                     EndJob();
                 }
+                // what the new version needs, updated with it once its own job has ended
+                if (withIt != null) PlanAfterUpdate(withIt);
             }
             finally { fetching.Remove(m.Id); }
         }

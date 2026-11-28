@@ -152,6 +152,7 @@ namespace QuickDeploy
             // its page, or nothing -- the folder is then the only copy
             var left = Ops.LeftAfterDelete(m.Source, m.Path);
             var key = left == "archive" ? "delete_ask" : left == "page" ? "delete_ask_page" : "delete_ask_only";
+            if (!DependentsAgree(m.Id, "dep_delete_ask", "delete_btn")) return;
             if (!Dialog.AskDanger(this, Texts.F(key, m.Name, m.Path), Texts.Get("delete_btn"))) return;
             DeleteNow(m);
         }
@@ -167,14 +168,17 @@ namespace QuickDeploy
                 var res = Ops.DeleteMod(lib, mod, Store.GameDir());
                 return Texts.F("deleted_mod", mod.Name, Texts.Size(res.Bytes));
             }, null);
+            OfferOrphans(m.Name, true);
         }
 
         /// <summary>A mod out of the library (its folder kept), once asked: faded out and taken from
         /// the list at once, the command behind it, as a delete is.</summary>
         async void RemoveFromLibrary(ModRow m)
         {
+            if (!DependentsAgree(m.Id, "dep_remove_ask", "remove_btn")) return;
             if (!Dialog.Ask(this, Texts.F("remove_ask", m.Name), Texts.Get("remove_btn"))) return;
             await Gone(m, false, null, new[] { "remove", m.Id });
+            OfferOrphans(m.Name, false);
         }
 
         /// <summary>A mod leaving the list: struck through (a delete) or faded out (a remove), taken

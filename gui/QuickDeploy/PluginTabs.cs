@@ -222,26 +222,33 @@ namespace QuickDeploy
         /// lit; drawn while a plugin is open.</summary>
         void PaintTabs()
         {
+            // drawn again only when the row changes: ShowPage calls this on every page, the
+            // manager's own pages included
+            var row = string.Join("|", tabs.Select(x => x.Key + "=" + x.Title)) + "#" + (TabOf(shownPage)?.Key ?? "") + "#" + Texts.Lang;
+            if (row == paintedRow) return;
+            paintedRow = row;
             TabRow.Children.Clear();
             if (tabs.Count == 0) return;
             bool home = TabOf(shownPage) == null;
             // the manager's own: its mark and name, no close (the program's own is the window's)
             var mark = new Image
             {
-                Source = new System.Windows.Media.Imaging.BitmapImage(new Uri("pack://application:,,,/logo.png")),
-                Width = 20, Height = 20, Margin = new Thickness(0, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center,
+                Source = Mark20, Width = 20, Height = 20, Margin = new Thickness(0, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center,
             };
             RenderOptions.SetBitmapScalingMode(mark, BitmapScalingMode.HighQuality);
-            var homeRow = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+            var homeRow = new DockPanel { VerticalAlignment = VerticalAlignment.Center };
+            DockPanel.SetDock(mark, Dock.Left);
             homeRow.Children.Add(mark);
-            homeRow.Children.Add(TabText(Texts.Get("tab_manager"), home));
-            var homeHead = TabHead(homeRow, home, new Thickness(12, 0, 16, 0));
+            var homeText = TabText(Texts.Get("tab_manager"), home);
+            homeRow.Children.Add(homeText);
+            var homeHead = TabHead(homeRow, home, new Thickness(16, 0, 16, 0));
+            homeHead.Tag = new HeadParts { On = home, Pad = homeHead.Padding, Text = homeText };
             homeHead.MouseLeftButtonUp += (s, e) => ShowPage(managerPage);
             TabRow.Children.Add(homeHead);
             foreach (var t in tabs)
             {
                 bool on = shownPage == t.Key;
-                var row = new DockPanel { VerticalAlignment = VerticalAlignment.Center };
+                var line = new DockPanel { VerticalAlignment = VerticalAlignment.Center };
                 var x = new Button
                 {
                     Style = (Style)FindResource("Caption"), Width = 28, Height = 28, Margin = new Thickness(10, 0, 0, 0), Padding = new Thickness(0),
@@ -251,7 +258,7 @@ namespace QuickDeploy
                 var mine = t;
                 x.Click += (s, e) => { CloseTab(mine); e.Handled = true; };
                 DockPanel.SetDock(x, Dock.Right);
-                row.Children.Add(x);
+                line.Children.Add(x);
                 // its own icon as on its pinned button, else the plugins button's glyph
                 UIElement icon = t.Icon != null
                     ? new Image { Source = t.Icon, Width = 20, Height = 20 }
@@ -260,15 +267,80 @@ namespace QuickDeploy
                 ((FrameworkElement)icon).Margin = new Thickness(0, 0, 8, 0);
                 ((FrameworkElement)icon).VerticalAlignment = VerticalAlignment.Center;
                 DockPanel.SetDock(icon, Dock.Left);
-                row.Children.Add(icon);
-                row.Children.Add(TabText(t.Title, on));
-                var head = TabHead(row, on, new Thickness(16, 0, 6, 0));
-                head.MinWidth = 120;
-                head.MaxWidth = 260;
+                line.Children.Add(icon);
+                var text = TabText(t.Title, on);
+                line.Children.Add(text);
+                var head = TabHead(line, on, new Thickness(16, 0, 6, 0));
+                head.Tag = new HeadParts { On = on, Pad = head.Padding, Text = text, Close = x, Icon = icon };
                 head.MouseLeftButtonUp += (s, e) => ShowTab(mine);
                 // the middle button closes it, as a browser's tab
                 head.MouseUp += (s, e) => { if (e.ChangedButton == MouseButton.Middle) CloseTab(mine); };
                 TabRow.Children.Add(head);
+            }
+            if (!stripWatched)
+            {
+                StripDock.SizeChanged += (s, e) => FitTabWidths();
+                stripWatched = true;
+            }
+            FitTabWidths();
+        }
+
+        // every tab as wide as a browser's, whatever its title (the user, 2026-11-26: the manager's
+        // tab, the one used most, was as narrow as its word); narrower, all alike, only when they
+        // no longer fit. Below TabFull the tabs not on show lose their close button (Ctrl+W and
+        // the middle button still close them), below TabIconOnly their titles too, as a
+        // browser's: never cut off at the window's edge, where they could not be reached
+        const double TabWidth = 240, TabFull = 112, TabIconOnly = 72, TabLeast = 44;
+        // the strip's room the tabs leave free, to take the window by
+        const double DragRoom = 96;
+        bool stripWatched;
+        // what PaintTabs last drew: the tabs, the one on show and the language
+        string paintedRow;
+
+        // the parts of a tab's head that FitTabWidths changes with its width
+        sealed class HeadParts
+        {
+            public bool On;
+            public Thickness Pad;
+            public TextBlock Text;
+            public Button Close;        // null on the manager's
+            public UIElement Icon;      // null on the manager's
+        }
+
+        static ImageSource mark20;
+        // the window's mark on the manager's tab, decoded once
+        static ImageSource Mark20
+        {
+            get
+            {
+                if (mark20 == null)
+                {
+                    var b = new System.Windows.Media.Imaging.BitmapImage(new Uri("pack://application:,,,/logo.png"));
+                    b.Freeze();
+                    mark20 = b;
+                }
+                return mark20;
+            }
+        }
+
+        void FitTabWidths()
+        {
+            int n = TabRow.Children.Count;
+            if (n == 0) return;
+            // the caption buttons are 46 wide each (App.xaml's Caption)
+            double room = StripDock.ActualWidth - TabRow.Margin.Left - 3 * 46 - DragRoom;
+            double w = room <= 0 ? TabWidth : Math.Max(TabLeast, Math.Min(TabWidth, Math.Floor(room / n)));
+            foreach (FrameworkElement head in TabRow.Children)
+            {
+                head.Width = w;
+                if (!(head.Tag is HeadParts p) || !(head is Border b)) continue;
+                bool close = p.Close != null && (w >= TabFull || (p.On && w >= TabIconOnly));
+                if (p.Close != null) p.Close.Visibility = close ? Visibility.Visible : Visibility.Collapsed;
+                p.Text.Visibility = w >= TabIconOnly ? Visibility.Visible : Visibility.Collapsed;
+                b.ToolTip = w >= TabIconOnly ? null : p.Text.Text;      // the title, when only the icon shows
+                // the tab on show, narrow, keeps its title and its close button, not its icon
+                if (p.Icon != null) p.Icon.Visibility = p.On && close && w < TabFull ? Visibility.Collapsed : Visibility.Visible;
+                b.Padding = w >= TabFull ? p.Pad : new Thickness(w >= TabIconOnly ? 10 : Math.Max(0, Math.Floor((w - 20) / 2)), 0, close ? 4 : 8, 0);
             }
         }
 
@@ -295,10 +367,11 @@ namespace QuickDeploy
         }
 
         /// <summary>Ctrl+W closes the tab on show; Ctrl+Tab and Ctrl+Shift+Tab go through the
-        /// tabs, the manager's page counted as the first.</summary>
+        /// tabs, the manager's page counted as the first. On KeyDown, as it comes back up: a
+        /// control inside a plugin that uses the key itself (its own tabs) has it first.</summary>
         void TabKeys(object sender, KeyEventArgs e)
         {
-            if ((Keyboard.Modifiers & ModifierKeys.Control) == 0 || tabs.Count == 0) return;
+            if (e.Handled || (Keyboard.Modifiers & ModifierKeys.Control) == 0 || tabs.Count == 0) return;
             if (e.Key == Key.W && TabOf(shownPage) is PluginTab t) { CloseTab(t); e.Handled = true; }
             else if (e.Key == Key.Tab)
             {

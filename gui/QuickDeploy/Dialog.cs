@@ -20,6 +20,9 @@ namespace QuickDeploy
         /// <summary>A question: true when the action is chosen.</summary>
         public static bool Ask(Window owner, string text, string action) => Show(owner, text, action, Texts.Get("cancel"));
 
+        /// <summary>A question whose other answer is not Cancel (Not now).</summary>
+        public static bool Ask(Window owner, string text, string action, string dismiss) => Show(owner, text, action, dismiss);
+
         /// <summary>A question whose action cannot be undone: the action button is red.</summary>
         public static bool AskDanger(Window owner, string text, string action) => Show(owner, text, action, Texts.Get("cancel"), "Danger");
 

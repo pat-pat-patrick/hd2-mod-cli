@@ -133,6 +133,10 @@ namespace Hd2Mod
                                                "(downloaded, then added as hd2qd add adds a file, its page kept for update checks). A page with several files lists them: " +
                                                "--file ID takes one. AyakaMods and Nexus Mods pages need their own sign-in: download there, then add the file",
                                        Positionals = new[] { "url" }, Values = new[] { "--file", "--name", "--for" }, Flags = new[] { "--new", "--replace" }, Run = AddLinkCmd }),
+            Cmd("install", new Spec { Help = "a mod's install list, by its name (install super holo hud): each step it needs, an official plugin " +
+                                             "or a mod from its GitHub releases, added, turned on, its options set and the loader chosen; what is got by hand is " +
+                                             "named with where (--check: only say where each step stands)",
+                                      Positionals = new[] { "name" }, Many = true, Flags = new[] { "--check" }, Run = InstallCmd }),
             Cmd("nexus-info", new Spec { Help = "a mod on Nexus Mods by its number (16662, N站16662) or its page: its name, author, version, page, and whether the library has it (read only; no sign-in needed)",
                                          Positionals = new[] { "number" }, Run = NexusInfoCmd }),
             Cmd("source", new Spec { Help = "set where a mod comes from: a Nexus Mods, AyakaMods, GameBanana or ModWorkshop page, a GitHub repository, a direct link to its archive, or another page (--clear: none)",
@@ -1123,9 +1127,29 @@ namespace Hd2Mod
         {
             var lib = Library.Load();
             var mod = Ops.Pick(lib, a.Pos["mod"]);
+            NeededNote(lib, new[] { mod }, o);
             lib.Mods.Remove(mod);
             lib.Save();
             o.WriteLine("removed " + mod.Name + " (its files stay where they are; deploy to take it out of the game)");
+            OrphansNote(o);
+        }
+
+        /// <summary>What still needs the mods about to go off or out (Recipes.NeededBy): said, not refused.</summary>
+        static void NeededNote(Library lib, IEnumerable<Mod> mods, TextWriter o)
+        {
+            var going = new HashSet<string>(mods.Select(m => m.Id));
+            foreach (var m in mods)
+            {
+                var by = Recipes.NeededBy(lib, m).Where(x => !going.Contains(x.Id)).Select(x => x.Name).ToList();
+                if (by.Count > 0) o.WriteLine("note: " + m.Name + " is needed by " + string.Join(", ", by));
+            }
+        }
+
+        /// <summary>The mods an install list pulled in that nothing needs now (Recipes.Orphans).</summary>
+        static void OrphansNote(TextWriter o)
+        {
+            foreach (var m in Recipes.Orphans(Library.Load()))
+                o.WriteLine("no longer needed by any mod (it was installed for another): " + m.Name + " (hd2qd remove " + Ops.Repr(m.Name) + ")");
         }
 
 #if HAS_NEXUS
@@ -1211,10 +1235,16 @@ namespace Hd2Mod
                             + ")" + (PluginFiles.OfficialJson() != null ? "; the copy read before is shown" : ""));
             var available = PluginFiles.Available(Library.Load());
             if (available.Count == 0) return;
-            o.WriteLine("official plugins not added (plugin-add NAME):");
-            foreach (var (p, mods) in available)
-                o.WriteLine("  " + p.File + "  " + p.Title + "  " + (p.Latest is var v && v != null ? "released " + v.Value.Version : "not released yet")
-                            + (mods.Count > 0 ? "  needed by " + string.Join(", ", mods) : ""));
+            foreach (var community in new[] { false, true })
+            {
+                var some = available.Where(x => x.Plugin.Community == community).ToList();
+                if (some.Count == 0) continue;
+                o.WriteLine(community ? "community plugins not added, not reviewed (plugin-add NAME):" : "official plugins not added (plugin-add NAME):");
+                foreach (var (p, mods) in some)
+                    o.WriteLine("  " + p.File + "  " + p.Title + (community ? "  by " + p.Author + ", " + p.License + ", https://github.com/" + p.Repository : "")
+                                + "  " + (p.Latest is var v && v != null ? "released " + v.Value.Version : "not released yet")
+                                + (mods.Count > 0 ? "  needed by " + string.Join(", ", mods) : ""));
+            }
         }
 
         static void PluginAddCmd(Args a, TextWriter o)
@@ -1224,11 +1254,87 @@ namespace Hd2Mod
             // LICENSE file in the folder is not the License plugin, 2026-11-03)
             if (!File.Exists(path) || !path.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
             {
-                var official = PluginFiles.OfficialNamed(a.Pos["path"]) ?? throw new ModError("no such file, and no official plugin of that name: " + a.Pos["path"]);
-                path = PluginFiles.Fetch(official);
+                var listed = PluginFiles.ListedNamed(a.Pos["path"]) ?? throw new ModError("no such file, and no listed plugin of that name: " + a.Pos["path"]);
+                // naming it is the player's choice; what it is, is said (it was not reviewed)
+                if (listed.Community)
+                    o.WriteLine(listed.File + " is a community plugin by " + listed.Author + ", not reviewed; it runs with this program's permissions (source: https://github.com/" + listed.Repository + ")");
+                path = PluginFiles.Fetch(listed);
             }
             var (file, version, replaced) = PluginFiles.Install(path);
             o.WriteLine("added " + file + " " + version + (replaced != null ? " (replaces " + replaced + ")" : "") + " to " + PluginFiles.Dir);
+        }
+
+        static void InstallCmd(Args a, TextWriter o)
+        {
+            var typed = string.Join(" ", a.Rest);
+            Recipes.Refresh();
+            var list = Recipes.Kept();
+            // a plan of the author's list by its name, or a mod of the library by its name: the
+            // list built from the mod's own "Requires" when it has one
+            var listed = Recipes.Find(list, typed);
+            var lib = Library.Load();
+            var mainGuid = listed?.Steps.FirstOrDefault(s => s.Main)?.Guid;
+            Mod main = mainGuid != null ? Recipes.ModOf(lib, mainGuid) : null;
+            if (listed == null) try { main = Ops.Pick(lib, typed); } catch (ModError) { }
+            // a Nexus Mods mod: what its page lists, read again when older than a day
+            if (main?.Nexus != null) try { Recipes.RefreshNeeds(new[] { main.Nexus.Mod }); } catch (Exception e) when (e is IOException || e is ModError) { }
+            Recipes.Recipe Plan()
+            {
+                var now = Library.Load();
+                var m = main == null ? null : now.Mods.FirstOrDefault(x => x.Id == main.Id);
+                return (m != null ? Recipes.PlanFor(now, m, list) : null) ?? listed;
+            }
+            var r = Plan() ?? throw new ModError("no install list for " + Ops.Repr(typed) + (list.Count > 0 ? " (plans: " + string.Join(", ", list.Select(x => x.Id)) + ")" : ""), "recipe_none", typed);
+            bool check = a.Flag("--check");
+            if (!check) foreach (var line in Recipes.RunAll(Plan)) o.WriteLine("  " + line);
+            r = Plan();
+            o.WriteLine(Recipes.In(r.Title, "en") + ":");
+            foreach (var s in r.Steps)
+            {
+                var st = Recipes.StateOf(r, s, Library.Load());
+                var name = Recipes.In(s.Name, "en") + (s.Version != null ? " " + s.Version + "+" : "");
+                o.WriteLine("  [" + (st.Done ? "x" : " ") + "] " + name + (s.Optional ? " (optional)" : "") + (s.Hint ? " (listed on its Nexus Mods page)" : "") + (st.Done ? "" : ": " + StepSaid(r, st)));
+            }
+            var out_ = Recipes.Read(r);
+            if (out_ != null)
+                o.WriteLine("last game (" + out_.When.ToString("yyyy-MM-dd HH:mm") + "): " + (!out_.Started ? "it did not start" :
+                            out_.Problems.Count == 0 ? "it ran" : string.Join("; ", out_.Problems.Select(p => Recipes.In(p.Say, "en") ?? p.Find))));
+            if (!check) o.WriteLine("then: hd2qd deploy, and start the game");
+        }
+
+        /// <summary>After a mod's update: what its new version needs that the library lacks or has
+        /// too old, done with it (the user, 2026-11-28: updated together); what cannot be is said.</summary>
+        static void WithIt(string id, TextWriter o)
+        {
+            Recipes.Recipe Plan()
+            {
+                var lib = Library.Load();
+                var m = lib.Mods.FirstOrDefault(x => x.Id == id);
+                return m == null ? null : Recipes.PlanFor(lib, m);
+            }
+            try { foreach (var line in Recipes.RunAll(Plan)) o.WriteLine("  with it: " + line); }
+            catch (ModError e) { o.WriteLine("  what it needs could not all be done: " + e.Message); }
+            var left = Plan() is Recipes.Recipe r ? Recipes.Unfinished(r, Library.Load()) : new List<Recipes.State>();
+            foreach (var st in left) o.WriteLine("  still needed: " + Recipes.In(st.Step.Name, "en") + ": " + StepSaid(Plan(), st));
+        }
+
+        static string StepSaid(Recipes.Recipe r, Recipes.State st)
+        {
+            switch (st.Is)
+            {
+                case "missing":
+                    if (st.Step.Plugin != null) return "not added";
+                    if (Recipes.AutoSites(st.Step) is List<string> auto && auto.Count > 0) return "not added (from " + string.Join(" or ", auto) + ")";
+                    var pages = st.Step.Pages.Where(p => Recipes.Shown(p, "en")).Select(p => p.Url).Concat(Recipes.SitesOf(st.Step).Select(x => x.Page)).Distinct().ToList();
+                    if (st.Step.Hint) return "not found in the library; not installed by itself" + (pages.Count > 0 ? ": " + string.Join(", ", pages) : "");
+                    return "get it by hand" + (pages.Count > 0 ? ": " + string.Join(", ", pages) : "") + ", then hd2qd add the file";
+                case "off": return "in the library, not on (or an option it needs is off)";
+                case "old": return (st.Have ?? "a version it does not say") + " in the library, " + st.Step.Version + " or newer needed";
+                case "loader": return "not the loader in effect";
+                case "waiting": return st.Why ?? st.WhyKey ?? "its plugin has not made it ready";
+                case "target": return "the library deploys to " + Targets.Current(Library.Load()) + ", not the " + r.Target + " game";
+                default: return st.Is;
+            }
         }
 
         static void PluginUpdateCmd(Args a, TextWriter o)
@@ -1422,17 +1528,19 @@ namespace Hd2Mod
             if (Updates.Learn(lib, out _)) lib.Save();
             var u = Updates.One(mod);
             if (u.Status != "update") throw new ModError(mod.Name + ": no newer version found (" + u.Status + (u.Why != null ? ", " + u.Why : "") + ")", "no_update");
-            if (mod.GitHub != null) { o.WriteLine("updated: " + Updates.ApplyGitHub(mod.Id, u).Name + " " + u.Latest); return; }
+            if (mod.GitHub != null) { o.WriteLine("updated: " + Updates.ApplyGitHub(mod.Id, u).Name + " " + u.Latest); WithIt(mod.Id, o); return; }
             if (mod.Nexus == null && mod.Page != null)
             {
                 if (string.IsNullOrEmpty(u.Download)) throw new ModError(mod.Name + ": " + u.Latest + " is out, on a page that is downloaded in a browser: " + u.Page, "page_only", u.Page);
                 o.WriteLine("updated: " + Sites.Apply(mod.Id, u).Name + " " + u.Latest);
+                WithIt(mod.Id, o);
                 return;
             }
 #if HAS_NEXUS
             var link = new NxmLink { Game = mod.Nexus.Game, Mod = mod.Nexus.Mod, File = u.LatestFile };
             var (m, _) = Nexus.Install(link, Nexus.Credential());
             o.WriteLine("updated: " + m.Name + " " + u.Latest);
+            WithIt(m.Id, o);
 #else
             throw new ModError(mod.Name + ": no newer version found", "no_update");
 #endif
@@ -1493,6 +1601,7 @@ namespace Hd2Mod
             var lib = Library.Load();
             var mods = a.Rest.Select(x => Ops.Pick(lib, x)).Distinct().ToList();
             var g = Store.GameDir();
+            NeededNote(lib, mods, o);
             if (!a.Flag("--yes"))
                 throw new ModError("this deletes " + string.Join(", ", mods.Select(m => Paths.Abs(m.Path))) + " for good and takes " +
                                    string.Join(", ", mods.Select(m => m.Name)) + " out of the game: add --yes");
@@ -1501,18 +1610,21 @@ namespace Hd2Mod
                 var (r, folder, bytes) = Ops.DeleteMod(lib, mods[0], g);
                 o.WriteLine("deleted " + mods[0].Name + ": out of the library; deploy kept " + r.Kept + ", moved " + r.Moved + ", deleted " + r.Deleted +
                             "; folder " + folder + " deleted (" + bytes + " bytes)");
+                OrphansNote(o);
                 return;
             }
             var (rs, all, failed) = Ops.DeleteMods(lib, mods, g);
             o.WriteLine("deleted " + (mods.Count - failed.Count) + " mods: out of the library; deploy kept " + rs.Kept + ", moved " + rs.Moved +
                         ", deleted " + rs.Deleted + "; " + all + " bytes");
             foreach (var f in failed) o.WriteLine("out of the library and the game, but its folder could not be deleted: " + f);
+            OrphansNote(o);
         }
 
         static void Switch(Args a, TextWriter o, bool on)
         {
             var lib = Library.Load();
             var mods = a.Rest.Select(r => Ops.Pick(lib, r)).ToList();
+            if (!on) NeededNote(lib, mods, o);
             if (on)
                 foreach (var mod in mods.Where(m => !Targets.Belongs(lib, m)))
                     throw new ModError(mod.Name + " is for " + mod.For + ", not for " + Targets.Current(lib) + " (hd2qd for " + Ops.Repr(mod.Name) + " both)",

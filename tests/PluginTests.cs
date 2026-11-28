@@ -134,6 +134,36 @@ namespace Hd2Mod.Tests
             Assert.False(Directory.Exists(lists));
         }
 
+        /// <summary>Files dropped on the Plugins page: the .dll files are offered as plugins, several
+        /// at once, and go in through the same Install as the button's and plugin-add's (a second
+        /// drop of one is an update); folders, archives, other files and a .dll that is not there
+        /// are set apart to be named, never installed.</summary>
+        [Fact]
+        public void Dropped_files_split_into_plugins_and_the_rest_and_install_as_chosen_ones()
+        {
+            var dir = Path.Combine(Store.Home, "dropped");
+            Directory.CreateDirectory(Path.Combine(dir, "a folder"));
+            var dll = Path.Combine(dir, "HD2QD.Sample.dll");
+            File.Copy(Sample, dll);
+            var other = Path.Combine(dir, "HD2QD.Other.DLL");     // the extension in any case
+            File.Copy(Sample, other);
+            var zip = Path.Combine(dir, "mod.zip");
+            File.WriteAllBytes(zip, new byte[] { 1 });
+            var txt = Path.Combine(dir, "readme.txt");
+            File.WriteAllText(txt, "x");
+            var gone = Path.Combine(dir, "HD2QD.Gone.dll");
+
+            var (plugins, others) = PluginFiles.Dropped(new[] { zip, dll, Path.Combine(dir, "a folder"), txt, gone, other, dll, "", null });
+            Assert.Equal(new[] { dll, other }, plugins);
+            Assert.Equal(new[] { zip, Path.Combine(dir, "a folder"), txt, gone }, others);
+            Assert.Empty(PluginFiles.Dropped(null).Plugins);
+
+            // the first drop adds, the second replaces: the same path as the button's
+            Assert.Equal(("HD2QD.Sample.dll", "1.0.0", (string)null), PluginFiles.Install(plugins[0]));
+            Assert.Equal(("HD2QD.Sample.dll", "1.0.0", "1.0.0"), PluginFiles.Install(plugins[0]));
+            Assert.Single(PluginFiles.All());
+        }
+
         /// <summary>What is not a plugin is refused before anything of it runs or is copied.</summary>
         [Fact]
         public void A_file_that_is_not_a_plugin_is_refused()
@@ -598,6 +628,129 @@ namespace Hd2Mod.Tests
             var lib = ((Func<List<Dictionary<string, object>>>)h["library"])();
             Assert.Equal(a, Json.Str(lib.Single(), "path"));
             Assert.True(Json.Bool(lib.Single(), "enabled"));
+        }
+
+        /// <summary>A window plugin's OverlayKey (the user, 2026-11-28: a key that brings a
+        /// plugin up in the game, for every plugin): read in one spelling, the player's own
+        /// choice over it ("" for none, null for the plugin's again), and a second plugin with
+        /// the same key is not held twice.</summary>
+        [Fact]
+        public void A_plugin_s_key_is_its_own_or_the_player_s_and_never_held_twice()
+        {
+            AddSample();
+            var t = PluginFiles.All().Single().Type;
+            Assert.Equal("shift+page down", PluginKeys.Declared(t));
+            Assert.Null(PluginKeys.Declared(typeof(string)));                    // no Kind, no key
+            Assert.Equal("ctrl+alt+shift+f10", PluginKeys.Normal(" Shift+ALT + ctrl+F10 "));
+            Assert.Equal("ctrl+numpad +", PluginKeys.Normal("Ctrl+Numpad +"));
+            Assert.Equal("numpad +", PluginKeys.Normal("numpad +"));
+            Assert.Equal("", PluginKeys.Normal("  "));
+
+            var plan = PluginKeys.Plan(new[] { ("HD2QD.Sample.dll", t), ("HD2QD.Other.dll", t), ("HD2QD.Plain.dll", typeof(string)) });
+            Assert.Equal(new[] { "HD2QD.Sample.dll", "HD2QD.Other.dll" }, plan.Select(b => b.File));
+            Assert.Null(plan[0].SameAs);
+            Assert.Equal("HD2QD.Sample.dll", plan[1].SameAs);
+
+            PluginKeys.Choose("HD2QD.Other.dll", "Page Up");
+            PluginKeys.Choose("HD2QD.Sample.dll", "");
+            plan = PluginKeys.Plan(new[] { ("HD2QD.Sample.dll", t), ("HD2QD.Other.dll", t) });
+            Assert.Equal("", plan[0].Key);
+            Assert.Equal("page up", plan[1].Key);
+            Assert.Null(plan[1].SameAs);
+
+            PluginKeys.Choose("HD2QD.Sample.dll", null);                             // the plugin's own again
+            Assert.Equal("shift+page down", PluginKeys.Chosen("HD2QD.Sample.dll", PluginKeys.Declared(t)));
+        }
+
+        /// <summary>A community list (community.json, the user, 2026-11-28: a store where
+        /// third-party plugins are shown), checked by its pull requests but not reviewed.</summary>
+        static string CommunityList(string file, string versions, bool button = false) => @"{""format"": 1, ""plugins"": [
+            {""file"": """ + file + @""", ""title"": ""Someone's plugin"", ""summary"": ""Theirs."", ""author"": ""someone-else"",
+             ""repository"": ""someone-else/theirs"", ""license"": ""MIT"", ""api"": 2" + (button ? @", ""button"": true" : "") + @", ""versions"": [" + versions + @"]},
+            {""file"": ""HD2QD.License.dll"", ""title"": ""Not the official one"", ""repository"": ""someone-else/fake"", ""license"": ""MIT"", ""api"": 2,
+             ""versions"": [{""version"": ""9.0.0"", ""tag"": ""v9"", ""sha256"": """ + new string('1', 64) + @"""}]}]}";
+
+        /// <summary>Community plugins are listed apart from the official ones. Must live: one
+        /// listed is offered, marked community, with its author and licence, in the command line
+        /// under its own heading. Must die: one with an official plugin's file name is never
+        /// offered (and never replaces the official one), and none gets a title-bar button.</summary>
+        [Fact]
+        public void Community_plugins_are_listed_apart_never_as_an_official_one()
+        {
+            PluginFiles.CommunityJson = () => CommunityList("HD2QD.Theirs.dll", @"{""version"": ""1.0.0"", ""tag"": ""v1.0.0"", ""sha256"": """ + new string('2', 64) + @"""}", true);
+            var theirs = PluginFiles.Community().Single();
+            Assert.Equal("HD2QD.Theirs.dll", theirs.File);
+            Assert.True(theirs.Community);
+            Assert.False(theirs.Button);
+            Assert.Equal("MIT", theirs.License);
+            Assert.Equal(new[] { "HD2QD.Sample.dll", "HD2QD.License.dll", "HD2QD.Theirs.dll" }, PluginFiles.Available(Library.Load()).Select(p => p.Plugin.File));
+            Assert.False(PluginFiles.OfficialNamed("License").Community);              // the official one, never the community entry
+            Assert.Null(PluginFiles.OfficialNamed("Theirs"));                          // install plans name official plugins only
+            Assert.Equal("HD2QD.Theirs.dll", PluginFiles.ListedNamed("Theirs").File);
+            var said = Cli("plugins");
+            Assert.Contains("community plugins not added, not reviewed", said);
+            Assert.Contains("HD2QD.Theirs.dll  Someone's plugin  by someone-else, MIT, https://github.com/someone-else/theirs", said);
+        }
+
+        /// <summary>A community plugin is downloaded and checked as an official one is, but is asked
+        /// about (the GUI), said not to be reviewed (the command line), and offered its updates.
+        /// Must live: plugin-add by its name adds the listed bytes; a newer listed version is an
+        /// update. Must die: it is not an official release (the trust question is asked), and other
+        /// bytes than those listed are refused.</summary>
+        [Fact]
+        public void A_community_plugin_is_downloaded_checked_and_updated_but_never_official()
+        {
+            OfficialList = @"{""format"": 2, ""plugins"": []}";
+            try
+            {
+                PluginFiles.CommunityJson = () => CommunityList("HD2QD.Sample.dll", @"{""version"": ""1.0.0"", ""tag"": ""v1.0.0"", ""sha256"": """ + Sha(Sample) + @"""}");
+                Assert.False(PluginFiles.IsOfficialRelease(Sample));
+                Assert.NotNull(PluginFiles.CommunityRelease(Sample));
+                var (url, asked) = Serve(File.ReadAllBytes(Sample));
+                PluginFiles.Downloads = url;
+                var said = Cli("plugin-add", "Sample");
+                Assert.Contains("HD2QD.Sample.dll is a community plugin by someone-else, not reviewed", said);
+                Assert.Contains("added HD2QD.Sample.dll 1.0.0 to", said);
+                Assert.Equal("/someone-else/theirs/releases/download/v1.0.0/HD2QD.Sample.dll", asked.Result);
+                Assert.NotNull(PluginFiles.CommunityOf("HD2QD.Sample.dll"));
+                Assert.Null(PluginFiles.OfficialOf("HD2QD.Sample.dll"));
+                var t = PluginFiles.All().Single().Type;
+                Assert.Null(PluginFiles.UpdateOf("HD2QD.Sample.dll", t));
+
+                PluginFiles.CommunityJson = () => CommunityList("HD2QD.Sample.dll", @"{""version"": ""1.0.0"", ""tag"": ""v1.0.0"", ""sha256"": """ + Sha(Sample) + @"""},
+                    {""version"": ""1.1.0"", ""tag"": ""v1.1.0"", ""sha256"": """ + new string('3', 64) + @"""}");
+                Assert.Equal("1.1.0", PluginFiles.UpdateOf("HD2QD.Sample.dll", t).Value.Newest);
+                var (url2, _) = Serve(Encoding("not the plugin"));
+                PluginFiles.Downloads = url2;
+                Assert.Equal("plugin_sha", Assert.Throws<ModError>(() => PluginFiles.Fetch(PluginFiles.ListedNamed("Sample"))).Kind);
+            }
+            finally { OfficialList = List(null); }
+        }
+
+        /// <summary>The community list is read beside the official one and kept the same way. Must
+        /// live: read with it, from GitHub. Must die: withdrawn (404), it is gone; offline, the copy
+        /// read before stays.</summary>
+        [Fact]
+        public void The_community_list_is_read_beside_the_official_one()
+        {
+            PluginFiles.OfficialJson = KeptList;
+            PluginFiles.CommunityJson = KeptCommunity;
+            var u8 = System.Text.Encoding.UTF8;
+            var community = CommunityList("HD2QD.Theirs.dll", "");
+            PluginFiles.ListUrl = ServeMany(2, new Dictionary<string, byte[]>
+            {
+                ["/l/plugins.json"] = u8.GetBytes(OfficialList), ["/l/community.json"] = u8.GetBytes(community),
+            }) + "/l/plugins.json";
+            Assert.Equal((true, (string)null), PluginFiles.RefreshList());
+            Assert.Equal(new[] { "HD2QD.Theirs.dll" }, PluginFiles.Community().Select(p => p.File));
+
+            PluginFiles.ListUrl = ServeMany(1, new Dictionary<string, byte[]> { ["/l/plugins.json"] = u8.GetBytes(OfficialList) }) + "/l/plugins.json";
+            Assert.Equal((false, (string)null), PluginFiles.RefreshList());            // the community list could not be asked: kept
+            Assert.Single(PluginFiles.Community());
+
+            PluginFiles.ListUrl = ServeMany(2, new Dictionary<string, byte[]> { ["/l/plugins.json"] = u8.GetBytes(OfficialList) }) + "/l/plugins.json";
+            Assert.Equal((true, (string)null), PluginFiles.RefreshList());             // withdrawn: gone
+            Assert.Empty(PluginFiles.Community());
         }
     }
 }

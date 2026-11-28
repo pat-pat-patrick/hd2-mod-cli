@@ -39,35 +39,50 @@ namespace QuickDeploy
         /// added, headed by its title, file, version and Remove. None ships with the program
         /// (the user, 2026-11-02): they are added here, or dropped on the page. Two kinds: a
         /// panel, whose plugin draws the card's body (Panel), and a window of its own, opened from
-        /// its card (Open). Below them, the official plugins the library's mods need that are not
-        /// added. On the left, the guide to the cards (RenderGuide).</summary>
+        /// its card (Open). On the left, the guide to the cards (RenderGuide). The listed plugins,
+        /// added or not, are the Browse tab's (PluginStore.cs).</summary>
         void RenderPlugins()
         {
             guideItems.Clear();
             guideAsked = null;
+            // first drawn: Browse when nothing is added, so the page shows what can be (PluginStore.cs)
+            if (pluginTab == null) pluginTab = PluginFiles.All().Count > 0 ? "added" : "browse";
+            if (pluginTab == "browse") { RenderBrowse(); return; }
             RenderPluginCards();
             RenderGuide();
+        }
+
+        /// <summary>No plugin added: a dashed area that says so and that .dll files dropped on the
+        /// page are installed (the whole page takes the drop, PluginsPage_Drop).</summary>
+        FrameworkElement EmptyDropArea()
+        {
+            var grid = new Grid { MinHeight = 120 };
+            grid.Children.Add(new System.Windows.Shapes.Rectangle
+            {
+                Stroke = B("Muted"), StrokeThickness = 1.5, StrokeDashArray = new System.Windows.Media.DoubleCollection { 6, 4 },
+                RadiusX = 4, RadiusY = 4, SnapsToDevicePixels = true,
+            });
+            var words = new StackPanel { VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(24, 20, 24, 20) };
+            words.Children.Add(new TextBlock { Text = Texts.Get("plugins_none"), FontSize = 13, Foreground = B("Muted"), HorizontalAlignment = HorizontalAlignment.Center, TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.Wrap });
+            words.Children.Add(new TextBlock { Text = Texts.Get("plugin_drop_tip"), FontSize = 16, FontWeight = FontWeights.Bold, Foreground = B("Ink"), Margin = new Thickness(0, 6, 0, 0), HorizontalAlignment = HorizontalAlignment.Center, TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.Wrap });
+            grid.Children.Add(words);
+            return grid;
         }
 
         void RenderPluginCards()
         {
             PluginsBox.Children.Clear();
-            var top = new DockPanel();
-            var add = new Button { Content = Texts.Get("plugin_add"), Style = (Style)FindResource("Ghost"), MinHeight = 36, Padding = new Thickness(16, 0, 16, 0), VerticalAlignment = VerticalAlignment.Center };
-            add.Click += (s, e) => PickPlugin();
-            DockPanel.SetDock(add, Dock.Right);
-            top.Children.Add(add);
-            top.Children.Add(new TextBlock { Text = Texts.Get("plugins"), FontSize = 28, FontWeight = FontWeights.Bold });
-            PluginsBox.Children.Add(top);
-            PluginsBox.Children.Add(Texts.Hints ? Small(Texts.Get("plugins_intro"), new Thickness(0, 4, 0, 20)) : new Border { Height = 16 });
-            // by the name shown, in the window's language (the user, 2026-11-03); the official ones
-            // not added keep those the library's mods need first
+            // by the name shown, in the window's language (the user, 2026-11-03)
             var all = ByName(PluginFiles.All());
-            List<(OfficialPlugin Plugin, List<string> Mods)> available;
-            try { available = PluginFiles.Available(Library.Load()); }
-            catch (Exception e) when (e is ModError || e is System.IO.IOException) { available = new List<(OfficialPlugin, List<string>)>(); }
-            available = available.OrderBy(a => a.Mods.Count > 0 ? 0 : 1).ThenBy(a => a.Plugin.TitleIn(Texts.Lang), NameOrder).ToList();
-            if (all.Count == 0) PluginsBox.Children.Add(Small(Texts.Get("plugins_none"), new Thickness(0, 0, 0, 0)));
+            PluginsBox.Children.Add(PluginsHead(all.Count, PluginFiles.Listed().Count));
+            PluginsBox.Children.Add(Texts.Hints ? Small(Texts.Get("plugins_intro"), new Thickness(0, 4, 0, 20)) : new Border { Height = 16 });
+            if (all.Count == 0)
+            {
+                PluginsBox.Children.Add(EmptyDropArea());
+                var go = new Button { Content = Texts.Get("plugins_browse_go"), Style = (Style)FindResource("Primary"), MinHeight = 36, Padding = new Thickness(16, 0, 16, 0), Margin = new Thickness(0, 16, 0, 0), HorizontalAlignment = HorizontalAlignment.Left };
+                go.Click += (s, e) => ShowPluginTab("browse");
+                PluginsBox.Children.Add(go);
+            }
             var host = all.Count > 0 ? PluginHostHere() : null;
             bool first = true;
             foreach (var (file, type, why) in all)
@@ -146,6 +161,8 @@ namespace QuickDeploy
                             });
                         }
                         card.Children.Add(row);
+                        // a key that brings it up over the game, when it has one (PluginKeys)
+                        if (PluginKeys.Declared(type) != null) card.Children.Add(KeyRow(file, type));
                     }
                 }
                 if (!first) PluginsBox.Children.Add(new Border { Height = 16 });
@@ -156,103 +173,34 @@ namespace QuickDeploy
                 string badge = null; bool hot = false;
                 if (type == null) { badge = "plugin_guide_unusable"; hot = true; }
                 else if (update != null) { badge = "plugin_guide_update"; hot = true; }
-                else if (ThirdParty(file)) badge = "plugin_guide_third";
+                else if (ThirdParty(file)) badge = Community(file) ? "plugin_guide_community" : "plugin_guide_third";
                 guideItems.Add(new GuideItem
                 {
                     Key = file, Title = type != null ? PluginFiles.Title(type, Texts.Lang) ?? file : file, Target = box,
                     Badge = badge != null ? Texts.Get(badge) : null, Hot = hot,
                 });
             }
-            // the official plugins not added (the user, 2026-11-03: a page that shows only what
-            // is added does not say what can be added), those the library's mods need first. The
-            // list is read from GitHub (RefreshListSoon); until it has been read once, what is
-            // happening is said instead
-            bool neverRead = PluginFiles.OfficialJson() == null;
-            if (available.Count == 0 && !neverRead) return;
-            var section = new TextBlock { Text = Texts.Get("plugins_official"), FontSize = 18, FontWeight = FontWeights.Bold, Margin = new Thickness(0, 28, 0, 12) };
-            PluginsBox.Children.Add(section);
-            // one line in the guide for the whole section, not one per plugin: the guide lists what
-            // is added, and the section is where the rest is
-            guideItems.Add(new GuideItem
-            {
-                Key = GuideOfficial, Title = section.Text, Target = section,
-                Badge = neverRead ? null : available.Count.ToString(), Mono = true,
-            });
-            if (neverRead)
-            {
-                section.Margin = new Thickness(0, 28, 0, 0);
-                PluginsBox.Children.Add(Small(listWhy == null ? Texts.Get("plugins_list_reading") : Texts.F("plugins_list_failed", Texts.Get("plugins_list_" + listWhy)),
-                                              new Thickness(0, 4, 0, 0)));
-                return;
-            }
-            // not released: said once under the heading when it holds for all, else on each card
-            bool noneReleased = available.All(a => a.Plugin.Latest == null);
-            if (noneReleased)
-            {
-                section.Margin = new Thickness(0, 28, 0, 0);
-                PluginsBox.Children.Add(Small(Texts.Get("plugins_unreleased"), new Thickness(0, 4, 0, 12)));
-            }
-            first = true;
-            foreach (var (p, mods) in available)
-            {
-                var card = new StackPanel();
-                var head = new DockPanel();
-                var latest = p.Latest;
-                var file = new TextBlock
-                {
-                    Text = System.IO.Path.GetFileNameWithoutExtension(p.File) + (latest != null ? " " + latest.Value.Version : ""),
-                    FontSize = 12, Foreground = B("Muted"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(16, 0, 0, 0),
-                };
-                DockPanel.SetDock(file, Dock.Right);
-                head.Children.Add(file);
-                var title = Heading(p.TitleIn(Texts.Lang));
-                title.VerticalAlignment = VerticalAlignment.Center;
-                head.Children.Add(title);
-                card.Children.Add(head);
-                var summary = p.SummaryIn(Texts.Lang);
-                if (summary != null) card.Children.Add(Small(summary, new Thickness(0, 6, 0, 0)));
-                if (mods.Count > 0)
-                    card.Children.Add(Line(Texts.Get("plugin_needed"), "Yellow", Texts.F("plugin_needed_mods", string.Join("、", mods))));
-                var get = new Button
-                {
-                    Content = Texts.Get(latest != null ? "plugin_get" : "plugin_from_file"), Style = (Style)FindResource(latest != null ? "Primary" : "Ghost"),
-                    MinHeight = 36, MinWidth = 96, Padding = new Thickness(16, 0, 16, 0), Margin = new Thickness(0, 12, 0, 0), HorizontalAlignment = HorizontalAlignment.Left,
-                };
-                var plugin = p;
-                if (latest != null) get.Click += (s, e) => FetchPlugin(plugin, (Button)s);
-                else get.Click += (s, e) => PickPlugin(plugin.File);
-                if (latest == null && !noneReleased)
-                {
-                    var row = new StackPanel { Orientation = Orientation.Horizontal };
-                    row.Children.Add(get);
-                    row.Children.Add(new TextBlock
-                    {
-                        Text = Texts.Get("plugin_unreleased"), FontSize = 12, Foreground = B("Muted"),
-                        VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(12, 0, 0, 9),
-                    });
-                    card.Children.Add(row);
-                }
-                else card.Children.Add(get);
-                if (!first) PluginsBox.Children.Add(new Border { Height = 16 });
-                PluginsBox.Children.Add(Card(card));
-                first = false;
-            }
+            // what can be added is the Browse tab's (PluginStore.cs), not said here again (the user,
+            // 2026-11-28: "这不重复了吗")
         }
 
         // ---------------------------------------------------------------- the guide
 
-        /// <summary>A line of the guide: an added plugin (Key, its file) or the official plugins
-        /// not added (GuideOfficial), and what a click goes to on the page.</summary>
+        /// <summary>A line of the guide: an added plugin (Key, its file), and what a click goes to
+        /// on the page.</summary>
         class GuideItem
         {
             public string Key, Title, Badge;
-            public bool Hot, Mono;
+            public bool Hot;
             public FrameworkElement Target;
             public Border Row;
             public TextBlock Name;
         }
 
-        const string GuideOfficial = "\u0001official";
+        /// <summary>Where a plugin's author reads how to list it in the community list: the
+        /// README's section in the window's language (GitHub's anchor of its heading).</summary>
+        static string CommunityHowIn(string lang) =>
+            "https://github.com/pat-pat-patrick/hd2qd-plugins#" + (lang != null && lang.StartsWith("zh") ? Uri.EscapeDataString("社区插件") : "community-plugins");
         readonly List<GuideItem> guideItems = new List<GuideItem>();
         // the line lit (the card at the top of the view), the one clicked (lit while its card is in
         // view, though the end of the page cannot come up to the top), and a scroll on its way
@@ -262,6 +210,12 @@ namespace QuickDeploy
 
         /// <summary>Not an official plugin: the official list has been read and has no release
         /// with this file's SHA-256 (PluginFiles.OfficialOf). Until the list is read, nothing is said.</summary>
+        static bool Community(string file)
+        {
+            try { return PluginFiles.CommunityOf(file) != null; }
+            catch (Exception e) when (e is System.IO.IOException || e is UnauthorizedAccessException) { return false; }
+        }
+
         static bool ThirdParty(string file)
         {
             if (PluginFiles.OfficialJson() == null) return false;
@@ -274,21 +228,16 @@ namespace QuickDeploy
         /// label, then a line for each card in the page's order, each named by the plugin's own
         /// Title in the window's language, any plugin file in the folder whoever made it. A badge
         /// says what needs the player (unusable, an update), else that it is not an official
-        /// plugin. Under them, one line for the official plugins not added. With nothing to list
-        /// the page is its column alone.</summary>
+        /// plugin. What can be added is the Browse tab's.</summary>
         void RenderGuide()
         {
             PluginGuide.Children.Clear();
-            PluginGuideBar.Visibility = guideItems.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+            // shown also when empty: the page's column stays where it is (the user, 2026-11-28)
+            PluginGuideBar.Visibility = Visibility.Visible;
             bool added = false;
             foreach (var it in guideItems)
             {
-                if (it.Key == GuideOfficial)
-                {
-                    if (added) PluginGuide.Children.Add(new Border { Height = 24 });
-                    PluginGuide.Children.Add(Label("plugins_guide_more", new Thickness(8, 0, 0, 4)));
-                }
-                else if (!added)
+                if (!added)
                 {
                     PluginGuide.Children.Add(Label("plugins_guide", new Thickness(8, 0, 0, 4)));
                     added = true;
@@ -302,11 +251,11 @@ namespace QuickDeploy
                     {
                         Background = it.Hot ? B("Yellow") : B("Grid"), MinWidth = 22,
                         // words sit high in a box their own height: one more above (measured, 1.5 px at 200 %)
-                        Padding = it.Mono ? new Thickness(6, 0, 6, 0) : new Thickness(6, 1, 6, 0),
+                        Padding = new Thickness(6, 1, 6, 0),
                         Margin = new Thickness(8, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center,
                         Child = new TextBlock
                         {
-                            Text = it.Badge, FontFamily = it.Mono ? Mono : FontFamily, FontSize = 11, Foreground = it.Hot ? B("TapeInk") : B("Muted"),
+                            Text = it.Badge, FontSize = 11, Foreground = it.Hot ? B("TapeInk") : B("Muted"),
                             HorizontalAlignment = HorizontalAlignment.Center,
                         },
                     };
@@ -318,15 +267,15 @@ namespace QuickDeploy
                 row.Child = dp;
                 btn.Content = row;
                 // the whole name and the file: for a name cut short, and which file a third-party one is
-                btn.ToolTip = it.Key == GuideOfficial ? null : it.Title + "\n" + it.Key;
+                btn.ToolTip = it.Title + "\n" + it.Key;
                 System.Windows.Automation.AutomationProperties.SetName(btn, it.Title);
-                System.Windows.Automation.AutomationProperties.SetAutomationId(btn, "guide:" + (it.Key == GuideOfficial ? "official" : it.Key));
+                System.Windows.Automation.AutomationProperties.SetAutomationId(btn, "guide:" + it.Key);
                 it.Row = row;
                 var key = it.Key;
                 btn.Click += (s, e) => GuideGo(key);
                 PluginGuide.Children.Add(btn);
             }
-            guideCur = guideItems.Count > 0 ? guideItems[0].Key : null;
+            guideCur = guideItems.FirstOrDefault()?.Key;
             PaintGuide();
             Dispatcher.BeginInvoke(new Action(GuideFollow), System.Windows.Threading.DispatcherPriority.Loaded);
         }
@@ -583,6 +532,7 @@ namespace QuickDeploy
         async void PluginsAtStart()
         {
             PinnedPlugins();
+            ArmPluginKeys();
             RefreshListSoon(true);
             var host = PluginHostHere();
             bool changed;
@@ -615,9 +565,15 @@ namespace QuickDeploy
         void AddPlugins(IEnumerable<string> paths)
         {
             var added = new List<string>();
+            var updated = new List<string>();
             foreach (var path in paths)
             {
-                var (file, version, why) = PluginFiles.Inspect(path);
+                string file, version, why;
+                // a file gone or locked since it was chosen or dropped is said, not thrown: an
+                // exception the window does not catch closes the manager
+                try { (file, version, why) = PluginFiles.Inspect(path); }
+                catch (Exception e) when (e is System.IO.IOException || e is UnauthorizedAccessException)
+                { Dialog.Tell(this, Texts.F("failed", e.Message)); continue; }
                 if (why != null)
                 {
                     Dialog.Tell(this, Texts.F(why == "name" ? "plugin_add_name" : why == "api" ? "plugin_add_api" : "plugin_add_broken", file));
@@ -628,15 +584,29 @@ namespace QuickDeploy
                 // an official release (its SHA-256 in the official list) goes in without the
                 // trusted-source question: it is the file the list names, and asking at every
                 // update of one was needless (the user, 2026-11-14)
-                var ask = replace ? Texts.F("plugin_replace_ask", file, version, old.Type != null ? PluginFiles.Version(old.Type) : "?")
-                                  : Texts.F("plugin_add_ask", file, version);
-                if (!PluginFiles.IsOfficialRelease(path) && !Dialog.Ask(this, ask, Texts.Get(replace ? "plugin_replace_go" : "plugin_add_go"))) continue;
-                try { PluginFiles.Install(path); added.Add(file + " " + version); }
+                var listed = PluginFiles.CommunityRelease(path);
+                var ask = listed != null
+                    ? Texts.F(replace ? "plugin_replace_ask_community" : "plugin_add_ask_community", listed.TitleIn(Texts.Lang), version, listed.Author ?? "?",
+                              "https://github.com/" + listed.Repository, old.Type != null ? PluginFiles.Version(old.Type) : "?")
+                    : replace ? Texts.F("plugin_replace_ask", file, version, old.Type != null ? PluginFiles.Version(old.Type) : "?")
+                              : Texts.F("plugin_add_ask", file, version);
+                try
+                {
+                    if (!PluginFiles.IsOfficialRelease(path) && !Dialog.Ask(this, ask, Texts.Get(replace ? "plugin_replace_go" : "plugin_add_go"))) continue;
+                    PluginFiles.Install(path);
+                    (replace ? updated : added).Add(file + " " + version);
+                }
                 catch (Exception e) when (e is ModError || e is System.IO.IOException || e is UnauthorizedAccessException)
                 { Dialog.Tell(this, Texts.F("failed", e.Message)); }
             }
-            if (added.Count == 0) return;
-            Foot(Texts.F("plugin_added", string.Join(Texts.Sep, added)), "Blue");
+            if (added.Count + updated.Count == 0) return;
+            // a plugin replaced keeps running in this window as it was loaded (its start, its open
+            // tabs): the new version is used once the program is started again
+            var said = new List<string>();
+            if (added.Count > 0) said.Add(Texts.F("plugin_added", string.Join(Texts.Sep, added)));
+            if (updated.Count > 0) said.Add(Texts.F("plugin_updated", string.Join(Texts.Sep, updated)));
+            Foot(string.Join(" · ", said), updated.Count > 0 ? "Yellow" : "Blue");
+            ArmPluginKeys();
             RenderPlugins();
             PinnedPlugins();
             Refresh();                      // the license plugin changes what the mod rows say
@@ -651,26 +621,66 @@ namespace QuickDeploy
             catch (Exception e) when (e is ModError || e is System.IO.IOException || e is UnauthorizedAccessException)
             { Dialog.Tell(this, Texts.F("failed", e.Message)); return; }
             Foot(Texts.F("plugin_removed", title), "Blue");
+            ArmPluginKeys();
             RenderPlugins();
             PinnedPlugins();
             Refresh();
         }
 
-        static List<string> DroppedPlugins(IDataObject data) =>
-            (data != null && data.GetDataPresent(DataFormats.FileDrop) ? data.GetData(DataFormats.FileDrop) as string[] : null)?
-                .Where(p => System.IO.File.Exists(p) && p.EndsWith(".dll", StringComparison.OrdinalIgnoreCase)).ToList() ?? new List<string>();
+        /// <summary>What a drag from Explorer holds, split as PluginFiles.Dropped does: the .dll
+        /// files and the rest. Nothing when it holds no files.</summary>
+        static (List<string> Plugins, List<string> Others) DroppedPlugins(IDataObject data)
+        {
+            string[] paths = null;
+            try { paths = data != null && data.GetDataPresent(DataFormats.FileDrop) ? data.GetData(DataFormats.FileDrop) as string[] : null; }
+            catch (System.Runtime.InteropServices.COMException) { }     // a drag source that will not give its data
+            return PluginFiles.Dropped(paths);
+        }
 
+        /// <summary>While files are dragged over the Plugins page: what dropping them would do,
+        /// over the whole page, so there is no doubt that it takes plugins (the deploy page's list
+        /// does the same for mods).</summary>
         void PluginsPage_DragOver(object sender, DragEventArgs e)
         {
-            e.Effects = DroppedPlugins(e.Data).Count > 0 ? DragDropEffects.Copy : DragDropEffects.None;
+            var (plugins, others) = DroppedPlugins(e.Data);
+            bool ok = plugins.Count > 0;
+            e.Effects = ok ? DragDropEffects.Copy : DragDropEffects.None;
+            e.Handled = true;
+            PluginDropHintText.Text = Texts.Get(ok ? "drop_here" : "drop_no");
+            PluginDropHintWhat.Text = !ok ? Texts.Get("plugin_drop_none")
+                : Texts.F("plugin_drop_what", Texts.N(plugins.Count)) + (others.Count > 0 ? Texts.F("plugin_drop_skip", Texts.N(others.Count)) : "");
+            PluginDropHint.Visibility = Visibility.Visible;
+        }
+
+        void PluginsPage_DragLeave(object sender, DragEventArgs e)
+        {
+            PluginDropHint.Visibility = Visibility.Collapsed;
             e.Handled = true;
         }
 
+        /// <summary>Plugin files dropped on the page: added or updated exactly as chosen ones are
+        /// (AddPlugins), several at once; what is not a .dll file is named and left alone. The
+        /// work waits until the drop has returned, so Explorer is not held while a question is up.</summary>
         void PluginsPage_Drop(object sender, DragEventArgs e)
         {
             e.Handled = true;
-            var paths = DroppedPlugins(e.Data);
-            if (paths.Count > 0) AddPlugins(paths);
+            PluginDropHint.Visibility = Visibility.Collapsed;
+            var (plugins, others) = DroppedPlugins(e.Data);
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                try
+                {
+                    if (plugins.Count == 0) { Dialog.Tell(this, Texts.Get("plugin_drop_none")); return; }
+                    AddPlugins(plugins);
+                    if (others.Count > 0)
+                        Dialog.Tell(this, Texts.F("plugin_drop_skipped", string.Join(Texts.Sep, others.Select(p => System.IO.Path.GetFileName(p.TrimEnd('\\', '/'))))));
+                }
+                catch (Exception x) when (!(x is OutOfMemoryException))
+                {
+                    ManagerLog.Warn("plugin drop: " + x);
+                    Dialog.Tell(this, Texts.F("failed", x.Message));
+                }
+            }));
         }
 
         void Plugins_Click(object sender, RoutedEventArgs e)
