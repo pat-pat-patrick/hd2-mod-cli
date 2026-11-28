@@ -110,13 +110,16 @@ namespace Hd2Mod
             Cmd("group-put", new Spec { Help = "put mods --in a group, or back to the --top (no group)",
                                         Positionals = new[] { "mods" }, Many = true, Values = new[] { "--in" }, Flags = new[] { "--top" },
                                         OneOf = new[] { "--in", "--top" }, Run = GroupPut }),
-            Cmd("plugins", new Spec { Help = "the plugins added (HD2QD.*.dll in the settings folder's plugins folder): each one's file, version and title, or why it cannot be used; then the official plugins not added",
+            Cmd("plugins", new Spec { Help = "the plugins added (HD2QD.*.dll in the settings folder's plugins folder): each one's file, version and title, or why it cannot be used, and its key over the game; then the official and community plugins not added",
                                       Run = PluginsCmd }),
-            Cmd("plugin-add", new Spec { Help = "add a plugin (HD2QD.<name>.dll) to the settings folder, over one of the same name, from a file or, by its name, an official plugin's release; a plugin runs as this program does, so add only plugins from a source you trust",
+            Cmd("plugin-add", new Spec { Help = "add a plugin (HD2QD.<name>.dll) to the settings folder, over one of the same name, from a file or, by its name, an official or community plugin's release (a community plugin is not reviewed); a plugin runs as this program does, so add only plugins from a source you trust",
                                          Positionals = new[] { "path" }, Run = PluginAddCmd }),
             Cmd("plugin-remove", new Spec { Help = "remove an added plugin (HD2QD.AssetCheck.dll, or AssetCheck)", Positionals = new[] { "plugin" }, Run = PluginRemoveCmd }),
-            Cmd("plugin-update", new Spec { Help = "replace every added official plugin that has a newer release with that release (checked against the official list's SHA-256)",
+            Cmd("plugin-update", new Spec { Help = "replace every added official or community plugin that has a newer release with that release (checked against the list's SHA-256)",
                                             Run = PluginUpdateCmd }),
+            Cmd("plugin-key", new Spec { Help = "the key that brings a window plugin up over the game (held by the window while the game runs): the key in force; --set KEY another (\"page down\", \"ctrl+shift+f10\"), --clear none, --default the plugin's own again",
+                                         Positionals = new[] { "plugin" }, Values = new[] { "--set" }, Flags = new[] { "--clear", "--default" },
+                                         OneOf = new[] { "--set", "--clear", "--default" }, Run = PluginKeyCmd }),
 #if HAS_NEXUS
             Cmd("nexus", new Spec { Help = "download a Nexus Mods link (nxm://...) and put it in the library (a mod from it already there gets the new version)",
                                     Positionals = new[] { "link" }, Run = NexusCmd }),
@@ -134,7 +137,7 @@ namespace Hd2Mod
                                                "--file ID takes one. AyakaMods and Nexus Mods pages need their own sign-in: download there, then add the file",
                                        Positionals = new[] { "url" }, Values = new[] { "--file", "--name", "--for" }, Flags = new[] { "--new", "--replace" }, Run = AddLinkCmd }),
             Cmd("install", new Spec { Help = "a mod's install list, by its name (install super holo hud): each step it needs, an official plugin " +
-                                             "or a mod from its GitHub releases, added, turned on, its options set and the loader chosen; what is got by hand is " +
+                                             "or a mod from GitHub, GameBanana or ModWorkshop (Nexus Mods with a premium account), added, turned on, its options set and the loader chosen; what is got by hand is " +
                                              "named with where (--check: only say where each step stands)",
                                       Positionals = new[] { "name" }, Many = true, Flags = new[] { "--check" }, Run = InstallCmd }),
             Cmd("nexus-info", new Spec { Help = "a mod on Nexus Mods by its number (16662, N站16662) or its page: its name, author, version, page, and whether the library has it (read only; no sign-in needed)",
@@ -191,8 +194,8 @@ namespace Hd2Mod
                                   Run = LuaCmd }),
             Cmd("lua-syntax", new Spec { Help = "whether Lua files compile on the game's Lua (PUC 5.1, no LuaJIT): OK, or the line and why",
                                          Positionals = new[] { "files" }, Many = true, Run = LuaSyntaxCmd }),
-            Cmd("self-update", new Spec { Help = "whether a newer version of this program is on GitHub (read only; the official build counts releases, the development build pre-releases too)",
-                                          Run = SelfUpdateCmd }),
+            Cmd("self-update", new Spec { Help = "whether a newer version of this program is on GitHub (the official build counts releases, the development build pre-releases too); --install puts it in place of the window and hd2qd.exe, each file checked against GitHub's SHA-256 (the window open keeps running as it is until it is started again)",
+                                          Flags = new[] { "--install" }, Run = SelfUpdateCmd }),
             Cmd("check", new Spec { Help = "whether the game folder is exactly what the library asks for: what is missing, " +
                                            "what is there that no mod wants (another manager's, or an interrupted deploy), and " +
                                            "what is not the file the library holds (--deep reads the bytes of the copies)",
@@ -1223,10 +1226,16 @@ namespace Hd2Mod
             var all = PluginFiles.All();
             if (all.Count == 0) o.WriteLine("no plugin has been added (" + PluginFiles.Dir + ")");
             var (_, listWhy) = PluginFiles.RefreshList();
+            var keys = PluginKeys.Plan(all.Where(x => x.Type != null).Select(x => (x.File, x.Type)));
             foreach (var (file, type, why) in all)
+            {
                 o.WriteLine("  " + file + (type != null ? " " + PluginFiles.Version(type) + "  " + PluginFiles.Title(type, "en")
+                                           + (PluginFiles.CommunityOf(file) != null ? "  (community, not reviewed)" : "")
                                            + (PluginFiles.UpdateOf(file, type) is var u && u != null ? "  " + u.Value.Newest + " is out (plugin-update)" : "")
                                            : "  cannot be used: " + (why == "api" ? "for another version of this program" : "damaged")));
+                if (keys.FirstOrDefault(k => k.File == file) is PluginKeys.Bound b)
+                    o.WriteLine("    key over the game: " + KeySaid(b));
+            }
             if (all.Count > 0) o.WriteLine("folder: " + PluginFiles.Dir);
             if (listWhy != null)
                 o.WriteLine("the official plugin list could not be read from " + PluginFiles.ListUrl + " ("
@@ -1349,6 +1358,39 @@ namespace Hd2Mod
                 finally { try { Directory.Delete(Path.GetDirectoryName(path), true); } catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) { } }
                 o.WriteLine("updated " + file + " " + added + " -> " + newest);
             }
+        }
+
+        /// <summary>A plugin's key as plugins and plugin-key say it: the key, whose it is, and
+        /// whether another plugin's same key keeps it from being held.</summary>
+        static string KeySaid(PluginKeys.Bound b)
+        {
+            var own = PluginKeys.Declared(b.Type);
+            var whose = b.Key == own ? "the plugin's own" : "chosen; the plugin's own is " + (own == "" ? "none" : own);
+            if (b.Key == "") return "none (" + whose + ")";
+            return b.Key + " (" + whose + ")" + (b.SameAs != null ? "; not held: " + b.SameAs + " has the same key" : "");
+        }
+
+        static void PluginKeyCmd(Args a, TextWriter o)
+        {
+            var name = a.Pos["plugin"];
+            var all = PluginFiles.All().Where(x => x.Type != null).ToList();
+            var found = all.FirstOrDefault(x => string.Equals(x.File, name, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(x.File, "HD2QD." + name + ".dll", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(x.File, name + ".dll", StringComparison.OrdinalIgnoreCase));
+            if (found.File == null) throw new ModError("no plugin " + name + " has been added (plugins lists them)", "plugin_missing", name);
+            if (PluginKeys.Declared(found.Type) == null)
+                throw new ModError(found.File + " has no key over the game: only a window plugin that declares one (OverlayKey) has", "plugin_no_key", found.File);
+            if (a.Value("--set") is string typed)
+            {
+                var key = PluginKeys.Valid(typed) ?? throw new ModError(Ops.Repr(typed) + " is not a key: Ctrl, Alt or Shift, then one key, as \"page down\" or \"ctrl+shift+f10\"", "plugin_key_bad", typed);
+                PluginKeys.Choose(found.File, key);
+            }
+            else if (a.Flag("--clear")) PluginKeys.Choose(found.File, "");
+            else if (a.Flag("--default")) PluginKeys.Choose(found.File, null);
+            var b = PluginKeys.Plan(all.Select(x => (x.File, x.Type))).First(x => x.File == found.File);
+            o.WriteLine(found.File + ": " + KeySaid(b));
+            if (a.Value("--set") != null || a.Flag("--clear") || a.Flag("--default"))
+                o.WriteLine("a window already open takes it at its next start");
         }
 
         static void PluginRemoveCmd(Args a, TextWriter o)
@@ -1488,9 +1530,20 @@ namespace Hd2Mod
         {
             o.WriteLine("hd2-mod-cli " + StateDoc.Version + (SelfUpdate.Official ? " (official build)" : " (development build: pre-releases count too)"));
             var u = SelfUpdate.Check();
-            if (u.Latest == null) o.WriteLine("no release on GitHub yet");
+            if (u.Latest == null) o.WriteLine(SelfUpdate.Official ? "no release of this build on GitHub (the releases there are developer builds)" : "no release on GitHub yet");
             else if (u.Newer) o.WriteLine(u.Latest + " is out" + (u.Prerelease ? " (pre-release)" : "") + ": " + u.Page);
             else o.WriteLine("up to date (newest: " + u.Latest + ")");
+            if (!a.Flag("--install") || u.Latest == null || !u.Newer) return;
+            // the window's exe and hd2qd.exe, in the folder of the program running this command
+            // (hd2qd.exe, or the window running it in its own process)
+            var self = System.Reflection.Assembly.GetEntryAssembly()?.Location ?? System.Diagnostics.Process.GetCurrentProcess().MainModule.FileName;
+            var dir = Path.GetDirectoryName(self);
+            var window = Path.Combine(dir, SelfUpdate.WindowFile);
+            if (!File.Exists(window))
+                throw new ModError("the window (" + SelfUpdate.WindowFile + ") is not beside " + Path.GetFileName(self) + ": get the release from " + u.Page, "self_no_window", dir);
+            var left = SelfUpdate.Install(u, window, Path.Combine(dir, SelfUpdate.CliAsset));
+            o.WriteLine("installed " + u.Latest + " in " + dir + "; it runs from the next start of the window");
+            if (left != null) o.WriteLine("not updated: " + left);
         }
 
         static void CheckUpdatesCmd(Args a, TextWriter o)

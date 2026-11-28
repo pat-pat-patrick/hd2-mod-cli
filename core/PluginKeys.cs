@@ -88,6 +88,36 @@ namespace Hd2Mod
 
         static readonly string[] Mods = { "ctrl", "alt", "shift" };
 
+        /// <summary>The names of the keys that can be one (the window's Hotkey names the same
+        /// keys from what is pressed): a letter, a digit, F1 to F24, the number pad, and these.</summary>
+        static readonly HashSet<string> Named = new HashSet<string>(
+            Enumerable.Range(0, 26).Select(i => ((char)('a' + i)).ToString())
+            .Concat(Enumerable.Range(0, 10).Select(i => i.ToString()))
+            .Concat(Enumerable.Range(0, 10).Select(i => "numpad " + i))
+            .Concat(Enumerable.Range(1, 24).Select(i => "f" + i))
+            .Concat(new[]
+            {
+                "space", "tab", "backspace", "enter", "delete", "insert", "home", "end", "page up", "page down",
+                "up", "down", "left", "right", "caps lock", "num lock", "scroll lock", "pause", "print screen",
+                "backtick", "minus", "equal", "open bracket", "close bracket", "backslash", "semicolon", "quote",
+                "comma", "period", "slash", "numpad *", "numpad +", "numpad -", "numpad .", "numpad /",
+            }));
+
+        /// <summary>A key typed on the command line in its one spelling (Normal), or null when it
+        /// is not a key: only Ctrl, Alt and Shift before one key of those named.</summary>
+        public static string Valid(string key)
+        {
+            var n = Normal(key);
+            if (n == "") return null;
+            var last = n.EndsWith("numpad +") ? "numpad +" : n.Substring(n.LastIndexOf('+') + 1);
+            // what was typed before the key: Normal leaves out a modifier it does not know ("win")
+            var raw = key.Trim().ToLowerInvariant();
+            raw = raw.EndsWith("+") && raw.TrimEnd('+').TrimEnd().EndsWith("numpad") ? raw.Substring(0, raw.TrimEnd('+').TrimEnd().Length - "numpad".Length)
+                : raw.Contains('+') ? raw.Substring(0, raw.LastIndexOf('+')) : "";
+            if (raw.Split('+').Select(m => m.Trim()).Where(m => m != "").Any(m => !Mods.Contains(m))) return null;
+            return Named.Contains(last) ? n : null;
+        }
+
         /// <summary>One spelling for one key: lower case, the modifiers in the order Ctrl, Alt,
         /// Shift, no spaces around '+' ("numpad +" keeps its own). "" for none or a blank.</summary>
         public static string Normal(string key)

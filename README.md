@@ -545,7 +545,8 @@ by default)
   version.
 - When a newer version is out, a window shows what it brings, in the window's
   language, once per version. *What's new* shows it again.
-- `hd2qd self-update` checks from the command line.
+- `hd2qd self-update` checks from the command line; `hd2qd self-update --install`
+  installs it (the window open keeps running as it is until it is started again).
 
 ### Nexus Mods
 
@@ -815,18 +816,27 @@ A plugin is a DLL of its own (`HD2QD.<name>.dll`) that adds one feature.
 | Resource names | Downloads HD2SDK's name lists, so conflicts and the asset check name resources instead of giving numbers. |
 | Member licenses | Signs in to a mod author's site for members-only mods, and renews the license. |
 
-- **Updates**: an added official plugin with a newer release shows an **Update**
+- **Plugin store**: the *Plugin store* tab lists the official plugins and the
+  community plugins (listed by their authors, not reviewed), with a search and
+  filters. Choose one, then *Download and add*. A community plugin is asked
+  about before it is added.
+- **Updates**: an added plugin with a newer release shows an **Update**
   button on its card, and a red dot on the jigsaw. `hd2qd plugin-update` updates
   them all.
+- **A key over the game**: a window plugin can bring its window up over the game
+  with a key, while the game runs and the manager is open (the notification area
+  is enough). The key is set on its card, or with `hd2qd plugin-key NAME --set KEY`
+  (`--clear`: none, `--default`: the plugin's own).
 - **Title-bar buttons**: an official plugin used often (HD2 Mod Console) has a
   button left of the jigsaw.
   - It appears when the official list gives it one, and its file matches an
     official release (SHA-256).
   - *Show in the title bar* on its card takes it away or back.
-- **Other plugins**: *Add from file…*. A plugin runs with the same permissions
-  as this program, so add only plugins from a source you trust.
+- **Other plugins**: *Add plugin…*, or drop the `.dll` file on the page. A
+  plugin runs with the same permissions as this program, so add only plugins
+  from a source you trust.
 - **Where they are**: the settings folder's `plugins` folder. Command line:
-  `hd2qd plugins`, `plugin-add`, `plugin-remove`.
+  `hd2qd plugins`, `plugin-add`, `plugin-remove`, `plugin-update`, `plugin-key`.
 - **Writing one**: see
   [hd2qd-plugins](https://github.com/pat-pat-patrick/hd2qd-plugins).
 
@@ -1103,7 +1113,7 @@ name.
 | `keep-previous-on` / `keep-previous-off` | Whether a mod with Lua scripts keeps the version it had when a new one comes. Off keeps no more; the ones kept stay. |
 | `previous [MODS] [--delete] [--all]` | The previous versions kept.<br>`--delete` with mods, or `--delete --all`: delete them (the mods keep their current versions). |
 | `rollback MOD` | Back to the previous version; the version it had is kept instead. Deploy afterwards. |
-| `self-update` | Whether a newer version of this program is on GitHub (read only). The official build counts releases; the developer build pre-releases too. |
+| `self-update [--install]` | Whether a newer version of this program is on GitHub. The official build counts releases; the developer build pre-releases too.<br>`--install`: put it in place of the window and `hd2qd.exe`, each file checked against GitHub's SHA-256. |
 
 **Lua, plugins and reports**
 
@@ -1112,9 +1122,10 @@ name.
 | `loader <name\|none>` | The loader in effect, for every profile: a loader of the library by name or id, or `none`. |
 | `lua` | The Lua checks before a deploy: whose start-up script runs, which loader, what each mod needs, what cannot run, the last session and the last crash (read only). |
 | `lua-syntax FILE...` | Whether Lua files compile on the game's Lua (PUC 5.1, no LuaJIT): OK, or the line and why. |
-| `plugins` | The plugins added (`HD2QD.*.dll` in the settings folder's `plugins` folder), each with its file, version and title (or why it cannot be used); then the official plugins not added. |
-| `plugin-add FILE\|NAME` / `plugin-remove NAME` | Add a plugin from a file, or an official plugin by its name; remove one. |
-| `plugin-update` | Replace every added official plugin that has a newer release (checked against the official list's SHA-256). |
+| `plugins` | The plugins added (`HD2QD.*.dll` in the settings folder's `plugins` folder), each with its file, version and title (or why it cannot be used) and its key over the game; then the official and community plugins not added. |
+| `plugin-add FILE\|NAME` / `plugin-remove NAME` | Add a plugin from a file, or an official or community plugin by its name; remove one. |
+| `plugin-update` | Replace every added plugin that has a newer release (checked against the list's SHA-256). |
+| `plugin-key NAME [--set KEY \| --clear \| --default]` | A window plugin's key over the game: the key in force; `--set` another (`page down`, `ctrl+shift+f10`), `--clear` none, `--default` the plugin's own. |
 | `report [--out PATH] [--upload KIND] [--note TEXT]` | A problem report (see *Asking about a problem*): a zip on the desktop unless `--out`, and a short summary.<br>`--upload KIND`: send it and print its number. KIND is `crash_start`, `crash_mission`, `mod_not_working`, `manager` or `other`. |
 
 ## How a deploy works
@@ -1580,7 +1591,7 @@ Helldivers 2 的 mod 管理器。主要特点：
 
 - 有新版本时齿轮上显示红点；设置 →“关于与诊断”中可查看版本。
 - 有新版本时会弹出窗口，用界面语言说明新版本的内容，每个版本只弹出一次；“查看更新内容”可再次查看。
-- 命令行为 `hd2qd self-update`。
+- 命令行为 `hd2qd self-update`；加 `--install` 直接安装（已打开的窗口在下次启动时才换成新版）。
 
 ### Nexus Mods
 
@@ -1750,12 +1761,14 @@ Helldivers 2 的 mod 管理器。主要特点：
 | 资源名称 | 下载 HD2SDK 的名称表，使冲突和资源检查显示资源名称，而不是编号。 |
 | 会员授权 | 为仅向会员提供的 mod 登录作者的网站，并续期授权。 |
 
-- **更新**：已添加的官方插件有新版本时，卡片上显示 **更新** 按钮，拼图按钮上出现红点。`hd2qd plugin-update` 一次更新全部。
+- **插件商店**：“插件商店”标签页列出官方插件和社区插件（由作者自行登记，未经审核），可以搜索和筛选。选中后点击“下载并添加”；添加社区插件前会先确认。
+- **更新**：已添加的插件有新版本时，卡片上显示 **更新** 按钮，拼图按钮上出现红点。`hd2qd plugin-update` 一次更新全部。
+- **在游戏中呼出**：窗口类插件可以用一个按键把窗口呼出到游戏画面上方，需要游戏运行、管理器开着（在通知区域即可）。按键在插件卡片上设置，或用 `hd2qd plugin-key 名称 --set 按键`（`--clear` 不用按键，`--default` 恢复插件自带的按键）。
 - **标题栏按钮**：常用的官方插件（HD2 MOD 控制台）在拼图按钮左侧有按钮。
   - 官方列表为它设了按钮、且文件与官方发布的版本一致（SHA-256）时才显示；
   - 卡片上的“显示在标题栏”可以关掉或重新打开。
-- **其他插件**：点击“从文件添加…”。插件与本程序拥有相同的权限，请只添加来源可信的插件。
-- **保存位置**：设置文件夹的 `plugins` 文件夹。命令行为 `hd2qd plugins`、`plugin-add`、`plugin-remove`。
+- **其他插件**：点击“添加插件…”，或把 `.dll` 文件拖到插件页上。插件与本程序拥有相同的权限，请只添加来源可信的插件。
+- **保存位置**：设置文件夹的 `plugins` 文件夹。命令行为 `hd2qd plugins`、`plugin-add`、`plugin-remove`、`plugin-update`、`plugin-key`。
 - **编写插件**：见 [hd2qd-plugins](https://github.com/pat-pat-patrick/hd2qd-plugins)。
 
 ### 反馈问题
@@ -1851,8 +1864,9 @@ Helldivers 2 的 mod 管理器。主要特点：
     hd2qd nexus-info 16662   # 按编号查看 Nexus Mods 上的 mod，无需登录
     hd2qd rollback MOD       # 回滚到保留的上一版本（先用 keep-previous-on 开启保留）
     hd2qd lua                # 部署前检查 Lua mod：启动脚本、加载器、无法运行的脚本、上一局、上次崩溃
-    hd2qd plugins            # 列出已添加的插件和尚未添加的官方插件
-    hd2qd self-update        # 检查本程序是否有新版本（正式版只看正式发布，开发版也看预发布）
+    hd2qd plugins            # 列出已添加的插件（及其游戏内呼出按键）和尚未添加的官方、社区插件
+    hd2qd plugin-key 名称 --set "page down"   # 设置插件在游戏中呼出的按键
+    hd2qd self-update        # 检查本程序是否有新版本（正式版只看正式发布，开发版也看预发布）；加 --install 直接安装
     hd2qd report             # 生成问题报告（zip，默认在桌面）；加 --upload 类型 直接上传并显示报告编号
     hd2qd move-export D:\    # 将全部配置导出为迁移包；在目标 PC 上用 move-restore 导入
 

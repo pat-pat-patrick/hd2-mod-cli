@@ -189,6 +189,9 @@ namespace Hd2Mod
         /// <summary>The release files: the window, and the command line beside it.</summary>
         public const string WindowAsset = "HD2.Mod.Quick.Deploy.exe", CliAsset = "hd2qd.exe";
 
+        /// <summary>The window's file as it is on disk (GitHub's asset name has dots for spaces).</summary>
+        public const string WindowFile = "HD2 Mod Quick Deploy.exe";
+
         /// <summary>The newest release in place of this program's files: window, the window's exe
         /// (the one running); cli, hd2qd.exe beside it, updated too when it is there (null: not).
         /// Each file is downloaded (the author's copy first, then GitHub, as plugins are), taken

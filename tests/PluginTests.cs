@@ -634,6 +634,34 @@ namespace Hd2Mod.Tests
         /// plugin up in the game, for every plugin): read in one spelling, the player's own
         /// choice over it ("" for none, null for the plugin's again), and a second plugin with
         /// the same key is not held twice.</summary>
+        /// <summary>plugin-key on the command line, as the plugin's card has it (the user,
+        /// 2026-11-28: every feature with its command). Must live: the plugin's own key shown by
+        /// plugins, another set, none, the plugin's own again; a key typed in any spelling. Must
+        /// die: a name that is not a key, and a plugin with no key over the game.</summary>
+        [Fact]
+        public void A_plugin_s_key_is_set_on_the_command_line()
+        {
+            Assert.Equal("page down", PluginKeys.Valid("Page Down"));
+            Assert.Equal("ctrl+shift+f10", PluginKeys.Valid("Shift + Ctrl + F10"));
+            Assert.Equal("alt+numpad +", PluginKeys.Valid("alt+numpad +"));
+            Assert.Null(PluginKeys.Valid("f25"));
+            Assert.Null(PluginKeys.Valid("win+a"));
+            Assert.Null(PluginKeys.Valid(""));
+            AddSample();
+            Assert.Contains("key over the game: shift+page down (the plugin's own)", Cli("plugins"));
+            Assert.Contains("HD2QD.Sample.dll: ctrl+f10 (chosen", Cli("plugin-key", "Sample", "--set", "Ctrl+F10"));
+            Assert.Equal("ctrl+f10", PluginKeys.Chosen("HD2QD.Sample.dll", "shift+page down"));
+            Assert.Contains("HD2QD.Sample.dll: none (chosen", Cli("plugin-key", "Sample", "--clear"));
+            Assert.Contains("HD2QD.Sample.dll: shift+page down (the plugin's own)", Cli("plugin-key", "Sample", "--default"));
+            var err = new StringWriter();
+            Assert.Equal(1, Commands.Run(new[] { "plugin-key", "Sample", "--set", "hyper+x" }, new StringWriter(), err));
+            Assert.Contains("is not a key", err.ToString());
+            Assert.Equal("shift+page down", PluginKeys.Chosen("HD2QD.Sample.dll", "shift+page down"));
+            err = new StringWriter();
+            Assert.Equal(1, Commands.Run(new[] { "plugin-key", "NotAdded" }, new StringWriter(), err));
+            Assert.Contains("no plugin NotAdded", err.ToString());
+        }
+
         [Fact]
         public void A_plugin_s_key_is_its_own_or_the_player_s_and_never_held_twice()
         {
