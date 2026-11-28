@@ -208,16 +208,21 @@ namespace QuickDeploy
         bool guideMoving;
         EventHandler guideStep;
 
-        /// <summary>Not an official plugin: the official list has been read and has no release
-        /// with this file's SHA-256 (PluginFiles.OfficialOf). Until the list is read, nothing is said.</summary>
+        /// <summary>A community plugin's listed release (PluginFiles.CommunityOf).</summary>
         static bool Community(string file)
         {
             try { return PluginFiles.CommunityOf(file) != null; }
             catch (Exception e) when (e is System.IO.IOException || e is UnauthorizedAccessException) { return false; }
         }
 
+        /// <summary>Not an official plugin: not signed by the maintainer, and the official list has
+        /// been read and has no release with this file's SHA-256. Until the list is read, an
+        /// unsigned file is not called anything.</summary>
         static bool ThirdParty(string file)
         {
+            // signed by the maintainer: official whatever its version, the list read or not
+            try { if (PluginFiles.IsOfficial(file)) return false; }
+            catch (Exception e) when (e is System.IO.IOException || e is UnauthorizedAccessException) { return false; }
             if (PluginFiles.OfficialJson() == null) return false;
             try { return PluginFiles.OfficialOf(file) == null; }
             catch (Exception e) when (e is System.IO.IOException || e is UnauthorizedAccessException) { return false; }

@@ -93,6 +93,82 @@ namespace Hd2Mod.Tests
 
         void AddSample() => Assert.Contains("added HD2QD.Sample.dll 1.0.0 to", Cli("plugin-add", Sample));
 
+        /// <summary>A key of the tests' own, trusted as the maintainer's while the action runs.</summary>
+        static void AsMaintainer(System.Security.Cryptography.RSA key, Action act)
+        {
+            var p = key.ExportParameters(false);
+            var k = new PluginSignature.Key { Owner = "official", Modulus = p.Modulus, Exponent = p.Exponent };
+            PluginSignature.Trusted.Add(k);
+            try { act(); }
+            finally { PluginSignature.Trusted.Remove(k); }
+        }
+
+        /// <summary>(2026-11-28: an official build not in the official list was called a third-party
+        /// plugin.) Must live: the sample signed by the maintainer's key, renamed, its version not
+        /// in the list, is official, added under its assembly's name, and loads as before.</summary>
+        [Fact]
+        public void A_plugin_the_maintainer_signed_is_official_at_any_version()
+        {
+            using (var key = new System.Security.Cryptography.RSACryptoServiceProvider(3072))
+            {
+                var signed = Path.Combine(Root, "1731234_HD2QD.Sample (1).dll");
+                File.WriteAllBytes(signed, PluginSignature.Sign(File.ReadAllBytes(Sample), key));
+                OfficialList = List(@"{""version"": ""0.9.0"", ""tag"": ""v0.9.0"", ""sha256"": """ + new string('0', 64) + @"""}");
+                try
+                {
+                    AsMaintainer(key, () =>
+                    {
+                        Assert.Equal("official", PluginSignature.Signer(signed));
+                        Assert.True(PluginFiles.IsOfficialRelease(signed));
+                        Assert.Equal(("HD2QD.Sample.dll", "1.0.0", (string)null), PluginFiles.Inspect(signed));
+                        Assert.Contains("added HD2QD.Sample.dll 1.0.0 to", Cli("plugin-add", signed));
+                        Assert.True(PluginFiles.IsOfficial("HD2QD.Sample.dll"));
+                        Assert.Equal("HD2QD.Sample.dll", PluginFiles.OfficialOf("HD2QD.Sample.dll")?.File);    // its entry, by its name
+                        Assert.Contains("HD2QD.Sample.dll 1.0.0  Sample plugin", Cli("plugins"));
+                    });
+                }
+                finally { OfficialList = List(null); }
+            }
+        }
+
+        /// <summary>Must die: a signed file changed after signing, an unsigned one and one signed by
+        /// a key not trusted are not official (and, renamed, are refused for their name).</summary>
+        [Fact]
+        public void A_changed_unsigned_or_foreign_signed_plugin_is_not_official()
+        {
+            using (var key = new System.Security.Cryptography.RSACryptoServiceProvider(3072))
+            using (var other = new System.Security.Cryptography.RSACryptoServiceProvider(3072))
+            {
+                var good = PluginSignature.Sign(File.ReadAllBytes(Sample), key);
+                var changed = (byte[])good.Clone();
+                changed[1000] ^= 0x01;
+                var cases = new Dictionary<string, byte[]>
+                {
+                    ["changed"] = changed,
+                    ["unsigned"] = File.ReadAllBytes(Sample),
+                    ["foreign"] = PluginSignature.Sign(File.ReadAllBytes(Sample), other),
+                };
+                AsMaintainer(key, () =>
+                {
+                    foreach (var c in cases)
+                    {
+                        var path = Path.Combine(Root, c.Key + "_HD2QD.Sample (1).dll");
+                        File.WriteAllBytes(path, c.Value);
+                        Assert.Null(PluginSignature.Signer(path));
+                        Assert.False(PluginFiles.IsOfficialRelease(path), c.Key);
+                        Assert.Equal("name", PluginFiles.Inspect(path).Why);
+                    }
+                    // the signature checked again once the file changes in place
+                    var inPlace = Path.Combine(Root, "HD2QD.Sample.dll");
+                    File.WriteAllBytes(inPlace, good);
+                    Assert.True(PluginFiles.IsOfficialRelease(inPlace));
+                    File.WriteAllBytes(inPlace, changed);
+                    File.SetLastWriteTimeUtc(inPlace, DateTime.UtcNow.AddMinutes(1));
+                    Assert.False(PluginFiles.IsOfficialRelease(inPlace));
+                });
+            }
+        }
+
         [Fact]
         public void A_plugin_is_added_to_the_settings_folder_replaced_and_removed()
         {

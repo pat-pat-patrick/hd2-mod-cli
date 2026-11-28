@@ -459,8 +459,8 @@ the file or drag it onto the window: it is imported and deployed.
   damaged or incomplete package, a part of another export or too little free
   space changes nothing; an import that fails deletes what it had made.
 - **Plugins are not loaded from the package as they are**: an official plugin
-  (matched by SHA-256 against the official list) is added at once; any other
-  is asked about first, as when it is added by hand.
+  (signed by the maintainer, or matched by SHA-256 against the official list) is
+  added at once; any other is asked about first, as when it is added by hand.
 
 ### Update checks
 
@@ -823,14 +823,18 @@ A plugin is a DLL of its own (`HD2QD.<name>.dll`) that adds one feature.
 - **Updates**: an added plugin with a newer release shows an **Update**
   button on its card, and a red dot on the jigsaw. `hd2qd plugin-update` updates
   them all.
+- **Official or not**: a plugin is official when the maintainer signed its file
+  (any version, listed or not), or when its file is one of the official list's
+  releases (SHA-256). Any other plugin is marked *Third-party*; the plugin's own
+  name (its assembly's) says which plugin it is.
 - **A key over the game**: a window plugin can bring its window up over the game
   with a key, while the game runs and the manager is open (the notification area
   is enough). The key is set on its card, or with `hd2qd plugin-key NAME --set KEY`
   (`--clear`: none, `--default`: the plugin's own).
 - **Title-bar buttons**: an official plugin used often (HD2 Mod Console) has a
   button left of the jigsaw.
-  - It appears when the official list gives it one, and its file matches an
-    official release (SHA-256).
+  - It appears when the official list gives it one, and its file is an official
+    build (the maintainer's signature, or an official release's SHA-256).
   - *Show in the title bar* on its card takes it away or back.
 - **Other plugins**: *Add plugin…*, or drop the `.dll` file on the page. A
   plugin runs with the same permissions as this program, so add only plugins
@@ -1532,7 +1536,7 @@ Helldivers 2 的 mod 管理器。主要特点：
 - **单个文件**：仅当目标位置为 FAT32 格式（单个文件不能超过 4 GB）时分为多个文件，各部分（`名称.hd2qdmove.2` 等）须置于同一文件夹中。
 - **导入**：mod 存放于游戏所在分区的 `HD2 Mods`，列表中的所有路径按本机改写。库中已有 mod 时，需再次确认才会替换，原文件夹仍保留在磁盘上。
 - **更改前先校验**：每一块数据都带校验值。迁移包损坏、不完整、混入其他导出的文件或空间不足时，不做任何更改；导入中途失败时，删除已写入的内容。
-- **不直接加载迁移包中的插件**：官方插件（按 SHA-256 与官方列表比对）直接添加；其他插件与手动添加时一样，逐个询问。
+- **不直接加载迁移包中的插件**：官方插件（带维护者签名，或按 SHA-256 与官方列表比对一致）直接添加；其他插件与手动添加时一样，逐个询问。
 
 ### 检查更新
 
@@ -1763,9 +1767,10 @@ Helldivers 2 的 mod 管理器。主要特点：
 
 - **插件商店**：“插件商店”标签页列出官方插件和社区插件（由作者自行登记，未经审核），可以搜索和筛选。选中后点击“下载并添加”；添加社区插件前会先确认。
 - **更新**：已添加的插件有新版本时，卡片上显示 **更新** 按钮，拼图按钮上出现红点。`hd2qd plugin-update` 一次更新全部。
+- **是否官方插件**：文件带维护者签名（任何版本，无论是否已登记），或与官方列表中某个发布版本的 SHA-256 一致，即为官方插件；其他插件标为“第三方”。插件是哪一个，按它自己的程序集名识别。
 - **在游戏中呼出**：窗口类插件可以用一个按键把窗口呼出到游戏画面上方，需要游戏运行、管理器开着（在通知区域即可）。按键在插件卡片上设置，或用 `hd2qd plugin-key 名称 --set 按键`（`--clear` 不用按键，`--default` 恢复插件自带的按键）。
 - **标题栏按钮**：常用的官方插件（HD2 MOD 控制台）在拼图按钮左侧有按钮。
-  - 官方列表为它设了按钮、且文件与官方发布的版本一致（SHA-256）时才显示；
+  - 官方列表为它设了按钮、且文件是官方构建（带维护者签名，或与官方发布版本的 SHA-256 一致）时才显示；
   - 卡片上的“显示在标题栏”可以关掉或重新打开。
 - **其他插件**：点击“添加插件…”，或把 `.dll` 文件拖到插件页上。插件与本程序拥有相同的权限，请只添加来源可信的插件。
 - **保存位置**：设置文件夹的 `plugins` 文件夹。命令行为 `hd2qd plugins`、`plugin-add`、`plugin-remove`、`plugin-update`、`plugin-key`。

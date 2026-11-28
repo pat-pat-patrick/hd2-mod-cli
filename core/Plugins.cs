@@ -92,10 +92,11 @@ namespace Hd2Mod
         /// (the Api is a constant), so nothing of it runs before the player agrees.</summary>
         public static (string File, string Version, string Why) Inspect(string path)
         {
-            // an official release is known by its SHA-256 and goes in under the list's name for
-            // it, whatever the file is called now: a file passed around by hand is often renamed,
-            // by a browser ("(1)") or a chat program (the user, 2026-11-10)
-            var file = OfficialBySha(path)?.File ?? Path.GetFileName(path);
+            // an official release is known by its SHA-256, or an official build by the
+            // maintainer's signature, and goes in under its own name, whatever the file is called
+            // now: a file passed around by hand is often renamed, by a browser ("(1)") or a chat
+            // program (the user, 2026-11-10)
+            var file = OfficialBySha(path)?.File ?? SignedFile(path) ?? Path.GetFileName(path);
             if (!Name.IsMatch(file)) return (file, null, "name");
             try
             {
@@ -283,11 +284,29 @@ namespace Hd2Mod
         /// versions has this file's SHA-256. Only the bytes count, never the name (the user,
         /// 2026-11-10): anyone can call a file HD2QD.Settings.dll, and a release passed around by
         /// hand is often renamed.</summary>
-        public static OfficialPlugin OfficialOf(string file) => OfficialBySha(PathOf(file));
+        public static OfficialPlugin OfficialOf(string file) => OfficialBySha(PathOf(file)) ?? SignedListing(PathOf(file));
 
-        /// <summary>Whether the file at path is an official plugin's release, by its SHA-256 in the
-        /// official list (false when the list was never read).</summary>
-        public static bool IsOfficialRelease(string path) => OfficialBySha(path) != null;
+        /// <summary>Whether the file at path is an official plugin: signed by the maintainer
+        /// (PluginSignature; any version, listed or not), or one of the official list's releases by
+        /// its SHA-256 (the releases out before the signature, 2026-11-28).</summary>
+        public static bool IsOfficialRelease(string path) => PluginSignature.Official(path) || OfficialBySha(path) != null;
+
+        /// <summary>Whether the added plugin file is an official plugin (IsOfficialRelease).</summary>
+        public static bool IsOfficial(string file) => IsOfficialRelease(PathOf(file));
+
+        /// <summary>A file the maintainer signed: its own name, the assembly's name and .dll (the
+        /// plugin's identity, as a GUID would be: the signature says who built it), else null.</summary>
+        static string SignedFile(string path)
+        {
+            if (!PluginSignature.Official(path)) return null;
+            try { return AssemblyName.GetAssemblyName(path).Name + ".dll"; }
+            catch (Exception e) when (e is BadImageFormatException || e is IOException || e is FileLoadException || e is UnauthorizedAccessException) { return null; }
+        }
+
+        /// <summary>The official list's entry for a file the maintainer signed, by its assembly's
+        /// name (SignedFile), else null.</summary>
+        static OfficialPlugin SignedListing(string path) =>
+            SignedFile(path) is string f ? Official().FirstOrDefault(p => string.Equals(p.File, f, StringComparison.OrdinalIgnoreCase)) : null;
 
         /// <summary>The community plugin one of whose listed versions is the file at path, else
         /// null: it came from the community list, not reviewed (asked before it is added).</summary>
